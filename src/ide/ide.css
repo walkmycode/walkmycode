@@ -1,0 +1,179 @@
+/* WalkMyCode's one IDE panel (Ide.tsx), the same in both rooms. Scoped under
+   .ide so it carries its own controls and never depends on the room it sits
+   in; the colour and font tokens are WalkMyCode's (globals.css). */
+.ide { display: flex; flex-direction: column; gap: calc(12px * var(--sp)); background: var(--ui); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(14px * var(--sp)); color: var(--ui-text); font: var(--text)/1.5 var(--sans); min-width: 0; }
+.ide button, .ide input, .ide select, .ide textarea { font: inherit; }
+.ide :focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
+.ide .row { display: flex; gap: calc(8px * var(--sp)); flex-wrap: wrap; align-items: center; }
+.ide .sp { flex: 1; }
+.ide .hint, .ide .note { margin: 0; color: var(--ui-dim); font-size: var(--text); }
+.ide .err { color: var(--pink); margin: 0; }
+.ide .link { background: none; border: 0; padding: 0; color: var(--ui-dim); cursor: pointer; font-size: var(--text); }
+.ide .link:hover { color: var(--ui-text); }
+.ide .ctl { font: 600 var(--text) var(--sans); color: var(--ui-text); background: var(--ui-2); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(8px * var(--sp)) calc(12px * var(--sp)); cursor: pointer; display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); text-decoration: none; }
+.ide .ctl.primary { background: var(--yellow); color: #2a241b; border-color: transparent; }
+.ide .ctl:disabled { opacity: .45; cursor: default; }
+.ide kbd { font: 500 var(--text) var(--mono); opacity: .7; padding-left: calc(4px * var(--sp)); }
+.ide .pill { font: 600 var(--text) var(--sans); padding: calc(3px * var(--sp)) calc(9px * var(--sp)); border-radius: 0; background: var(--ui-2); color: var(--ui-dim); white-space: nowrap; }
+.ide .pill.warn { background: #4a3a1c; color: var(--yellow); }
+
+/* The file bar: path, unsaved marker, Edit and Save. */
+.ide-head { display: flex; align-items: center; gap: calc(8px * var(--sp)); flex-wrap: wrap; min-width: 0; }
+.ide-path { font: 500 var(--text) var(--mono); color: var(--chalk-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* An exercise from a lesson. */
+.ide .task { background: var(--board); border-radius: 0; padding: calc(12px * var(--sp)) calc(16px * var(--sp)); font: 400 var(--text)/1.45 var(--sans); color: var(--chalk); }
+.ide .task p { margin: 0; }
+.ide .task .eyebrow { font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); margin-bottom: calc(4px * var(--sp)); }
+.ide .task .expect { font: 400 var(--text) var(--sans); color: var(--chalk-dim); margin-top: calc(8px * var(--sp)); }
+.ide .task code { font-family: var(--mono); }
+
+/* Editor beside output ("side"), or stacked. */
+.ide-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: calc(12px * var(--sp)); align-items: start; }
+.ide.stacked .ide-grid, .ide-grid.single { grid-template-columns: minmax(0, 1fr); }
+.ide-left { display: flex; flex-direction: column; gap: calc(8px * var(--sp)); min-width: 0; }
+.ide-right { display: flex; flex-direction: column; gap: calc(10px * var(--sp)); min-width: 0; }
+/* Inside the panel the editor has a resizable height; on its own (Explore's
+   dock panels) it fills whatever box it is given, via className or style. */
+.ide .ide-editor { height: 380px; min-height: 200px; resize: vertical; overflow: hidden; border-radius: 0; }
+/* Frameless: no card, and the editor takes the height it is given (a dock panel) instead of 380px. */
+.ide.frameless { border: 0; border-radius: 0; padding: 0; background: transparent; height: 100%; min-height: 0; }
+.ide.frameless .ide-grid { flex: 1; min-height: 0; }
+.ide.frameless .ide-grid.single, .ide.frameless .ide-left { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ide.frameless .ide-editor { flex: 1; height: auto; min-height: 120px; resize: none; border-radius: 0; }
+.ide .ide-editor.locked { opacity: .97; }
+.ide .code-bar { display: flex; gap: calc(8px * var(--sp)); flex-wrap: wrap; align-items: center; }
+/* One size along the run bar and the output's head: buttons, "Run on", its select, the tabs, Pop out. */
+.ide .code-bar .ctl, .ide .out-head .ctl { font-size: var(--text); padding: calc(5px * var(--sp)) calc(10px * var(--sp)); border-radius: 0; }
+.ide .engine { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); font-size: var(--text); color: var(--ui-dim); }
+.ide .engine select { font: 500 var(--text) var(--sans); background: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(5px * var(--sp)) calc(8px * var(--sp)); }
+
+/* Output. */
+.ide .output { background: var(--out, #0f1512); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); height: 240px; overflow: auto; }
+.ide .output pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: var(--text)/1.5 var(--mono); color: #e6e1d6; }
+.ide .output pre.err { color: #e7c07a; }
+.ide .output pre.error { color: var(--pink); }
+.ide .output pre.value { color: var(--blue); }
+.ide .output img { display: block; max-width: 100%; background: #fff; border-radius: 0; margin: calc(6px * var(--sp)) 0; }
+.ide .output .status { margin: 0 0 calc(6px * var(--sp)); color: var(--yellow); font-size: var(--text); }
+.ide .check { margin: 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border-radius: 0; font-size: var(--text); }
+.ide .check.ok { background: #243b24; color: var(--green); }
+.ide .check.no { background: #3d2a26; color: #f6cfc9; }
+
+/* The professor beside the code. */
+.ide .ask { display: flex; flex-direction: column; gap: calc(8px * var(--sp)); }
+.ide .ask .ctl { font-size: var(--text); padding: calc(6px * var(--sp)) calc(10px * var(--sp)); }
+.ide .ask input { flex: 1 1 200px; min-width: 0; font: 500 var(--text) var(--sans); background: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); }
+.ide .help { background: var(--board); border-radius: 0; padding: calc(12px * var(--sp)) calc(14px * var(--sp)); font-size: var(--text); line-height: 1.55; }
+.ide .answer p { margin: 0 0 calc(8px * var(--sp)); }
+.ide .answer ul, .ide .answer ol { margin: 0 0 calc(8px * var(--sp)); padding-left: calc(20px * var(--sp)); }
+.ide .answer li { margin: 0 0 calc(4px * var(--sp)); }
+.ide .answer { overflow-wrap: anywhere; }
+.ide .answer-table { margin: 0 0 calc(8px * var(--sp)); overflow-x: auto; }
+.ide .answer-table table { border-collapse: collapse; font-size: var(--text); }
+.ide .answer-table th, .ide .answer-table td { padding: calc(5px * var(--sp)) calc(8px * var(--sp)); border: 1px solid var(--hair, rgba(255,255,255,.1)); text-align: left; vertical-align: top; overflow-wrap: normal; min-width: 8ch; }
+.ide .answer-table th { font-weight: 700; }
+.ide .answer code { font: var(--text) var(--mono); padding: calc(1px * var(--sp)) calc(4px * var(--sp)); border-radius: 0; background: rgba(255,255,255,.07); }
+.ide .answer .snippet { margin: 0 0 calc(8px * var(--sp)); background: var(--out, #0f1512); border-radius: 0; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); font: var(--text) var(--mono); overflow-x: auto; }
+
+/* The debugger. */
+.ide .debug { display: flex; flex-direction: column; gap: calc(10px * var(--sp)); background: var(--out, #0f1512); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(12px * var(--sp)); }
+.ide .debug-bar { display: flex; gap: calc(6px * var(--sp)); flex-wrap: wrap; }
+.ide .debug-bar .ctl { font-size: var(--text); padding: calc(6px * var(--sp)) calc(10px * var(--sp)); }
+.ide .scrub { width: 100%; accent-color: var(--yellow); }
+.ide .where, .ide .stack { margin: 0; font-size: var(--text); color: var(--ui-text); font-variant-numeric: tabular-nums; }
+.ide .stack { font-size: var(--text); color: var(--ui-dim); }
+.ide .where code, .ide .vars code { font-family: var(--mono); font-size: var(--text); }
+.ide .vars-title { margin: 0 0 calc(4px * var(--sp)); font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.ide .vars table { width: 100%; border-collapse: collapse; font-size: var(--text); }
+.ide .vars th, .ide .vars td { text-align: left; padding: calc(4px * var(--sp)) calc(8px * var(--sp)); border-bottom: 1px solid var(--ui-line); vertical-align: top; }
+.ide .vars th { font-family: var(--mono); font-weight: 600; color: var(--blue); white-space: nowrap; width: 1%; }
+.ide .vars td code { color: #e6e1d6; word-break: break-word; }
+.ide .vars td.type { color: var(--ui-dim); font-size: var(--text); width: 1%; white-space: nowrap; }
+.ide .vars tr.changed { background: rgba(243,215,122,.12); }
+.ide .vars tr.changed th { color: var(--yellow); }
+.ide .output.small { height: auto; max-height: 180px; }
+.ide .debug pre { margin: 0; white-space: pre-wrap; font: var(--text) var(--mono); }
+.ide .debug pre.error { color: var(--pink); margin-top: calc(6px * var(--sp)); }
+
+@media (max-width: 900px) {
+  .ide-grid:not(.split) { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The splitter (Ide.tsx, split.ts): the editor and the output share the grid
+   as two fr tracks, --ide-a and --ide-b, which a drag rewrites a frame at a
+   time. "rows" stacks them (Explore, phones), "cols" sets them side by side
+   (Learn on a wide screen). Keyboard steps and a reset glide (scaled by --m);
+   a drag follows the pointer 1:1. */
+.ide-grid.split { gap: 0; transition: grid-template-rows var(--t-move) var(--ease-settle), grid-template-columns var(--t-move) var(--ease-settle); }
+.ide-grid.split.cols { grid-template-columns: minmax(280px, var(--ide-a, 56fr)) 10px minmax(220px, var(--ide-b, 44fr)); }
+.ide-grid.split.rows { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(160px, var(--ide-a, 62fr)) 10px minmax(90px, var(--ide-b, 38fr)); align-items: stretch; }
+.ide-grid.split.dragging { transition: none; user-select: none; }
+.ide-grid.split.rows.dragging { cursor: row-resize; }
+.ide-grid.split.cols.dragging { cursor: col-resize; }
+/* In a card (Learn) the stacked pair gets a height to share; in a dock panel it fills the panel. */
+.ide:not(.frameless) .ide-grid.split.rows { height: clamp(480px, 78vh, 780px); }
+.ide-grid.split.rows .ide-left { min-height: 0; }
+.ide-grid.split.rows .ide-editor { flex: 1; height: auto; min-height: 80px; resize: none; }
+.ide-grid.split.rows .ide-right { min-height: 0; overflow: auto; }
+.ide-grid.split.rows .out-wrap { flex: 1 1 auto; min-height: 70px; }
+.ide-grid.split.rows .output { flex: 1; height: auto; min-height: calc(44px * var(--ctl)); }
+.ide-split { position: relative; display: flex; align-items: center; justify-content: center; touch-action: none; border-radius: 0; outline-offset: -2px; }
+.ide-split::before { content: ""; border-radius: 0; background: var(--ui-line); transition: background var(--t-fade), transform var(--t-tap) var(--ease-out); }
+.ide-split::after { content: ""; position: absolute; inset: -4px; }
+.rows > .ide-split { cursor: row-resize; }
+.rows > .ide-split::before { width: calc(44px * var(--ctl)); height: calc(4px * var(--ctl)); }
+.cols > .ide-split { cursor: col-resize; align-self: stretch; }
+.cols > .ide-split::before { width: calc(4px * var(--ctl)); height: calc(44px * var(--ctl)); }
+.ide-split:hover::before, .ide-split:focus-visible::before, .dragging > .ide-split::before { background: var(--yellow); }
+.rows > .ide-split:hover::before, .dragging.rows > .ide-split::before { transform: scaleX(1.4); }
+.cols > .ide-split:hover::before, .dragging.cols > .ide-split::before { transform: scaleY(1.4); }
+
+/* The output's header, with Pop out / Dock back (Explore). */
+.ide .out-wrap { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.ide .out-head { display: flex; align-items: center; gap: calc(8px * var(--sp)); padding: 0 calc(2px * var(--sp)) calc(6px * var(--sp)); min-width: 0; }
+.ide .out-title { font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ui-dim); flex: none; }
+.ide .out-of { font: 500 var(--text) var(--mono); color: var(--ui-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ide .out-head .ctl { flex: none; }
+/* Popped out: the Output dock panel (src/shell/panels/OutputPanel.tsx) fills its panel. */
+.ide.frameless.output-dock { padding: calc(8px * var(--sp)) calc(10px * var(--sp)) calc(10px * var(--sp)); gap: 0; }
+.ide.output-dock .out-wrap { flex: 1; }
+.ide.output-dock .output { flex: 1; height: auto; min-height: 0; }
+
+/* Rows from SQL or console.table. */
+.ide .result-table { overflow-x: auto; margin: calc(4px * var(--sp)) 0 calc(8px * var(--sp)); }
+.ide .result-table table { border-collapse: collapse; font: var(--text) var(--mono); }
+.ide .result-table th, .ide .result-table td { padding: calc(4px * var(--sp)) calc(10px * var(--sp)); border-bottom: 1px solid var(--ui-line); text-align: left; white-space: nowrap; }
+.ide .result-table th { color: var(--yellow); font-weight: 600; }
+.ide .result-table td { color: #e6e1d6; }
+.ide .result-table .hint { margin-top: calc(4px * var(--sp)); }
+
+/* Dropdowns: dark and consistent everywhere. The option list is drawn by the
+   system, so it gets explicit dark colours, or Windows shows it white. */
+.ide select,
+.ide .engine select {
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+  background-color: var(--ui-2);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23f3d77a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 12px 8px;
+  color: var(--ui-text);
+  border: 1px solid var(--ui-line);
+  border-radius: 0;
+  padding-right: calc(34px * var(--sp));
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.ide select:hover:not(:disabled),
+.ide .engine select:hover:not(:disabled) { border-color: rgba(243,215,122,.7); background-color: var(--ui-raise); }
+.ide select:focus-visible,
+.ide .engine select:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; border-color: var(--yellow); }
+.ide select:disabled,
+.ide .engine select:disabled { opacity: .5; cursor: default; }
+.ide select option,
+.ide .engine select option { background-color: var(--ui); color: var(--ui-text); }
+.ide select option:checked,
+.ide .engine select option:checked { background-color: #4a3f24; color: #f3d77a; }

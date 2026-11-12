@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn: the lesson studio (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* Mockup of the Learn lesson studio: outline | board | professor.
+     Dark graphite, square corners, Inter + JetBrains Mono, as in the app. */
+  :root { --bg:#16171a; --ui:#1d1f23; --ui-2:#25282d; --line:#33373e; --text:#e9eaec; --dim:#9aa0aa; --faint:#6c727c;
+          --yellow:#f3d77a; --green:#a8e0a0; --pink:#f2a7a0; --blue:#9fd3f0; --board:#1f3a31; --board-2:#244437; --chalk:#f1efe6; }
+  * { box-sizing: border-box; border-radius: 0; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 Inter, system-ui, sans-serif; height:100vh; display:flex; flex-direction:column; }
+  code, pre, kbd { font-family:"JetBrains Mono", Consolas, monospace; }
+  .top { height:40px; display:flex; align-items:center; gap:14px; padding:0 16px; border-bottom:1px solid var(--line); flex:none; }
+  .top b { color:var(--yellow); } .top .sp { flex:1; } .top span { color:var(--dim); }
+  .btn { font:600 12px Inter; color:var(--text); background:var(--ui-2); border:1px solid var(--line); padding:5px 10px; cursor:pointer; }
+  .btn.primary { background:var(--yellow); color:#22201a; border-color:transparent; }
+  .studio { flex:1; min-height:0; display:grid; grid-template-columns:232px minmax(0,1fr) 400px; }
+  .studio > * { min-height:0; overflow:auto; }
+  /* outline */
+  .outline { border-right:1px solid var(--line); background:var(--ui); padding:12px 0; display:flex; flex-direction:column; }
+  .eyebrow { font:600 10.5px Inter; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); padding:0 14px; margin:10px 0 6px; }
+  .step { display:grid; grid-template-columns:18px 1fr; gap:8px; padding:6px 14px; color:var(--dim); cursor:pointer; border-left:2px solid transparent; }
+  .step:hover { background:var(--ui-2); color:var(--text); }
+  .step.on { border-left-color:var(--yellow); background:var(--ui-2); color:var(--text); }
+  .step .m { color:var(--faint); } .step.done .m { color:var(--green); } .step.on .m { color:var(--yellow); }
+  .meter { margin:auto 14px 4px; } .meter i { display:block; height:4px; background:var(--line); } .meter i b { display:block; height:100%; width:42%; background:var(--yellow); }
+  .meter p { margin:6px 0 0; color:var(--faint); font-size:11.5px; }
+  /* board */
+  .main { padding:16px 20px; display:flex; flex-direction:column; gap:12px; }
+  .board { background:linear-gradient(160deg,var(--board-2),var(--board)); color:var(--chalk); padding:26px 30px; min-height:330px; box-shadow:inset 0 0 60px rgba(0,0,0,.45); border:8px solid #4d3420; }
+  .board h2 { margin:0 0 12px; font:650 24px/1.15 Inter; color:var(--yellow); }
+  .board p { margin:0 0 8px; font-size:16px; max-width:66ch; } .board b { color:var(--yellow); }
+  .board code { border:1.5px dashed rgba(159,211,240,.45); color:var(--blue); padding:1px 8px; }
+  .analogy { margin-top:14px; border-left:3px solid var(--yellow); background:rgba(0,0,0,.2); padding:10px 14px; max-width:66ch; font-size:14.5px; }
+  .analogy b { display:block; font-size:11px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:2px; }
+  .runex { margin-top:12px; display:inline-flex; gap:8px; align-items:center; font:600 12.5px Inter; color:var(--chalk); border:1.5px solid rgba(241,239,230,.45); background:transparent; padding:6px 12px; }
+  .bar { display:flex; gap:8px; align-items:center; background:var(--ui); border:1px solid var(--line); padding:8px 10px; }
+  .bar .sp { flex:1; } .bar span { color:var(--dim); font-size:12px; } kbd { font-size:10.5px; border:1px solid var(--line); padding:0 4px; color:var(--dim); }
+  /* professor */
+  .prof { border-left:1px solid var(--line); background:var(--ui); display:flex; flex-direction:column; overflow:hidden; }
+  .tabs { display:flex; border-bottom:1px solid var(--line); flex:none; }
+  .tabs button { flex:1; background:none; border:0; border-bottom:2px solid transparent; color:var(--dim); font:600 12px Inter; padding:10px 0; cursor:pointer; }
+  .tabs button.on { color:var(--text); border-bottom-color:var(--yellow); }
+  .tabs em { font-style:normal; background:var(--yellow); color:#22201a; font-size:10px; padding:0 5px; margin-left:4px; }
+  .thread { flex:1; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
+  .divider { text-align:center; color:var(--faint); font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+  .msg .who { font:600 11px Inter; color:var(--faint); margin-bottom:3px; display:flex; gap:8px; } .msg .who .acts { margin-left:auto; display:flex; gap:10px; }
+  .msg.you .body { background:var(--ui-2); border:1px solid var(--line); padding:8px 10px; }
+  .msg.prof .who b { color:var(--yellow); }
+  .msg p { margin:0 0 8px; } .msg p:last-child { margin:0; }
+  .msg code { background:#111214; padding:1px 5px; color:var(--blue); font-size:12px; }
+  .code { background:#111214; border:1px solid var(--line); margin:8px 0; }
+  .code header { display:flex; justify-content:space-between; padding:4px 10px; color:var(--faint); font-size:11px; border-bottom:1px solid var(--line); }
+  .code pre { margin:0; padding:10px; font-size:12px; line-height:1.55; overflow:auto; } .k { color:var(--pink); } .s { color:var(--green); } .c { color:var(--faint); }
+  .callout { border-left:3px solid var(--yellow); background:rgba(243,215,122,.07); padding:8px 10px; margin:8px 0; }
+  .wonder { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+  .wonder button { text-align:left; background:none; border:1px dashed var(--line); color:var(--dim); font:500 12px Inter; padding:5px 8px; cursor:pointer; }
+  .wonder button:hover { color:var(--text); border-color:var(--yellow); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; padding:8px 14px 0; flex:none; }
+  .chips button { background:var(--ui-2); border:1px solid var(--line); color:var(--text); font:500 12px Inter; padding:4px 9px; cursor:pointer; }
+  .composer { padding:10px 14px 12px; flex:none; }
+  .composer .box { border:1px solid var(--line); background:#111214; padding:8px 10px; display:flex; gap:8px; align-items:flex-end; }
+  .composer .box span { flex:1; color:var(--faint); } .composer p { margin:6px 0 0; color:var(--faint); font-size:11px; }
+</style>
+</head>
+<body>
+  <div class="top"><b>WalkMyCode</b> <span>Learn</span> <span>Mastering Rust · Foundations · Ownership</span><span class="sp"></span><button class="btn">Review 6 cards</button><button class="btn">← All lessons</button></div>
+  <div class="studio">
+    <nav class="outline">
+      <div class="eyebrow">This lesson</div>
+      <div class="step done"><span class="m">✓</span>Why ownership exists</div>
+      <div class="step done"><span class="m">✓</span>Stack and heap</div>
+      <div class="step on"><span class="m">●</span>Move</div>
+      <div class="step"><span class="m">○</span>Clone and Copy</div>
+      <div class="step"><span class="m">○</span>References and borrowing</div>
+      <div class="step"><span class="m">○</span>Slices</div>
+      <div class="eyebrow">Practise</div>
+      <div class="step"><span class="m">◇</span>ex01 · Fix the move</div>
+      <div class="step"><span class="m">◇</span>ex04 · First word (5 tests)</div>
+      <div class="step"><span class="m">?</span>Quiz</div>
+      <div class="step"><span class="m">✎</span>Explain it back</div>
+      <div class="meter"><i><b></b></i><p>3 of 10 boards · 0 of 6 exercises</p></div>
+    </nav>
+    <main class="main">
+      <section class="board">
+        <h2>Move: handing over the ticket</h2>
+        <p>A <b>String</b> is a small ticket on the stack that points at text on the heap.</p>
+        <p><code>let s2 = s1;</code> copies the ticket, not the text. Now only <b>s2</b> is valid.</p>
+        <p>Two valid tickets would mean two frees of one coat: a <b>double free</b>.</p>
+        <div class="analogy"><b>💡 Analogy</b>You give your cloakroom ticket to a friend. The coat never moves; only the ticket changes hands. Now you have no ticket, so you cannot collect the coat.</div>
+        <button class="runex">▶ Run the example · move_semantics.rs</button>
+      </section>
+      <div class="bar"><button class="btn">◀ Back</button><button class="btn primary">▶ Play</button><button class="btn">Next ▶</button><button class="btn">&lt;/&gt; Code</button><span class="sp"></span><span><kbd>←</kbd> <kbd>→</kbd> boards · <kbd>Space</kbd> play · <kbd>/</kbd> ask</span></div>
+    </main>
+    <aside class="prof">
+      <div class="tabs"><button class="on">Professor</button><button>Notebook</button><button>Recall <em>6</em></button></div>
+      <div class="thread">
+        <div class="divider">Yesterday · you stopped here</div>
+        <div class="msg you"><div class="who">You · board 3</div><div class="body">Why can't I use s1 after the move?</div></div>
+        <div class="msg prof">
+          <div class="who"><b>Professor</b><span class="acts">Copy · Save to notebook · Read aloud</span></div>
+          <p>Because <code>s1</code> gave its ticket away. Rust marks it as empty so nobody frees the same text twice.</p>
+          <div class="callout">💡 Your friend now holds the cloakroom ticket. You can still stand at the desk, but you have nothing to hand over.</div>
+          <div class="code"><header><span>rust</span><span>Copy · Open in editor</span></header><pre><span class="k">let</span> s1 = String::from(<span class="s">"hi"</span>);
+<span class="k">let</span> s2 = s1;          <span class="c">// ticket moves</span>
+println!(<span class="s">"{s2}"</span>);     <span class="c">// fine</span></pre></div>
+          <div class="wonder"><button>What if I really need two copies?</button><button>Does an integer move too?</button></div>
+        </div>
+      </div>
+      <div class="chips"><button>💡 Like I'm 10</button><button>🪜 Hint</button><button>🧪 Example</button><button>❓ Quiz me</button><button>🔗 Connect it</button></div>
+      <div class="composer"><div class="box"><span>Ask the professor anything…</span><button class="btn primary">Ask</button></div><p><kbd>Enter</kbd> send · <kbd>Shift Enter</kbd> new line · <kbd>↑</kbd> last question · <kbd>Esc</kbd> stop</p></div>
+    </aside>
+  </div>
+</body>
+</html>

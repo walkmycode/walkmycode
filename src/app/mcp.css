@@ -1,0 +1,55 @@
+/* WalkMyCode for Claude's own few styles (the MCP page only; layout.mcp.tsx loads them).
+   Everything else is the app's globals.css. */
+
+/* Whether Claude is listening: a pill in the top bar, a line on the board. */
+.claude-status { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); max-width: 100%; font: 600 var(--text) var(--sans); color: var(--ui-dim); white-space: nowrap; overflow: hidden; }
+.claude-status .claude-status-text { overflow: hidden; text-overflow: ellipsis; }
+.claude-status.bad { color: var(--pink); }
+.claude-status.busy { color: var(--yellow); }
+.top .claude-status { height: calc(30px * var(--ctl)); padding: 0 calc(10px * var(--sp)); border: 1px solid var(--ui-line); border-radius: 0; max-width: 46vw; }
+/* Responsive: the status gives way before the map's name does. Long lines shorten with "…", then only the dot
+   and its button stay (the full sentence is in the guide and the pill's tooltip). */
+/* The status line gives way first, shortening with "…", down to its dot (and its fix
+   button); .top .top-status outranks the app-wide "never shrink" rule in globals.css. */
+.top .top-status { flex: 0 1 auto; min-width: calc(34px * var(--ctl)); }
+.top .claude-status { min-width: calc(34px * var(--ctl)); flex: 0 1 auto; max-width: 34vw; }
+.top .claude-status .dot, .top .claude-status-fix { flex: none; }
+.top .claude-status .claude-status-text { min-width: 0; }
+.top .badge { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Narrowing, in order: the model name goes, the status line keeps only its dot and button, then the badge is just its dot. */
+@media (max-width: 900px) { .top .claude-status .claude-status-text { display: none; } .top .claude-status { padding: 0 calc(4px * var(--sp)) 0 calc(8px * var(--sp)); } }
+@media (max-width: 1180px) { .top .badge-model { display: none; } }
+@media (max-width: 900px) { .top .badge-provider { display: none; } }
+/* A phone keeps the coloured dot: still the state at a glance, still a way to Settings. */
+.claude-status { padding: 0; border: 0; background: none; cursor: pointer; text-align: left; }
+.claude-status:hover { border-color: var(--hair-2); color: var(--ui-text); }
+.claude-status-fix { margin-left: calc(4px * var(--sp)); padding: calc(3px * var(--sp)) calc(8px * var(--sp)); border-radius: 0; font: 600 var(--text) var(--sans); color: var(--ui-text); background: var(--ui-2); border: 1px solid var(--ui-line); }
+/* A phone keeps the coloured dot: still the state at a glance, and the way to Settings,
+   so the gear beside it goes. */
+@media (max-width: 560px) { .top .claude-status { padding: 0 calc(9px * var(--sp)); } .top .claude-status .claude-status-text, .top .claude-status-fix { display: none; } .top:has(.claude-status) .top-ai { display: none; } }
+.board .claude-wait { margin-top: calc(10px * var(--sp)); }
+.board .claude-wait .claude-status { white-space: normal; }
+.board p .claude-status { margin-left: calc(4px * var(--sp)); vertical-align: middle; }
+
+/* The start screen: what to say to Claude, with a copy button. */
+.mcp-start .mcp-say { display: flex; align-items: center; gap: calc(10px * var(--sp)); flex-wrap: wrap; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border: 1px dashed var(--ui-line); border-radius: 0; background: var(--ui-2); }
+.mcp-start .mcp-say code { font-size: var(--text); color: var(--ui-text); word-break: break-all; }
+.mcp-start label.note { display: flex; flex-direction: column; gap: calc(4px * var(--sp)); max-width: 420px; }
+/* The folder: typed, or picked in the system's own dialog, then opened here (McpStart). */
+.mcp-start .mcp-folder { display: flex; flex-wrap: wrap; align-items: center; gap: calc(8px * var(--sp)); margin-top: calc(4px * var(--sp)); }
+.mcp-start .mcp-folder .field { flex: 1 1 260px; min-width: 0; max-width: 520px; }
+
+/* Another tab took over, or the page is out of date. */
+.mcp-gone { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: calc(16px * var(--sp)); background: rgba(10, 9, 7, .72); }
+.mcp-gone .card { max-width: 460px; }
+
+/* What Talk heard, under the question box. */
+.talk-why[data-testid="talk-heard"] { font-style: italic; }
+/* Claude stopped listening, or the server is gone (src/components/mcp/ClaudeAlert.tsx): a strip under the bar. */
+.claude-alert { display: flex; align-items: center; gap: calc(10px * var(--sp)); padding: calc(8px * var(--sp)) calc(16px * var(--sp)); flex: none; background: rgba(242, 167, 160, .1); border-bottom: 1px solid rgba(242, 167, 160, .3); color: var(--ui-text); font-size: var(--text); animation: fade-in var(--t-fade) ease-out both; }
+.claude-alert p { margin: 0; flex: 1; min-width: 0; }
+.claude-alert .ctl { flex: none; }
+.claude-alert-x { flex: none; width: max(24px, calc(28px * var(--ctl))); height: max(24px, calc(28px * var(--ctl))); font-size: var(--text); font-weight: 650; line-height: 1; }
+.claude-alert { position: relative; }
+/* A phone: the words wrap beside the dot, Copy goes under them, × stays in the corner. */
+@media (max-width: 560px) { .claude-alert { flex-wrap: wrap; padding: calc(8px * var(--sp)) calc(40px * var(--sp)) calc(8px * var(--sp)) calc(10px * var(--sp)); } .claude-alert p { flex-basis: calc(100% - 24px); } .claude-alert .ctl { margin-left: calc(18px * var(--sp)); } .claude-alert-x { position: absolute; top: 4px; right: 4px; } }

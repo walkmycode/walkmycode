@@ -1,0 +1,17 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_x01TOOL","object":"response","created_at":1790000000,"model":"grok-4.3","status":"in_progress","output":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_x01TOOL","summary":[],"status":"completed","encrypted_content":"xai-synthetic-encrypted-reasoning-01"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_x01TOOL","call_id":"call_x01SEARCH","name":"search","arguments":"{\"query\":\"signin\"}","status":"completed"}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","id":"fc_x01TOOL","call_id":"call_x01SEARCH","name":"search","arguments":"{\"query\":\"signin\"}","status":"completed"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_x01TOOL","object":"response","created_at":1790000000,"model":"grok-4.3","status":"completed","output":[],"usage":{"input_tokens":3600,"output_tokens":70,"total_tokens":3670,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":50}}}}
+
+data: [DONE]
+

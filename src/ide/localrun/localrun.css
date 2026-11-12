@@ -1,0 +1,62 @@
+/* "Run on: This computer" and the terminal (src/ide/localrun): the consent
+   dialog, the Output | Terminal switch, and the terminals. WalkMyCode's tokens
+   (globals.css). */
+
+.lr-consent { max-width: min(560px, calc(100vw - 32px)); background: var(--ui); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(20px * var(--sp)) calc(22px * var(--sp)); font: var(--text)/1.55 var(--sans); box-shadow: 0 20px 60px rgba(0, 0, 0, .45); }
+.lr-consent::backdrop { background: rgba(10, 10, 8, .6); }
+.lr-consent h2 { margin: 0 0 calc(10px * var(--sp)); font: 600 var(--text)/1.3 var(--sans); }
+.lr-consent p { margin: 0 0 calc(10px * var(--sp)); }
+.lr-consent ul { margin: 0 0 calc(14px * var(--sp)); padding-left: calc(20px * var(--sp)); color: var(--ui-dim); }
+.lr-consent li { margin: calc(3px * var(--sp)) 0; }
+.lr-actions { display: flex; justify-content: flex-end; gap: calc(8px * var(--sp)); flex-wrap: wrap; }
+.lr-btn { font: 600 var(--text) var(--sans); color: var(--ui-text); background: var(--ui-2); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(8px * var(--sp)) calc(14px * var(--sp)); cursor: pointer; }
+.lr-btn.primary { background: var(--yellow); color: #2a241b; border-color: transparent; }
+.lr-btn:disabled { opacity: .5; cursor: default; }
+.lr-btn:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+.lr-err { color: var(--pink); }
+
+/* Output | Terminal. The controls below are written :is(.ide, body) …: inside the editor, ide.css's
+   ".ide button { font: inherit }" comes later in the bundle and would win a tie, so these outrank it.
+   One size with the panel's other buttons (Dock back, Pop out): 12px. */
+.out-tabs { display: inline-flex; gap: calc(2px * var(--sp)); background: var(--ui-2); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(2px * var(--sp)); flex: none; }
+:is(.ide, body) .out-tabs button { font: 600 var(--text) var(--sans); color: var(--ui-dim); background: none; border: 0; border-radius: 0; padding: calc(4px * var(--sp)) calc(9px * var(--sp)); cursor: pointer; }
+:is(.ide, body) .out-tabs button[aria-selected="true"] { background: var(--ui); color: var(--ui-text); }
+
+/* The output's lines from a run on this computer: the command, then how it ended. */
+.ide .output pre.meta { color: var(--ui-faint); font-size: var(--text); }
+
+/* The terminals: a strip of tabs over the one shown. */
+.lr-terms { display: flex; flex-direction: column; min-height: 0; min-width: 0; flex: 1; height: 240px; background: var(--out, #0f1512); border: 1px solid var(--ui-line); border-radius: 0; overflow: hidden; }
+.ide-grid.split.rows .lr-terms, .ide.output-dock .lr-terms { height: auto; }
+.lr-term-tabs { display: flex; align-items: center; gap: calc(2px * var(--sp)); padding: calc(3px * var(--sp)) calc(4px * var(--sp)); border-bottom: 1px solid var(--ui-line); overflow-x: auto; flex: none; }
+.lr-term-tab { display: inline-flex; align-items: center; gap: calc(2px * var(--sp)); border-radius: 0; flex: none; }
+.lr-term-tab.on { background: var(--ui-2); }
+:is(.ide, body) .lr-term-tab > button { font: 500 var(--text) var(--sans); color: var(--ui-dim); background: none; border: 0; padding: calc(3px * var(--sp)) calc(6px * var(--sp)); cursor: pointer; border-radius: 0; }
+:is(.ide, body) .lr-term-tab.on > button:first-child { color: var(--ui-text); }
+:is(.ide, body) .lr-term-tab .x { padding: calc(3px * var(--sp)) calc(5px * var(--sp)); }
+:is(.ide, body) .lr-term-tab .x:hover { color: var(--pink); }
+:is(.ide, body) .lr-term-tabs select, :is(.ide, body) .lr-term-tabs .add { font: 500 var(--text) var(--sans); background: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(2px * var(--sp)) calc(6px * var(--sp)); cursor: pointer; }
+.lr-term-tabs .sp { flex: 1; }
+.lr-term-note { margin: 0; padding: calc(4px * var(--sp)) calc(8px * var(--sp)); font: var(--text) var(--sans); color: var(--yellow); border-bottom: 1px solid var(--ui-line); flex: none; }
+.lr-term-body { flex: 1; min-height: 60px; position: relative; }
+.lr-term-body .xterm { position: absolute; inset: 4px 0 0 6px; }
+.lr-term-empty { margin: auto; color: var(--ui-dim); font-size: var(--text); padding: calc(12px * var(--sp)); text-align: center; }
+
+/* Settings → This computer. */
+.lr-pane { display: flex; flex-direction: column; gap: calc(14px * var(--sp)); }
+.lr-pane .lr-row { display: flex; align-items: center; gap: calc(10px * var(--sp)); flex-wrap: wrap; }
+.lr-pane input[type="number"] { width: 90px; font: 500 var(--text) var(--sans); background: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(6px * var(--sp)) calc(8px * var(--sp)); }
+.lr-tools { width: 100%; border-collapse: collapse; font-size: var(--text); }
+.lr-tools th, .lr-tools td { text-align: left; padding: calc(6px * var(--sp)) calc(8px * var(--sp)); border-bottom: 1px solid var(--ui-line); vertical-align: top; }
+.lr-tools th { color: var(--ui-dim); font-weight: 600; }
+.lr-tools code { font: var(--text) var(--mono); }
+.lr-tools .missing { color: var(--ui-dim); }
+.lr-tools .ok { color: var(--green, #9fd3a0); }
+.lr-state { font: 600 var(--text) var(--sans); padding: calc(3px * var(--sp)) calc(10px * var(--sp)); border-radius: 0; background: var(--ui-2); color: var(--ui-dim); }
+.lr-state.on { background: #4a3a1c; color: var(--yellow); }
+
+/* The top bar's Terminal button (./TerminalButton.tsx). */
+.term-btn .term-ico { font: 700 var(--text) var(--mono); color: var(--green); letter-spacing: -.5px; }
+.term-btn { position: relative; width: calc(34px * var(--ctl)); justify-content: center; padding-left: 0; padding-right: 0; }
+/* Its name on hover or keyboard focus, at once (a title would wait a second). */
+.term-btn[data-tip]:hover::after, .term-btn[data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: calc(4px * var(--sp)) calc(8px * var(--sp)); border-radius: 0; font: 600 var(--text) var(--sans); white-space: nowrap; color: var(--ui-text); background: var(--ui); border: 1px solid var(--ui-line); box-shadow: 0 6px 16px rgba(0,0,0,.4); pointer-events: none; z-index: 50; }

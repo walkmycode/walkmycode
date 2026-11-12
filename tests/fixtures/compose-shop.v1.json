@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "nodes": [
+    "file:services/orders/app/__init__.py",
+    "file:services/orders/app/billing.py",
+    "file:services/orders/app/db.py",
+    "file:services/orders/migrations/001.sql",
+    "file:services/users/migrations/001.sql",
+    "file:services/users/src/consumer.js",
+    "file:web/app/page.tsx",
+    "file:web/next.config.js",
+    "file:web/src/lib/api.ts",
+    "route:services/orders/app/main.py#GET /health",
+    "route:services/orders/app/main.py#POST /orders",
+    "route:services/users/src/index.js#GET /health",
+    "route:services/users/src/index.js#GET /users",
+    "route:services/users/src/index.js#GET /users/:id",
+    "route:services/users/src/index.js#POST /users",
+    "table:orders",
+    "table:users"
+  ],
+  "edges": [
+    "calls-route:file:web/app/page.tsx->route:services/orders/app/main.py#GET /health",
+    "calls-route:file:web/app/page.tsx->route:services/users/src/index.js#GET /health",
+    "calls-route:route:services/orders/app/main.py#POST /orders->route:services/users/src/index.js#GET /users",
+    "calls-route:route:services/orders/app/main.py#POST /orders->route:services/users/src/index.js#GET /users/:id",
+    "calls:route:services/orders/app/main.py#POST /orders->file:services/orders/app/db.py",
+    "defines:file:services/orders/migrations/001.sql->table:orders",
+    "defines:file:services/users/migrations/001.sql->table:users",
+    "writes:route:services/orders/app/main.py#POST /orders->table:orders",
+    "writes:route:services/orders/app/main.py#POST /orders->table:users"
+  ]
+}

@@ -1,0 +1,6 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_x01CUT","object":"response","created_at":1790000000,"model":"grok-4.3","status":"in_progress","output":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_x01CUT","output_index":0,"content_index":0,"delta":"Sign-in lives in src/auth.ts."}
+

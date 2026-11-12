@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn: the analogy view and the professor's face (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* Mockup: (1) the analogy view, full width; (2) the professor's face. One text size (13px),
+     bold instead of bigger, square corners, dark graphite. Press Step: it really steps. */
+  :root { --bg:#16171a; --ui:#1d1f23; --ui-2:#25282d; --line:#33373e; --text:#e9eaec; --dim:#9aa0aa; --faint:#6c727c;
+          --yellow:#f3d77a; --green:#a8e0a0; --pink:#f2a7a0; --blue:#9fd3f0; --m:1; }
+  @media (prefers-reduced-motion: reduce) { :root { --m:0; } }
+  * { box-sizing:border-box; border-radius:0; font-size:13px; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 Inter, system-ui, sans-serif; padding:20px; display:flex; flex-direction:column; gap:28px; }
+  code, pre, kbd, .mono { font-family:"JetBrains Mono", Consolas, monospace; }
+  h1 { margin:0; font-weight:650; color:var(--yellow); } p { margin:0; }
+  .eyebrow { font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+  .btn { font:600 13px Inter; color:var(--text); background:var(--ui-2); border:1px solid var(--line); padding:5px 10px; cursor:pointer; }
+  .btn.primary { background:var(--yellow); color:#22201a; border-color:transparent; }
+  .btn[aria-pressed=true] { border-color:var(--yellow); color:var(--yellow); }
+  kbd { border:1px solid var(--line); padding:0 4px; color:var(--dim); }
+
+  /* ── 1. The analogy view ── */
+  .scene { border:1px solid var(--line); background:var(--ui); }
+  .scene > header { display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid var(--line); }
+  .scene > header b { color:var(--yellow); font-weight:650; } .scene > header .sp { flex:1; }
+  .lanes { display:grid; grid-template-columns:1fr 1fr; }
+  .lane { padding:16px 18px 20px; min-width:0; } .lane + .lane { border-left:1px solid var(--line); }
+  .lane .eyebrow { margin-bottom:12px; display:flex; justify-content:space-between; }
+  .actors { display:flex; gap:14px; }
+  .actor { flex:1; border:1.5px solid var(--line); background:var(--ui-2); min-height:104px; padding:8px 10px; display:flex; flex-direction:column; gap:8px;
+           transition:opacity calc(.3s * var(--m)), border-color calc(.2s * var(--m)); }
+  .actor .name { font-weight:650; display:flex; justify-content:space-between; } .actor .name span { color:var(--faint); font-weight:500; }
+  .actor.off { opacity:.4; border-style:dashed; } .actor.off .name::after { content:"cannot use"; color:var(--pink); font-weight:600; }
+  .actor.lit, .thing.lit, pre .ln.lit { border-color:var(--yellow); outline:1px solid var(--yellow); }
+  .slot { flex:1; display:flex; align-items:center; justify-content:center; min-height:44px; }
+  .thing { border:1.5px solid var(--yellow); color:var(--yellow); background:rgba(243,215,122,.08); padding:6px 12px; font-weight:650; white-space:nowrap;
+           transition:transform calc(.48s * var(--m)) cubic-bezier(.2,.9,.3,1.15), opacity calc(.3s * var(--m)); }
+  .thing.lent { border-style:dashed; opacity:.75; } .thing.gone { opacity:0; transform:translateY(14px) scale(.9); }
+  pre { margin:14px 0 0; background:#111214; border:1px solid var(--line); padding:8px 0; line-height:1.7; overflow:auto; }
+  pre .ln { display:block; padding:0 12px; border-left:2px solid transparent; color:var(--dim); }
+  pre .ln.now { border-left-color:var(--yellow); background:rgba(243,215,122,.08); color:var(--text); }
+  .k { color:var(--pink); } .s { color:var(--green); } .c { color:var(--faint); font-style:italic; }
+  .say { padding:12px 18px; border-top:1px solid var(--line); display:grid; grid-template-columns:1fr 1fr; gap:36px; min-height:66px; }
+  .say p b { color:var(--yellow); } .say .eyebrow { margin-bottom:2px; }
+  .foot { display:grid; grid-template-columns:auto 1fr 1fr; gap:18px; align-items:start; padding:12px 18px; border-top:1px solid var(--line); }
+  .stepper { display:flex; gap:6px; align-items:center; } .dots { display:flex; gap:4px; margin:0 6px; } .dots i { width:16px; height:4px; background:var(--line); } .dots i.on { background:var(--yellow); }
+  .rule { border-left:3px solid var(--yellow); padding-left:10px; } .rule b { font-weight:650; }
+  .breaks { border-left:3px solid var(--pink); padding-left:10px; color:var(--dim); }
+  .map { display:flex; flex-wrap:wrap; gap:6px 14px; padding:10px 18px; border-top:1px solid var(--line); color:var(--dim); }
+  .map span b { color:var(--yellow); font-weight:650; } .map span code { color:var(--blue); }
+
+  /* ── 2. The professor's face ── */
+  .faces { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px; }
+  .face { border:1px solid var(--line); background:var(--ui); padding:16px; display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
+  .face p { color:var(--dim); }
+  svg.prof { width:112px; height:112px; }
+  .prof .head { fill:#111214; stroke:var(--text); stroke-width:2.5; }
+  .prof .band, .prof .boom { fill:none; stroke:var(--yellow); stroke-width:3; } .prof .cup, .prof .mic { fill:var(--yellow); }
+  .prof .eye, .prof .mouth { fill:var(--text); }
+  .prof .eye { transform-box:fill-box; transform-origin:center; animation:blink 4.6s infinite; }
+  .prof .mouth { transform-box:fill-box; transform-origin:center; }
+  .talk .mouth { animation:talk .42s steps(4) infinite; }
+  .think .eye { animation:look 2.4s ease-in-out infinite; } .think .mouth { transform:scaleX(.45); }
+  .listen .cup { animation:pulse 1.1s ease-in-out infinite; } .listen .mouth { transform:scaleX(.6); }
+  @keyframes blink { 0%, 94%, 100% { transform:scaleY(1); } 97% { transform:scaleY(.1); } }
+  @keyframes talk { 0% { transform:scaleY(1); } 25% { transform:scaleY(3.4); } 50% { transform:scaleY(1.8) scaleX(.8); } 75% { transform:scaleY(4.2) scaleX(.9); } }
+  @keyframes look { 0%, 100% { transform:translateX(-3px); } 50% { transform:translateX(3px); } }
+  @keyframes pulse { 50% { opacity:.35; } }
+  @media (prefers-reduced-motion: reduce) { .prof * { animation:none !important; } }
+  .cap { border:1px solid var(--line); background:var(--ui); padding:12px 16px; display:flex; gap:14px; align-items:center; }
+  .cap svg.prof { width:56px; height:56px; flex:none; } .cap .words b { color:var(--yellow); } .cap .words span { color:var(--faint); }
+  @media (max-width:760px) { .lanes, .say { grid-template-columns:1fr; } .lane + .lane { border-left:0; border-top:1px solid var(--line); } .foot { grid-template-columns:1fr; } .faces { grid-template-columns:1fr 1fr; } }
+</style>
+</head>
+<body>
+  <div>
+    <h1>1 · The analogy view</h1>
+    <p style="color:var(--dim)">Opened from a board's 💡 with "Watch it happen". The outline and the professor step aside so it has the full width; "Side panels" brings them back and the choice is remembered. Hover a child, the toy or a line of code: its counterpart lights up on the other side.</p>
+  </div>
+
+  <section class="scene" id="scene">
+    <header><span>💡</span><b>Handing a toy to a friend</b><span style="color:var(--dim)">Move · board 4 of 18</span><span class="sp"></span><button class="btn" aria-pressed="false">Side panels</button><button class="btn">Close</button></header>
+    <div class="lanes">
+      <div class="lane">
+        <p class="eyebrow"><span>The picture</span><span>playroom</span></p>
+        <div class="actors">
+          <div class="actor" data-id="a"><p class="name">Emily</p><div class="slot"></div></div>
+          <div class="actor" data-id="b"><p class="name">Jack</p><div class="slot"></div></div>
+        </div>
+      </div>
+      <div class="lane">
+        <p class="eyebrow"><span>In Rust</span><span>the same thing, for real</span></p>
+        <div class="actors">
+          <div class="actor" data-id="a"><p class="name mono">s1 <span>a variable</span></p><div class="slot"></div></div>
+          <div class="actor" data-id="b"><p class="name mono">s2 <span>a variable</span></p><div class="slot"></div></div>
+        </div>
+        <pre><span class="ln" data-ln="1"><span class="k">let</span> s1 = String::from(<span class="s">"hello"</span>);</span><span class="ln" data-ln="2"><span class="k">let</span> s2 = s1;</span><span class="ln" data-ln="3">println!(<span class="s">"{s1}"</span>);  <span class="c">// error E0382</span></span><span class="ln" data-ln="4">}  <span class="c">// end of scope</span></span></pre>
+      </div>
+    </div>
+    <div class="say"><div><p class="eyebrow">In the playroom</p><p id="sayA"></p></div><div><p class="eyebrow">In the program</p><p id="sayR"></p></div></div>
+    <div class="map"><span><b>a child</b> = <code>a variable</code></span><span><b>the toy</b> = <code>the text on the heap</code></span><span><b>handing it over</b> = <code>a move</code></span><span><b>going home</b> = <code>end of scope</code></span></div>
+    <div class="foot">
+      <div class="stepper"><button class="btn" id="prev">◀</button><button class="btn primary" id="play">▶ Play</button><button class="btn" id="next">Step ▶</button><span class="dots" id="dots"></span><button class="btn" id="replay">↺</button></div>
+      <p class="rule"><span class="eyebrow">The rule</span><br><b>A value has one owner. Assigning it moves it, and the old name can no longer be used.</b></p>
+      <p class="breaks"><span class="eyebrow">Where the picture breaks</span><br>Emily could ask for her toy back. In Rust, <code>s1</code> never gets it back unless <code>s2</code> gives it away again.</p>
+    </div>
+  </section>
+
+  <div>
+    <h1>2 · The professor's face</h1>
+    <p style="color:var(--dim)">An original character: a square chalk-line head, two eyes, a headset with a boom microphone, and a mouth that opens with the loudness of the voice actually playing. It blinks, looks side to side while thinking, and its ear cup pulses while it listens. Still when motion is off; switchable off in Settings → Voice.</p>
+  </div>
+  <div class="faces">
+    <div class="face"><svg class="prof" viewBox="0 0 64 64"><use href="#prof"/></svg><b>Idle</b><p>Blinks now and then.</p></div>
+    <div class="face talk"><svg class="prof" viewBox="0 0 64 64"><use href="#prof"/></svg><b>Speaking</b><p>Mouth follows the voice's loudness.</p></div>
+    <div class="face think"><svg class="prof" viewBox="0 0 64 64"><use href="#prof"/></svg><b>Thinking</b><p>While the answer is on its way.</p></div>
+    <div class="face listen"><svg class="prof" viewBox="0 0 64 64"><use href="#prof"/></svg><b>Listening</b><p>While you speak a question.</p></div>
+  </div>
+  <div class="cap talk"><svg class="prof" viewBox="0 0 64 64"><use href="#prof"/></svg><p class="words"><b>Writing let s2 = s1 gives your</b> <span>coat ticket to a friend. The coat never moves.</span></p></div>
+
+  <svg width="0" height="0" style="position:absolute"><defs><g id="prof">
+    <path class="band" d="M12 30 V22 a20 20 0 0 1 40 0 V30"/>
+    <rect class="head" x="14" y="16" width="36" height="36"/>
+    <rect class="cup" x="8" y="26" width="7" height="14"/><rect class="cup" x="49" y="26" width="7" height="14"/>
+    <path class="boom" d="M12 40 V50 H26"/><rect class="mic" x="25" y="47" width="7" height="6"/>
+    <rect class="eye" x="23" y="26" width="4" height="9"/><rect class="eye" x="37" y="26" width="4" height="9"/>
+    <rect class="mouth" x="27" y="42" width="10" height="2"/>
+  </g></defs></svg>
+
+<script>
+  // The scene is data: who holds what at each step. The same data draws both sides.
+  const steps = [
+    { ln: 1, at: "a", a: "<b>Emily</b> has a toy. It is hers.", r: "<b>s1</b> owns the text <code>\"hello\"</code>." },
+    { ln: 2, at: "b", off: ["a"], a: "Emily hands the toy to <b>Jack</b>. Now only Jack has it.", r: "<code>let s2 = s1;</code> moves the text to <b>s2</b>. <b>s1</b> is empty." },
+    { ln: 3, at: "b", off: ["a"], a: "Emily reaches for the toy. Her hands are empty.", r: "Using <b>s1</b> now is error <b>E0382</b>: borrow of moved value." },
+    { ln: 4, at: null, off: ["a", "b"], a: "Jack goes home. His toy is tidied away.", r: "The scope ends: <b>s2</b> is dropped and the text is freed, once." },
+  ];
+  const scene = document.getElementById("scene"); let i = 0, timer = null;
+  const lanes = [...scene.querySelectorAll(".lane")];
+  const things = lanes.map((lane, k) => { const t = document.createElement("div"); t.className = "thing"; t.dataset.id = "t"; t.textContent = k ? '"hello"' : "🧸 toy"; return t; });
+  const dots = document.getElementById("dots"); steps.forEach(() => dots.appendChild(document.createElement("i")));
+  function draw(move) {
+    const s = steps[i];
+    lanes.forEach((lane, k) => {
+      const t = things[k], before = t.isConnected ? t.getBoundingClientRect() : null;
+      lane.querySelectorAll(".actor").forEach((a) => a.classList.toggle("off", (s.off || []).includes(a.dataset.id)));
+      if (s.at) { lane.querySelector(`.actor[data-id="${s.at}"] .slot`).appendChild(t); t.classList.remove("gone"); } else t.classList.add("gone");
+      if (move && before && s.at) { const after = t.getBoundingClientRect(); t.style.transition = "none"; t.style.transform = `translate(${before.left - after.left}px, ${before.top - after.top}px)`; t.getBoundingClientRect(); t.style.transition = ""; t.style.transform = ""; }
+    });
+    scene.querySelectorAll("pre .ln").forEach((l) => l.classList.toggle("now", +l.dataset.ln === s.ln));
+    document.getElementById("sayA").innerHTML = s.a; document.getElementById("sayR").innerHTML = s.r;
+    [...dots.children].forEach((d, k) => d.classList.toggle("on", k <= i));
+  }
+  const go = (n) => { i = Math.max(0, Math.min(steps.length - 1, n)); draw(true); };
+  document.getElementById("next").onclick = () => go(i + 1); document.getElementById("prev").onclick = () => go(i - 1);
+  document.getElementById("replay").onclick = () => go(0);
+  document.getElementById("play").onclick = () => { clearInterval(timer); go(0); timer = setInterval(() => (i < steps.length - 1 ? go(i + 1) : clearInterval(timer)), 1600); };
+  // Linked: hover one side, its counterpart lights up on the other.
+  scene.addEventListener("mouseover", (e) => { const el = e.target.closest("[data-id]"); if (el) scene.querySelectorAll(`[data-id="${el.dataset.id}"]`).forEach((x) => x.classList.add("lit")); });
+  scene.addEventListener("mouseout", () => scene.querySelectorAll(".lit").forEach((x) => x.classList.remove("lit")));
+  draw(false);
+</script>
+</body>
+</html>

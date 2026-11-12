@@ -1,0 +1,21 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_01TEXT","object":"response","created_at":1790000000,"model":"gpt-6.1-sol-2026-09-01","status":"in_progress","output":[]}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_01TEXT","object":"response","created_at":1790000000,"model":"gpt-6.1-sol-2026-09-01","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"type":"message","id":"msg_01TEXT","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":3,"item_id":"msg_01TEXT","output_index":0,"content_index":0,"delta":"Sign-in lives in "}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":4,"item_id":"msg_01TEXT","output_index":0,"content_index":0,"delta":"src/auth.ts."}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"type":"message","id":"msg_01TEXT","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Sign-in lives in src/auth.ts.","annotations":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_01TEXT","object":"response","created_at":1790000000,"model":"gpt-6.1-sol-2026-09-01","status":"completed","incomplete_details":null,"output":[],"usage":{"input_tokens":3500,"input_tokens_details":{"cached_tokens":3072},"output_tokens":20,"output_tokens_details":{"reasoning_tokens":8},"total_tokens":3520}}}
+

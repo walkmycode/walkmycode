@@ -1,0 +1,15 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_01CUT","object":"response","created_at":1790000000,"model":"gpt-6.1-sol-2026-09-01","status":"in_progress","output":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"message","id":"msg_01CUT","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_01CUT","output_index":0,"content_index":0,"delta":"The sign-in flow starts at"}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"type":"message","id":"msg_01CUT","status":"incomplete","role":"assistant","content":[{"type":"output_text","text":"The sign-in flow starts at","annotations":[]}]}}
+
+event: response.incomplete
+data: {"type":"response.incomplete","sequence_number":4,"response":{"id":"resp_01CUT","object":"response","created_at":1790000000,"model":"gpt-6.1-sol-2026-09-01","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{"input_tokens":3500,"input_tokens_details":{"cached_tokens":0},"output_tokens":16000,"output_tokens_details":{"reasoning_tokens":15990},"total_tokens":19500}}}
+

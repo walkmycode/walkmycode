@@ -1,0 +1,106 @@
+{
+  "manifest_version": "0.3",
+  "name": "walkmycode",
+  "display_name": "WalkMyCode",
+  "version": "0.1.1",
+  "license": "AGPL-3.0-only",
+  "description": "A live map of your code in the browser that Claude drives while it explains: cards light up, files open at the right lines, tours play aloud.",
+  "long_description": "Say \"open WalkMyCode on ~/code/my-app\" and WalkMyCode maps the folder on your computer and opens its page in your browser. From then on Claude drives the page while it explains (cards light up, files open at the right lines, paths draw, tours play aloud), and the page drives Claude: Explain, Trace it, Tour, a typed question or one said out loud reach Claude as requests. Every answer runs on your own Claude plan; WalkMyCode never sees your Claude sign-in. The page server listens on 127.0.0.1 only, with a key for each launch; .env files and keys are never read or shown. Voice keys you add in the page's Settings stay in ~/.walkmycode/keys.env.",
+  "author": {
+    "name": "WalkMyCode"
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "server/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/server.mjs"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "walkmycode_open",
+      "description": "Map a local codebase and open WalkMyCode's page in the user's browser."
+    },
+    {
+      "name": "next_request",
+      "description": "Wait for the next thing the user does on WalkMyCode's page: Explain, Trace it, Tour, a typed or spoken question."
+    },
+    {
+      "name": "answer",
+      "description": "Show an answer in the page's Guide panel; its citations light up."
+    },
+    {
+      "name": "narrate",
+      "description": "Say a short chunk out loud on the page; chunks play in order."
+    },
+    {
+      "name": "focus_node",
+      "description": "Select a card on the map and bring it into view."
+    },
+    {
+      "name": "open_file",
+      "description": "Open a file in the page's code view, scrolled to a line."
+    },
+    {
+      "name": "highlight_lines",
+      "description": "Light up lines of a file in the page's code view."
+    },
+    {
+      "name": "trace_path",
+      "description": "Light up the path between two cards on the map, hop by hop."
+    },
+    {
+      "name": "start_tour",
+      "description": "Hand the page a guided tour, played aloud step by step."
+    },
+    {
+      "name": "tour_step",
+      "description": "Jump the page's tour to a step."
+    },
+    {
+      "name": "show_view",
+      "description": "Switch the map's view: the system, every card, or one service."
+    },
+    {
+      "name": "query_map",
+      "description": "Look up what a card is connected to, with file:line evidence for every link."
+    },
+    {
+      "name": "read_file",
+      "description": "Read a file of the workspace with line numbers."
+    },
+    {
+      "name": "search",
+      "description": "Find lines containing some text across the workspace."
+    },
+    {
+      "name": "list_files",
+      "description": "List the workspace's folders and files, or the ones matching a glob."
+    },
+    {
+      "name": "walkmycode_new_project",
+      "description": "Open the page's New project form (Laravel, Next.js, Vite + React, FastAPI, Express): WalkMyCode installs what it needs, makes it and sets it up while the user watches."
+    }
+  ],
+  "keywords": [
+    "codebase",
+    "map",
+    "tour",
+    "explain",
+    "voice",
+    "onboarding"
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

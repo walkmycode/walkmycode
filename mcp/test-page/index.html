@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WalkMyCode (test page)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #faf8f3;
+        --fg: #1f1d1a;
+        --muted: #6b665e;
+        --line: #d9d3c7;
+        --accent: #b8860b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1b1a18;
+          --fg: #ece8df;
+          --muted: #a39d92;
+          --line: #3a3732;
+          --accent: #e0b44c;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.45 system-ui, sans-serif;
+        max-width: 900px;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: baseline;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 8px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+        color: var(--accent);
+      }
+      h2 {
+        font-size: 15px;
+        margin: 20px 0 6px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      form {
+        display: grid;
+        gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        align-items: end;
+      }
+      label {
+        display: grid;
+        gap: 2px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        padding: 4px 6px;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        border-color: var(--accent);
+      }
+      #text {
+        grid-column: 1 / -1;
+      }
+      ol,
+      ul {
+        padding-left: 20px;
+      }
+      pre {
+        white-space: pre-wrap;
+        margin: 4px 0;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>WalkMyCode</h1>
+      <span class="muted">test page for the MCP bridge (phase A)</span>
+      <span id="conn">connecting…</span>
+      <strong id="claude"></strong>
+    </header>
+
+    <h2>Workspace</h2>
+    <p id="workspace" class="muted">No map yet: ask Claude to open WalkMyCode on a folder.</p>
+    <datalist id="nodes"></datalist>
+
+    <h2>Ask Claude</h2>
+    <form id="ask">
+      <label>Kind
+        <select id="kind">
+          <option value="question">question (typed)</option>
+          <option value="spoken">spoken</option>
+          <option value="explain">explain</option>
+          <option value="trace">trace</option>
+          <option value="tour">tour</option>
+          <option value="deep">deep (voice agent)</option>
+        </select>
+      </label>
+      <label>File <input id="file" placeholder="lib/auth.ts" /></label>
+      <label>From line <input id="from" type="number" min="1" /></label>
+      <label>To line <input id="to" type="number" min="1" /></label>
+      <label>Card id <input id="node" list="nodes" placeholder="file:lib/auth.ts" /></label>
+      <label>To card (trace) <input id="toNode" list="nodes" /></label>
+      <label id="text">Text <input id="question" placeholder="Where does sign-in happen?" /></label>
+      <button type="submit">Send to Claude</button>
+    </form>
+
+    <h2>Requests</h2>
+    <ul id="requests"></ul>
+
+    <h2>From Claude</h2>
+    <ol id="log"></ol>
+
+    <script type="module" src="page.js"></script>
+  </body>
+</html>

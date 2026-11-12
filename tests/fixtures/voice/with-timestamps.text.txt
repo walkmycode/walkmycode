@@ -1,0 +1,1 @@
+The cart checks stock first. Then it charges the card.

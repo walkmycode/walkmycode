@@ -1,0 +1,72 @@
+# Checks every pull request to main, on Linux and Windows, and runs when
+# started by hand (Actions → CI → Run workflow). Not on every push: the repo is
+# private and Windows minutes count double (Linux 1×, Windows 2×).
+#
+# No macOS, by the owner's decision (Oct 2026): WalkMyCode is Windows and Linux
+# until there is demand for a Mac version. Don't add macOS runners here.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      # Files exactly as the repository stores them. Windows runners default to
+      # core.autocrlf=true, which rewrites the test fixtures' line endings (a
+      # developer's clone here doesn't).
+      - name: Line endings as stored
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Quoted so the test runner, not the shell, expands the glob (the same on every OS).
+      - name: Tests
+        run: npx tsx --conditions=react-server --test --test-concurrency=2 "tests/**/*.test.ts"
+
+      - name: Build the MCP server and plugin
+        run: npm run build:mcp
+
+      - name: MCP smoke test (stdio, like an AI app)
+        run: npm run smoke:mcp
+
+      # The real page in headless Chrome against the real server. GitHub's Linux,
+      # macOS and Windows runners all come with Chrome installed.
+      - name: MCP end-to-end
+        run: npm run e2e:mcp
+      # Every control on the page clicked, then again with the server stopped (mcp/sweep.mjs).
+      - name: MCP sweep of every control
+        run: npm run sweep:mcp
+      # The same for the full app: every room, panel and setting, a phone, and the server stopped (scripts/sweep-app.mjs).
+      - name: App sweep of every control
+        run: npm run sweep:app

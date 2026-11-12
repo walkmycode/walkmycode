@@ -1,0 +1,57 @@
+# The package as people get it: installs walkmycode-mcp from npm on fresh Linux and Windows machines
+# and runs the smoke test (stdio, like an AI app) and the end-to-end test (the real page in headless
+# Chrome) against that install, not the repo's build. Started by hand after a publish:
+# Actions → Published package → Run workflow. No macOS (owner's decision, Oct 2026).
+name: Published package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to test (an npm tag or number)
+        default: latest
+
+permissions:
+  contents: read
+
+jobs:
+  installed:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Line endings as stored
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      # The tests' own tools (the MCP client, Playwright); the server comes from npm below.
+      - name: Install the test tools
+        run: npm ci
+
+      - name: Install walkmycode-mcp from npm
+        shell: bash
+        run: |
+          npm install -g "walkmycode-mcp@${{ inputs.version }}"
+          dir="$(npm root -g)/walkmycode-mcp"
+          echo "installed: $(node -p "require('$dir/package.json').version") at $dir"
+          echo "WALKMYCODE_SERVER=$dir/server.mjs" >> "$GITHUB_ENV"
+
+      - name: Smoke test against the installed package
+        run: npm run smoke:mcp
+
+      - name: End-to-end against the installed package
+        run: npm run e2e:mcp
+
+      - name: The command-line entry starts
+        shell: bash
+        run: walkmycode-mcp --help | head -5

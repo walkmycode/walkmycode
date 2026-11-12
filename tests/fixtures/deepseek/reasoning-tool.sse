@@ -1,0 +1,18 @@
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"reasoning_content":"The question is about sign-in. "},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"reasoning_content":"Search first."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_00_d01SEARCH","type":"function","function":{"name":"search","arguments":""}}]},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"query\":"}}]},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"signin\"}"}}]},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"content":""},"logprobs":null,"finish_reason":"tool_calls"}]}
+
+data: {"id":"d01TOOL","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[],"usage":{"prompt_tokens":3500,"completion_tokens":60,"total_tokens":3560,"prompt_tokens_details":{"cached_tokens":3200},"prompt_cache_hit_tokens":3200,"prompt_cache_miss_tokens":300,"completion_tokens_details":{"reasoning_tokens":40}}}
+
+data: [DONE]
+

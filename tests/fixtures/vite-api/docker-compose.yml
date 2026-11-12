@@ -1,0 +1,14 @@
+# A Vite front end and two APIs. Nothing here gives the front end VITE_API_URL.
+services:
+  web:
+    build: ./web
+    ports:
+      - "5173:5173"
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+  admin:
+    build: ./admin
+    ports:
+      - "8100:8100"

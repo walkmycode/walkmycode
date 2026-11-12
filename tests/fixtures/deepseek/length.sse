@@ -1,0 +1,10 @@
+data: {"id":"d01CUT","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01CUT","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"content":"The sign-in flow starts at"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"d01CUT","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[{"index":0,"delta":{"content":""},"logprobs":null,"finish_reason":"length"}]}
+
+data: {"id":"d01CUT","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-v4-flash","system_fingerprint":"fp_synthetic","choices":[],"usage":{"prompt_tokens":3500,"completion_tokens":8000,"total_tokens":11500,"prompt_tokens_details":{"cached_tokens":0},"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":3500}}
+
+data: [DONE]
+

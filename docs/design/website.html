@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WalkMyCode · Find your way around the code you generated</title>
+<meta name="description" content="Walk through any codebase: a map, guided tours and a voice that explains. Free and open source; your own Claude does the explaining.">
+<link rel="icon" href="../brand/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* Mockup (docs/design) of walkmycode.com: one page, the brand of docs/brand/BRAND.md. */
+:root {
+  --wall: #23201c; --raised: #2d2924; --panel: #2e2a25; --panel-2: #3a352e; --line: #4a443c;
+  --glow: #f3d77a; --on-glow: #2a2112;
+  --board: #1f3a31; --board-2: #244437; --wood: #6b4a2b; --wood-2: #4d3420;
+  --chalk: #f1efe6; --dim: #b8ae9c;
+  --l-pages: #9fd3f0; --l-api: #f3d77a; --l-logic: #e0c9a6; --l-data: #a8e0a0; --l-out: #f2a7a0;
+  --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+  --hand: "Kalam", "Segoe Print", cursive; --title: "Caveat", cursive;
+  --wrap: min(1360px, 100% - clamp(32px, 6vw, 112px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: radial-gradient(120% 80% at 50% -10%, #2d2924 0%, var(--wall) 55%); color: var(--chalk); font: 16px/1.6 var(--sans); }
+a { color: var(--glow); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wrap { width: var(--wrap); margin: 0 auto; }
+:focus-visible { outline: 2px solid var(--glow); outline-offset: 3px; border-radius: 6px; }
+
+/* ── Top bar ── */
+header.top { position: sticky; top: 0; z-index: 10; background: rgba(35,32,28,.82); backdrop-filter: blur(10px); border-bottom: 1px solid #ffffff0d; }
+header.top .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 2px; font: 700 30px/1 var(--title); color: var(--chalk); }
+.brand:hover { text-decoration: none; }
+.brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--glow); box-shadow: 0 0 10px 3px #f3d77a88; margin: -12px 0 0 3px; }
+/* One row, one height: every link and the button centred on the bar's middle line. */
+nav.links { display: flex; align-items: center; gap: 2px; margin-left: auto; font-size: 14px; }
+nav.links a:not(.btn) { display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 8px; color: var(--dim); font-weight: 500; }
+nav.links a:not(.btn):hover { color: var(--chalk); background: var(--raised); text-decoration: none; }
+nav.links .btn { height: 36px; margin-left: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 10px; font: 600 14px var(--sans); border: 1px solid var(--line); color: var(--chalk); background: var(--raised); cursor: pointer; }
+.btn:hover { text-decoration: none; border-color: #6a6257; }
+.btn.primary { background: var(--glow); color: var(--on-glow); border-color: var(--glow); }
+.btn.primary:hover { background: #f7e19a; }
+@media (max-width: 760px) { nav.links a:not(.btn) { display: none; } }
+
+/* ── Hero ── */
+.hero { padding: clamp(40px, 7vw, 96px) 0 clamp(40px, 6vw, 80px); }
+.hero .grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(28px, 4vw, 64px); align-items: center; }
+@media (max-width: 1000px) { .hero .grid { grid-template-columns: 1fr; } }
+.kicker { display: inline-flex; align-items: center; gap: 10px; font: 600 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--glow); }
+.kicker::before { content: ""; width: 26px; height: 1px; background: var(--glow); }
+h1 { font: 800 clamp(38px, 5.2vw, 68px)/1.02 var(--sans); letter-spacing: -.03em; margin: 16px 0 18px; }
+h1 em { font: 700 1.12em/1 var(--title); letter-spacing: 0; color: var(--glow); font-style: normal; }
+.lede { font-size: clamp(17px, 1.5vw, 20px); color: var(--dim); max-width: 34em; margin: 0 0 28px; }
+.ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ctas .note { font-size: 13px; color: var(--dim); width: 100%; margin-top: 4px; }
+
+/* The board: a little map, and the light walking it. */
+.frame { background: linear-gradient(145deg, var(--wood), var(--wood-2)); padding: 12px; border-radius: 14px; box-shadow: 0 40px 80px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12); }
+.board { position: relative; border-radius: 6px; background: radial-gradient(120% 120% at 30% 20%, var(--board-2), var(--board)); overflow: hidden; }
+.board svg { display: block; width: 100%; height: auto; }
+.board .say { position: absolute; right: 14px; bottom: 14px; max-width: min(320px, 60%); padding: 12px 14px; border-radius: 10px; background: rgba(23,44,36,.92); border: 1px solid rgba(241,239,230,.18); font: 15px/1.45 var(--hand); color: var(--chalk); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.board .say b { color: var(--glow); font-weight: 700; }
+.board .say code { font: 12px var(--mono); color: var(--l-pages); }
+@media (max-width: 560px) { .board .say { position: static; max-width: none; margin: 0 10px 10px; } }
+.walk { stroke-dasharray: 2 9; animation: walk 1.4s linear infinite; }
+@keyframes walk { to { stroke-dashoffset: -22; } }
+@media (prefers-reduced-motion: reduce) { .walk { animation: none; } }
+
+/* ── Sections ── */
+section { padding: clamp(56px, 8vw, 112px) 0; }
+section.alt { background: linear-gradient(#0000, #00000026 20%, #00000026 80%, #0000); }
+h2 { font: 800 clamp(28px, 3.4vw, 44px)/1.08 var(--sans); letter-spacing: -.02em; margin: 12px 0 14px; }
+.sub { color: var(--dim); max-width: 46em; margin: 0 0 clamp(28px, 4vw, 48px); font-size: 17px; }
+.works { display: flex; flex-wrap: wrap; gap: 8px 10px; margin-top: 30px; }
+.works span { font: 500 13px var(--sans); color: var(--dim); padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; counter-reset: s; }
+.step { background: var(--panel); border: 1px solid #ffffff0f; border-radius: 14px; padding: 22px; }
+.step::before { counter-increment: s; content: counter(s, decimal-leading-zero); font: 600 12px var(--mono); color: var(--glow); letter-spacing: .1em; }
+.step h3 { margin: 10px 0 6px; font: 700 19px var(--sans); }
+.step p { margin: 0; color: var(--dim); font-size: 15px; }
+.step .chalk { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--board); font: 15px/1.5 var(--hand); color: var(--chalk); }
+.step .chalk code { font: 12.5px var(--mono); color: var(--l-pages); }
+
+.feats { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.feat { position: relative; background: var(--panel); border: 1px solid #ffffff0f; border-left: 4px solid var(--lane, var(--glow)); border-radius: 12px; padding: 20px 22px 22px; }
+.feat h3 { margin: 0 0 6px; font: 700 18px var(--sans); display: flex; align-items: center; gap: 10px; }
+.feat h3 i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--lane, var(--glow)) 18%, transparent); color: var(--lane, var(--glow)); font-style: normal; }
+.feat p { margin: 0; color: var(--dim); font-size: 15px; }
+.lanes { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font: 600 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.lanes i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+
+/* Install */
+.install { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 24px; align-items: start; }
+@media (max-width: 860px) { .install { grid-template-columns: 1fr; } }
+.install > * { min-width: 0; }
+.tabs { display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 860px) { .tabs { flex-direction: row; overflow-x: auto; } }
+.tab { text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid transparent; background: none; color: var(--dim); font: 600 15px var(--sans); cursor: pointer; white-space: nowrap; }
+.tab small { display: block; font-weight: 400; font-size: 12.5px; color: #8f8778; }
+.tab[aria-selected="true"] { background: var(--panel); border-color: #ffffff14; color: var(--chalk); }
+.pane { background: var(--panel); border: 1px solid #ffffff0f; border-radius: 14px; padding: clamp(18px, 2.5vw, 28px); min-width: 0; }
+.pane[hidden] { display: none; }
+.pane h3 { margin: 0 0 6px; font: 700 20px var(--sans); }
+.pane p { color: var(--dim); margin: 0 0 14px; }
+.pane ol { margin: 0; padding-left: 20px; color: var(--dim); }
+.pane li { margin: 10px 0; }
+.code { position: relative; display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 12px 14px; background: #1a1815; border: 1px solid var(--line); border-radius: 10px; font: 13.5px/1.5 var(--mono); color: var(--chalk); overflow-x: auto; }
+.code span { white-space: pre; flex: 1; }
+.code span::before { content: "$ "; color: #7d7466; }
+.copy { flex: none; height: 28px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--raised); color: var(--dim); font: 600 12px var(--sans); cursor: pointer; }
+.copy:hover { color: var(--chalk); }
+.soon { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font: 600 11px var(--sans); color: var(--on-glow); background: var(--glow); vertical-align: 2px; }
+
+/* Privacy */
+.leaves { width: 100%; border-collapse: collapse; font-size: 15px; }
+.leaves th, .leaves td { text-align: left; vertical-align: top; padding: 14px 16px; border-bottom: 1px solid #ffffff12; }
+.leaves th { width: 26%; font-weight: 600; color: var(--chalk); }
+.leaves td { color: var(--dim); }
+.leaves td b { color: var(--chalk); font-weight: 600; }
+@media (max-width: 640px) { .leaves th, .leaves td { display: block; width: auto; padding: 6px 0; border: 0; } .leaves tr { display: block; padding: 12px 0; border-bottom: 1px solid #ffffff12; } }
+
+/* Open source */
+.oss { display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: center; background: radial-gradient(120% 140% at 0% 0%, var(--board-2), var(--board)); border-radius: 18px; padding: clamp(24px, 4vw, 48px); border: 1px solid rgba(241,239,230,.1); }
+@media (max-width: 760px) { .oss { grid-template-columns: 1fr; } }
+.oss h2 { margin-top: 0; }
+.oss p { margin: 0; color: #d9d3c4; max-width: 44em; }
+
+footer { padding: 40px 0 56px; color: #8f8778; font-size: 13.5px; border-top: 1px solid #ffffff0d; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; }
+footer .brand { font-size: 24px; }
+footer .sp { flex: 1; }
+footer a { color: var(--dim); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="WalkMyCode, home">WalkMyCode<span class="dot" aria-hidden="true"></span></a>
+    <nav class="links" aria-label="Sections">
+      <a href="#how">How it works</a>
+      <a href="#what">What it does</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/walkmycode/walkmycode">GitHub</a>
+      <a class="btn primary" href="#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap grid">
+      <div>
+        <span class="kicker">Free · open source · runs on your computer</span>
+        <h1>Find your way around the code you <em>generated.</em></h1>
+        <p class="lede">WalkMyCode turns a project into a map you can walk through: pages, API routes, logic, database and outside services, with the real links between them. Click anything and ask what it does. Your own AI app explains, and the map lights up as it talks.</p>
+        <div class="ctas">
+          <a class="btn primary" href="#install">Install for Claude</a>
+          <a class="btn" href="#how">See how it works</a>
+          <p class="note">Works with Claude Code, Claude Desktop and any app that speaks MCP. No account, nothing to sign up for.</p>
+        </div>
+      </div>
+
+      <div class="frame" aria-label="An example map: the Sign in button, its API route, the sign-in logic and the users table, with the guide explaining">
+        <div class="board">
+          <svg viewBox="0 0 720 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A map in five lanes; a light walks from the Sign in button to the sessions table">
+            <g font-family="JetBrains Mono, monospace" font-size="10" letter-spacing="1.2" fill="#b8ae9c">
+              <text x="34" y="34">PAGES</text><text x="172" y="34">API</text><text x="310" y="34">LOGIC</text><text x="448" y="34">DATA</text><text x="586" y="34">OUTSIDE</text>
+            </g>
+            <g stroke="rgba(241,239,230,.08)"><path d="M156 20V380M294 20V380M432 20V380M570 20V380"/></g>
+            <g font-family="Inter, sans-serif">
+              <!-- cards: x, lane colour, name, file -->
+              <g><rect x="24" y="54" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="24" y="54" width="4" height="44" rx="2" fill="#9fd3f0"/><text x="36" y="73" font-size="11" font-weight="700" fill="#f1efe6">LoginForm</text><text x="36" y="88" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">components/</text></g>
+              <g><rect x="24" y="112" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="24" y="112" width="4" height="44" rx="2" fill="#9fd3f0"/><text x="36" y="131" font-size="11" font-weight="700" fill="#f1efe6">Dashboard</text><text x="36" y="146" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">app/page.tsx</text></g>
+              <g><rect x="24" y="170" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="24" y="170" width="4" height="44" rx="2" fill="#9fd3f0"/><text x="36" y="189" font-size="11" font-weight="700" fill="#f1efe6">TaskList</text><text x="36" y="204" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">components/</text></g>
+              <g><rect x="162" y="54" width="120" height="44" rx="8" fill="#2e2a25" stroke="#f3d77a" stroke-width="1.5"/><rect x="162" y="54" width="4" height="44" rx="2" fill="#f3d77a"/><text x="174" y="73" font-size="11" font-weight="700" fill="#f1efe6">POST /api/login</text><text x="174" y="88" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">route.ts</text></g>
+              <g><rect x="162" y="112" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="162" y="112" width="4" height="44" rx="2" fill="#f3d77a"/><text x="174" y="131" font-size="11" font-weight="700" fill="#f1efe6">GET /api/tasks</text><text x="174" y="146" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">route.ts</text></g>
+              <g><rect x="300" y="54" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="300" y="54" width="4" height="44" rx="2" fill="#e0c9a6"/><text x="312" y="73" font-size="11" font-weight="700" fill="#f1efe6">signin()</text><text x="312" y="88" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">lib/auth.ts</text></g>
+              <g><rect x="300" y="112" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="300" y="112" width="4" height="44" rx="2" fill="#e0c9a6"/><text x="312" y="131" font-size="11" font-weight="700" fill="#f1efe6">listTasks()</text><text x="312" y="146" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">lib/tasks.ts</text></g>
+              <g><rect x="438" y="54" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="438" y="54" width="4" height="44" rx="2" fill="#a8e0a0"/><text x="450" y="73" font-size="11" font-weight="700" fill="#f1efe6">users</text><text x="450" y="88" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">table</text></g>
+              <g><rect x="438" y="112" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="438" y="112" width="4" height="44" rx="2" fill="#a8e0a0"/><text x="450" y="131" font-size="11" font-weight="700" fill="#f1efe6">sessions</text><text x="450" y="146" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">table</text></g>
+              <g><rect x="438" y="170" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="438" y="170" width="4" height="44" rx="2" fill="#a8e0a0"/><text x="450" y="189" font-size="11" font-weight="700" fill="#f1efe6">tasks</text><text x="450" y="204" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">table</text></g>
+              <g><rect x="576" y="54" width="120" height="44" rx="8" fill="#2e2a25" stroke="#4a443c"/><rect x="576" y="54" width="4" height="44" rx="2" fill="#f2a7a0"/><text x="588" y="73" font-size="11" font-weight="700" fill="#f1efe6">Resend</text><text x="588" y="88" font-size="9.5" fill="#b8ae9c" font-family="JetBrains Mono, monospace">email</text></g>
+            </g>
+            <!-- quiet links -->
+            <g fill="none" stroke="rgba(241,239,230,.18)" stroke-width="1.2">
+              <path d="M144 134H162"/><path d="M282 134H300"/><path d="M420 134C430 134 428 192 438 192"/><path d="M144 192C154 192 152 134 162 134"/>
+            </g>
+            <!-- the walk: button → route → logic → users, then sessions -->
+            <path id="walk" d="M144 76H162 M282 76H300 M420 76H438 M420 76C430 76 428 134 438 134" fill="none" stroke="#f3d77a" stroke-width="2.2" stroke-linecap="round" class="walk"/>
+            <path id="route" d="M144 76H162 L282 76 H300 L420 76 C430 76 428 134 438 134" fill="none" stroke="none"/>
+            <g>
+              <circle r="11" fill="#f3d77a" opacity=".25"><animateMotion dur="5s" repeatCount="indefinite" rotate="0"><mpath href="#route"/></animateMotion></circle>
+              <circle r="4.5" fill="#fff3c4"><animateMotion dur="5s" repeatCount="indefinite"><mpath href="#route"/></animateMotion></circle>
+            </g>
+          </svg>
+          <div class="say"><b>Sign in</b> posts the email and password to <code>/api/login</code>. The route calls <code>signin()</code>, which finds the user, checks the password and starts a session. <span style="color:#b8ae9c">(components/LoginForm.tsx:14)</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="wrap works" aria-label="Works with">
+      <span>Claude Code</span><span>Claude Desktop</span><span>Cursor</span><span>VS Code</span><span>Antigravity</span><span>Any MCP app</span>
+      <span>TypeScript &amp; JavaScript</span><span>Python</span><span>SQL · Prisma · Supabase</span><span>Monorepos &amp; services</span>
+    </div>
+  </section>
+
+  <section id="how" class="alt">
+    <div class="wrap">
+      <span class="kicker">How it works</span>
+      <h2>Open a folder. See the map. Ask.</h2>
+      <p class="sub">You made an app with an AI and now can't find your way around it. WalkMyCode reads it the way a good lecturer would, then walks you through it at your pace.</p>
+      <div class="steps">
+        <div class="step"><h3>Open a folder</h3><p>Tell your AI app "open WalkMyCode on my project", or pick the folder on the start page. Several folders that make one system become one map.</p><div class="chalk">“open WalkMyCode on <code>~/code/my-app</code>”</div></div>
+        <div class="step"><h3>See the map</h3><p>Every page, route, function and table, in five lanes, with the real links between them, found in the code itself and checked against it.</p><div class="chalk">Sign out → <code>POST /account/signout</code> → <code>sessions</code></div></div>
+        <div class="step"><h3>Ask, trace, take a tour</h3><p>Click a card, select some lines, type or just say your question. The guide answers in plain English, points at real lines, and lights the map as it goes.</p><div class="chalk">“how does sign-in work?”</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="what">
+    <div class="wrap">
+      <span class="kicker">What it does</span>
+      <h2>A guide, not a search box.</h2>
+      <p class="sub">Every answer points at the lines it came from. Click one and the code opens there.</p>
+      <div class="feats">
+        <div class="feat" style="--lane:var(--l-pages)"><h3><i>▦</i>A map by layer</h3><p>Pages and components, API routes, logic, database, outside services. One app, a monorepo, or several services found from docker-compose and Kubernetes files.</p><div class="lanes"><span><i style="background:var(--l-pages)"></i>Pages</span><span><i style="background:var(--l-api)"></i>API</span><span><i style="background:var(--l-logic)"></i>Logic</span><span><i style="background:var(--l-data)"></i>Data</span><span><i style="background:var(--l-out)"></i>Outside</span></div></div>
+        <div class="feat" style="--lane:var(--l-api)"><h3><i>⟶</i>Trace it, end to end</h3><p>From a button to the table it writes, hop by hop, each step with the line that proves it.</p></div>
+        <div class="feat" style="--lane:var(--l-logic)"><h3><i>?</i>Explain anything</h3><p>A card, a file or a few selected lines: what it does and how it fits, for a beginner. Paste a screenshot of an error and ask about it.</p></div>
+        <div class="feat" style="--lane:var(--l-data)"><h3><i>▶</i>Guided tours, read aloud</h3><p>Ask for a tour of a feature: each step lights its lines and cards while the guide reads it out.</p></div>
+        <div class="feat" style="--lane:var(--l-out)"><h3><i>◉</i>Talk to it</h3><p>Tap Talk and ask out loud, as you would a person. Pause to think; it waits for the whole question.</p></div>
+        <div class="feat"><h3><i>◇</i>Diagrams you can move</h3><p>Ask for a diagram and get one drawn from the code: drag it, zoom it, open it full-window.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="alt">
+    <div class="wrap">
+      <span class="kicker">Install</span>
+      <h2>Two minutes, and your own AI does the explaining.</h2>
+      <p class="sub">WalkMyCode for Claude is free. The explaining runs on the AI app you already use, on your own plan: no API key, no account here.</p>
+      <div class="install">
+        <div class="tabs" role="tablist" aria-label="Where you use it">
+          <button class="tab" role="tab" aria-selected="true" aria-controls="p-code" id="t-code">Claude Code<small>In the terminal</small></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="p-desktop" id="t-desktop" tabindex="-1">Claude Desktop<small>The app</small></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="p-other" id="t-other" tabindex="-1">Another MCP app<small>Cursor, VS Code, Antigravity…</small></button>
+          <button class="tab" role="tab" aria-selected="false" aria-controls="p-term" id="t-term" tabindex="-1">No AI app<small>From a terminal, your own key</small></button>
+        </div>
+        <div>
+          <div class="pane" role="tabpanel" id="p-code" aria-labelledby="t-code">
+            <h3>Claude Code</h3>
+            <p>Needs Node.js 20 or later.</p>
+            <ol>
+              <li>Add WalkMyCode once, for all your projects:
+                <div class="code"><span>claude mcp add -s user walkmycode -- npx -y walkmycode-mcp@latest</span><button class="copy">Copy</button></div>
+                On Windows:
+                <div class="code"><span>claude mcp add -s user walkmycode -- cmd /c npx -y walkmycode-mcp@latest</span><button class="copy">Copy</button></div>
+              </li>
+              <li>In any project, ask Claude: <i>“open WalkMyCode on this project”</i>. The map opens in your browser.</li>
+            </ol>
+          </div>
+          <div class="pane" role="tabpanel" id="p-desktop" aria-labelledby="t-desktop" hidden>
+            <h3>Claude Desktop <span class="soon">Coming soon</span></h3>
+            <p>A one-click extension: download it, double-click, then say “open WalkMyCode on ~/code/my-app”.</p>
+            <a class="btn" href="#install" aria-disabled="true">Download for Claude Desktop</a>
+          </div>
+          <div class="pane" role="tabpanel" id="p-other" aria-labelledby="t-other" hidden>
+            <h3>Any other MCP app</h3>
+            <p>Add a stdio server that runs this command, then ask your app to “open WalkMyCode on ~/code/my-app”. Your app's model does the explaining.</p>
+            <div class="code"><span>npx -y walkmycode-mcp@latest</span><button class="copy">Copy</button></div>
+          </div>
+          <div class="pane" role="tabpanel" id="p-term" aria-labelledby="t-term" hidden>
+            <h3>From a terminal</h3>
+            <p>No AI app? Run it on a folder: it maps it and opens the page, which answers with the AI key you add in its Settings (Anthropic, OpenAI, Gemini, Groq, DeepSeek, xAI, or a local Ollama or LM Studio).</p>
+            <div class="code"><span>npx walkmycode-mcp ~/code/my-app</span><button class="copy">Copy</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="privacy">
+    <div class="wrap">
+      <span class="kicker">What leaves your machine</span>
+      <h2>Your code stays yours.</h2>
+      <p class="sub">The map is built on your computer. Only what a question needs goes to the AI you chose, and nothing comes to us.</p>
+      <table class="leaves">
+        <tr><th>The map</th><td>Built by a parser <b>on your computer</b>. Nothing is uploaded to build it.</td></tr>
+        <tr><th>A question</th><td>The question and the lines needed to answer it go to <b>your AI app</b> (Claude, on your plan), or to the one provider whose key you added. With a local model, nothing leaves at all.</td></tr>
+        <tr><th>Secrets</th><td><b><code>.env</code> files, <code>*.pem</code> and <code>*.key</code> are never read.</b> Example config files are read for service addresses, with anything that looks like a password hidden.</td></tr>
+        <tr><th>Voice</th><td>Off unless you use it. Text read aloud and what you say go to the voice service you pick, on your key; your browser's own voice sends nothing anywhere.</td></tr>
+        <tr><th>The page</th><td>Served from <b>127.0.0.1</b> only, with a key in its link for each launch. Maps and answers are kept in <code>~/.walkmycode</code> on your computer.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="oss">
+        <div>
+          <span class="kicker">Open source</span>
+          <h2>Free, and yours to read.</h2>
+          <p>WalkMyCode is open source under the AGPL-3.0. Read every line it runs, open an issue, or send a fix.</p>
+        </div>
+        <a class="btn primary" href="https://github.com/walkmycode/walkmycode">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <a class="brand" href="#top">WalkMyCode<span class="dot" aria-hidden="true"></span></a>
+    <span>Find your way around the code you generated.</span>
+    <span class="sp"></span>
+    <a href="#privacy">Privacy</a>
+    <a href="https://github.com/walkmycode/walkmycode">GitHub</a>
+    <span>AGPL-3.0</span>
+  </div>
+</footer>
+
+<script>
+// Copy buttons and the install tabs (arrow keys move between tabs).
+document.querySelectorAll(".copy").forEach((b) =>
+  b.addEventListener("click", async () => {
+    const text = b.previousElementSibling.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      b.textContent = "Copied";
+    } catch {
+      b.textContent = "Select it";
+    }
+    setTimeout(() => (b.textContent = "Copy"), 1600);
+  }),
+);
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+const pick = (t) => {
+  tabs.forEach((x) => {
+    const on = x === t;
+    x.setAttribute("aria-selected", on);
+    x.tabIndex = on ? 0 : -1;
+    document.getElementById(x.getAttribute("aria-controls")).hidden = !on;
+  });
+  t.focus();
+};
+tabs.forEach((t, i) => {
+  t.addEventListener("click", () => pick(t));
+  t.addEventListener("keydown", (e) => {
+    const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    pick(tabs[(i + d + tabs.length) % tabs.length]);
+  });
+});
+</script>
+</body>
+</html>

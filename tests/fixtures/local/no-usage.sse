@@ -1,0 +1,6 @@
+data: {"id":"chatcmpl-l01CUT","object":"chat.completion.chunk","created":1790000000,"model":"llama3.3","choices":[{"index":0,"delta":{"role":"assistant","content":"Sign-in lives in src/auth.ts."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-l01CUT","object":"chat.completion.chunk","created":1790000000,"model":"llama3.3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

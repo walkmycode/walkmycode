@@ -1,0 +1,8 @@
+#!/bin/sh
+# Rejects Claude/Anthropic attribution in commit messages.
+# House rule: commits here carry no AI attribution.
+# Enable once per clone:  git config core.hooksPath .githooks
+if grep -qiE '^(Co-Authored-By:[[:space:]]*Claude|.*Generated with \[?Claude Code)' "$1"; then
+    echo "commit-msg: remove the Claude attribution line (see CLAUDE.md, rule 1)." >&2
+    exit 1
+fi

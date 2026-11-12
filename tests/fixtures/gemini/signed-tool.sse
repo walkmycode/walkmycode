@@ -1,0 +1,2 @@
+data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"search","args":{"query":"signin"}},"thoughtSignature":"CiQBsyntheticThoughtSignature01=="}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3600,"candidatesTokenCount":12,"thoughtsTokenCount":44,"totalTokenCount":3656},"modelVersion":"gemini-3.8-flash","responseId":"resp_g01TOOL"}
+

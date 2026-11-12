@@ -1,0 +1,17 @@
+{
+  "name": "walkmycode",
+  "version": "0.1.1",
+  "license": "AGPL-3.0-only",
+  "description": "A live map of your code in the browser that Claude drives while it explains: cards light up, files open at the right lines, tours play aloud. /walkmycode opens it on this project.",
+  "author": {
+    "name": "WalkMyCode"
+  },
+  "keywords": [
+    "codebase",
+    "map",
+    "tour",
+    "explain",
+    "voice",
+    "onboarding"
+  ]
+}

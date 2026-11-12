@@ -1,0 +1,59 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# walkmycode (and .lantern/, its name before the rename)
+.walkmycode/
+.lantern/
+.env
+.env.*
+!.env.example
+public/wasm/
+# The example app, packed from examples/ by scripts/pack-example.mjs
+public/examples/
+.claude/worktrees/
+
+# WalkMyCode Lite publish folder (npm run pack:lite)
+/publish-lite/
+
+# WalkMyCode for Claude's bundle (npm run build:mcp) and its page's static export (npm run build:mcp-ui)
+/mcp/dist/
+/out-mcp/

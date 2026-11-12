@@ -1,0 +1,31 @@
+{
+  "voices": [
+    {
+      "voice_id": "Zx9FixtureVoiceAaaa01",
+      "name": "Rachel",
+      "category": "premade",
+      "labels": {
+        "accent": "american",
+        "gender": "female"
+      }
+    },
+    {
+      "voice_id": "Zx9FixtureVoiceEldr02",
+      "name": "Eldrin - Crisp British Baritone",
+      "category": "professional",
+      "labels": {
+        "accent": "british",
+        "gender": "male"
+      }
+    },
+    {
+      "voice_id": "Zx9FixtureVoiceFinl03",
+      "name": "Finley - Articulate Anchor",
+      "category": "professional",
+      "labels": {
+        "accent": "british",
+        "gender": "male"
+      }
+    }
+  ]
+}

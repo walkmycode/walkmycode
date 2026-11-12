@@ -1,0 +1,194 @@
+/* Settings (docs/design/home-redesign.html, screen 3): a side menu and the pane
+   it opens, filling the width right of the menu; boxes with a small caps label;
+   two columns when the pane is wide. Sized by container queries, so the same
+   view works full screen on the home page and compact in the dock's tab:
+   narrower than 760 px the menu becomes a strip of tabs. Colours are the app's
+   tokens; every movement is scaled by --m. */
+
+/* Home: full screen under the top bar. */
+.setv-page { position: fixed; inset: var(--top-h) 0 0; z-index: 940; overflow: hidden; background: radial-gradient(900px 480px at 60% -160px, rgba(243,215,122,.06), transparent 70%), var(--wall); animation: fade-in var(--t-fade) ease-out both; }
+.setv-page:focus { outline: none; }
+.setv-close { position: absolute; top: 14px; right: 16px; z-index: 2; }
+
+.setv { container: setv / inline-size; height: 100%; min-height: 0; color: var(--ui-text); font: var(--text)/1.55 var(--sans); }
+.setv-in { display: grid; grid-template-columns: 232px minmax(0, 1fr); height: 100%; min-height: 0; }
+.setv-nav { min-width: 0; padding: calc(22px * var(--sp)) calc(12px * var(--sp)); border-right: 1px solid var(--hair); background: rgba(255,240,210,.012); overflow: auto; }
+.setv-title { margin: calc(6px * var(--sp)) calc(12px * var(--sp)) calc(14px * var(--sp)); font: 650 var(--text)/1 var(--sans); color: var(--ui-text); }
+.setv-tabs { display: flex; flex-direction: column; gap: calc(2px * var(--sp)); }
+.setv-tabs button { display: flex; align-items: center; gap: calc(10px * var(--sp)); width: 100%; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border: 0; border-radius: 0; background: none; color: var(--ui-dim); font: 500 var(--text)/1.3 var(--sans); text-align: left; cursor: pointer;
+  transition: background var(--t-fade), color var(--t-fade), box-shadow var(--t-fade); }
+.setv-tabs button:hover { background: var(--ui); color: var(--ui-text); }
+.setv-tabs button.on { background: var(--ui-2); color: var(--ui-text); box-shadow: inset 2px 0 0 var(--yellow); }
+.setv-tabs button:focus-visible { outline: 2px solid var(--yellow); outline-offset: -2px; }
+.setv-dot { margin-left: auto; width: calc(7px * var(--ctl)); height: calc(7px * var(--ctl)); flex: none; border-radius: 50%; background: var(--green); animation: fade-in var(--t-fade) ease-out both; }
+.setv-dot.warn { background: var(--yellow); }
+.setv-pane { container: pane / inline-size; min-width: 0; overflow: auto; padding: calc(34px * var(--sp)) clamp(calc(24px * var(--sp)), 4vw, calc(56px * var(--sp))) calc(90px * var(--sp)); }
+.setv-head h2 { margin: 0; font: 600 var(--text)/1.2 var(--sans); letter-spacing: -.3px; color: var(--ui-text); }
+.setv-head p { max-width: 760px; margin: calc(6px * var(--sp)) 0 calc(26px * var(--sp)); color: var(--ui-dim); }
+.setv-body { animation: fade-in var(--t-fade) ease-out both, sv-rise calc(300ms * var(--m)) var(--ease-settle) both; }
+@keyframes sv-rise { from { transform: translateY(6px); } }
+
+/* Boxes, columns, controls */
+.sv-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 calc(16px * var(--sp)); align-items: start; }
+@container pane (min-width: 860px) { .sv-cols { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); } }
+.sv-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 0 calc(16px * var(--sp)); }
+.sv-box { min-width: 0; margin-bottom: calc(16px * var(--sp)); padding: calc(20px * var(--sp)); border: 1px solid var(--hair); border-radius: 0; background: var(--ui); }
+.sv-lbl { margin: 0 0 calc(12px * var(--sp)); font: 600 var(--text)/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ui-faint); }
+.sv-cur { display: flex; align-items: center; gap: calc(14px * var(--sp)); min-width: 0; }
+.sv-cur > div { flex: 1; min-width: 0; }
+.sv-cur b { display: block; font-size: var(--text); }
+.sv-cur > div > span { color: var(--ui-faint); font-size: var(--text); }
+.sv-cur i { font-style: normal; }
+.sv-cur i.ok { color: var(--green); }
+.sv-cur i.warn { color: var(--yellow); }
+.sv-cur .hbtn { flex: none; }
+.sv-cur .sv-select { flex: none; width: auto; min-width: 140px; margin-left: auto; }
+/* The MCP page's own key, under who answers: a section of its own. */
+.sv-own { margin-top: calc(28px * var(--sp)); padding-top: calc(22px * var(--sp)); border-top: 1px solid var(--hair-2); }
+.sv-own-title { margin: 0 0 calc(6px * var(--sp)); color: var(--ui-text); font: 600 var(--text)/1.3 var(--sans); }
+.sv-own > .sv-text { max-width: 72ch; margin-bottom: calc(16px * var(--sp)); }
+.sv-mark { width: calc(44px * var(--ctl)); height: calc(44px * var(--ctl)); flex: none; display: grid; place-items: center; border-radius: 0; color: #1b1916; font: 800 var(--text)/1 var(--sans); }
+.sv-mark.lamp { background: radial-gradient(circle, var(--yellow) 0 6px, rgba(243,215,122,.28) 7px, transparent 72%), var(--ui-2); }
+.sv-warn { margin: calc(12px * var(--sp)) 0 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border-radius: 0; border: 1px solid rgba(243,215,122,.25); background: rgba(243,215,122,.07); color: var(--ui-text); font-size: var(--text); }
+.sv-warn b { color: var(--yellow); font-weight: 600; }
+.sv-box > .sv-warn:first-child { margin: 0 0 calc(12px * var(--sp)); }
+.sv-hint { margin: calc(10px * var(--sp)) 0 0; color: var(--ui-faint); font-size: var(--text); }
+.sv-text { margin: 0; color: var(--ui-dim); font-size: var(--text); }
+.sv-text + .sv-hint { margin-top: calc(10px * var(--sp)); }
+.sv-loading { margin: 0; color: var(--ui-faint); font-size: var(--text); }
+.sv-box a { color: var(--yellow); text-decoration: none; }
+.sv-box a:hover { text-decoration: underline; }
+.sv-select, .sv-input { width: 100%; height: calc(44px * var(--ctl)); padding: 0 calc(14px * var(--sp)); border-radius: 0; border: 1px solid var(--hair-2); background: var(--out); color: var(--ui-text); font: var(--text) var(--sans); outline: none; transition: border-color var(--t-fade), box-shadow var(--t-fade); }
+.sv-input.mono { font: var(--text) var(--mono); }
+.sv-input + .sv-input { margin-top: calc(8px * var(--sp)); }
+.sv-select:focus, .sv-input:focus { border-color: rgba(243,215,122,.7); box-shadow: 0 0 0 4px rgba(243,215,122,.1); }
+.sv-select:disabled { opacity: .6; }
+.sv-seg { display: inline-flex; flex-wrap: wrap; gap: calc(2px * var(--sp)); max-width: 100%; padding: calc(3px * var(--sp)); border-radius: 0; border: 1px solid var(--hair-2); background: var(--out); }
+.sv-seg button { padding: calc(7px * var(--sp)) calc(14px * var(--sp)); border: 0; border-radius: 0; background: none; color: var(--ui-dim); font: 500 var(--text)/1.2 var(--sans); cursor: pointer; transition: background var(--t-fade), color var(--t-fade); }
+.sv-seg button:hover { color: var(--ui-text); }
+.sv-size { display: flex; align-items: center; gap: calc(10px * var(--sp)); max-width: 420px; }
+.sv-size input[type="range"] { flex: 1; min-width: 0; accent-color: var(--yellow); cursor: pointer; }
+.sv-size-a { font-family: var(--sans); font-weight: 600; color: var(--ui-dim); line-height: 1; }
+.sv-size-a.sm { font-size: 11px; /* look: fixed — the slider's own small and large A */ }
+.sv-size-a.lg { font-size: 19px; /* look: fixed — the slider's own small and large A */ }
+.sv-reset { margin-top: calc(10px * var(--sp)); }
+.sv-size-now { min-width: 6.5em; font: 500 var(--text) var(--sans); color: var(--ui-text); }
+.sv-seg button.on { background: var(--ui-raise); color: var(--ui-text); }
+.sv-seg button:disabled { cursor: progress; }
+.sv-chips + .sv-seg { margin-top: calc(10px * var(--sp)); }
+.sv-check { display: flex; align-items: center; gap: calc(8px * var(--sp)); margin-top: calc(14px * var(--sp)); color: var(--ui-text); font: 500 var(--text) var(--sans); cursor: pointer; }
+.sv-check input { width: calc(16px * var(--ctl)); height: calc(16px * var(--ctl)); accent-color: var(--yellow); }
+.sv-status { margin-left: calc(6px * var(--sp)); color: var(--green); font-size: var(--text); animation: fade-in var(--t-fade) ease-out both; }
+.sv-status.bad { color: var(--pink); }
+.sv-row { display: flex; flex-wrap: wrap; align-items: center; gap: calc(10px * var(--sp)); margin-top: calc(14px * var(--sp)); }
+.sv-row .sv-hint { margin: 0; }
+.sv-box > .sv-row:first-of-type:nth-child(2) { margin-top: 0; }
+
+/* Keys on this computer */
+.sv-keys { display: grid; }
+.sv-key { padding: calc(11px * var(--sp)) 0; border-top: 1px solid var(--hair); }
+.sv-key:first-child { padding-top: 0; border-top: 0; }
+.sv-key:last-child { padding-bottom: 0; }
+.sv-key-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: calc(4px * var(--sp)) calc(12px * var(--sp)); font-size: var(--text); }
+.sv-key-row b { min-width: 92px; font-weight: 600; }
+.sv-key-where { flex: 1; min-width: 0; color: var(--ui-faint); overflow-wrap: anywhere; }
+.sv-key-where.set { color: var(--ui-dim); }
+.sv-key-acts { display: flex; gap: calc(14px * var(--sp)); margin-left: auto; }
+.sv-link { padding: 0; border: 0; background: none; color: var(--yellow); font: 500 var(--text) var(--sans); cursor: pointer; }
+.sv-link:hover { text-decoration: underline; }
+.sv-link.quiet { color: var(--ui-faint); }
+.sv-link.quiet:hover { color: var(--pink); }
+.sv-link:disabled { opacity: .5; cursor: default; }
+.sv-key-form { display: flex; flex-wrap: wrap; gap: calc(8px * var(--sp)); margin-top: calc(10px * var(--sp)); animation: fade-in var(--t-fade) ease-out both, sv-rise calc(220ms * var(--m)) var(--ease-settle) both; }
+.sv-key-form .sv-input { flex: 1 1 200px; width: auto; height: calc(38px * var(--ctl)); }
+.sv-key-note { margin: calc(8px * var(--sp)) 0 0; color: var(--ui-faint); font-size: var(--text); }
+.sv-key-note .sv-status { margin-left: 0; }
+
+/* Which should I pick? */
+.sv-pick { display: grid; gap: calc(2px * var(--sp)); margin: 0; padding: 0; list-style: none; }
+.sv-pick li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: calc(1px * var(--sp)) calc(10px * var(--sp)); padding: calc(8px * var(--sp)) calc(10px * var(--sp)); border-radius: 0; }
+.sv-pick li.on { background: var(--ui-2); box-shadow: inset 2px 0 0 var(--yellow); }
+.sv-pick b { font-size: var(--text); font-weight: 600; white-space: nowrap; }
+.sv-pick span { grid-column: 1 / -1; grid-row: 2; color: var(--ui-faint); font-size: var(--text); }
+.sv-pick em { color: var(--ui-dim); font-size: var(--text); font-style: normal; white-space: nowrap; }
+
+/* Voice */
+.sv-chips { display: flex; flex-wrap: wrap; gap: calc(8px * var(--sp)); }
+.sv-chip { display: inline-flex; align-items: center; gap: calc(8px * var(--sp)); min-height: calc(36px * var(--ctl)); padding: calc(6px * var(--sp)) calc(12px * var(--sp)); border-radius: 0; border: 1px solid var(--hair-2); background: var(--ui-2); color: var(--ui-text); font: 500 var(--text)/1.2 var(--sans); text-align: left; cursor: pointer;
+  transition: border-color var(--t-fade), box-shadow var(--t-fade), transform var(--t-tap) var(--ease-out); }
+.sv-chip:hover { border-color: var(--hair-3); }
+.sv-chip:active { transform: scale(.98); }
+.sv-chip.on { border-color: rgba(243,215,122,.7); box-shadow: inset 0 0 0 1px rgba(243,215,122,.4); }
+.sv-chip small { color: var(--ui-faint); font-size: var(--text); }
+.sv-chip .mark { font-size: var(--text); }
+.sv-chip .mark.ok { color: var(--green); }
+.sv-chip .mark.bad { color: var(--pink); }
+.sv-stt { display: grid; gap: calc(8px * var(--sp)); }
+.sv-stt .sv-chip { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; column-gap: calc(8px * var(--sp)); width: 100%; }
+.sv-stt .sv-why { grid-column: 2 / -1; color: var(--ui-faint); font: 400 var(--text)/1.4 var(--sans); }
+.sv-stt + .sv-seg { margin-top: calc(10px * var(--sp)); }
+/* Speech to text on this computer: where the model stands, getting and removing it */
+.sv-device { margin-top: calc(10px * var(--sp)); padding: calc(12px * var(--sp)) calc(14px * var(--sp)); border: 1px solid var(--hair-2); border-radius: 0; background: var(--out); animation: fade-in var(--t-fade) ease-out both; }
+.sv-device-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: calc(10px * var(--sp)); }
+.sv-device-row .sv-text { color: var(--ui-text); }
+.sv-device .mark.ok { color: var(--green); }
+.sv-device .mark.bad { color: var(--pink); }
+.sv-device-acts { display: flex; align-items: center; gap: calc(14px * var(--sp)); }
+.sv-device > .sv-warn { margin: 0 0 calc(12px * var(--sp)); }
+.sv-device-row + .sv-warn { margin-top: calc(12px * var(--sp)); }
+.sv-bar { height: calc(4px * var(--sp)); margin-top: calc(12px * var(--sp)); border-radius: 0; background: var(--ui-2); overflow: hidden; }
+.sv-bar i { display: block; height: 100%; background: var(--yellow); transition: width 400ms linear; }
+.sv-speed { display: flex; align-items: center; gap: calc(12px * var(--sp)); margin-top: calc(14px * var(--sp)); color: var(--ui-dim); font-size: var(--text); }
+.sv-speed input { flex: 1; min-width: 0; max-width: 320px; accent-color: var(--yellow); }
+.sv-speed output { min-width: calc(48px * var(--ctl)); color: var(--ui-text); font: var(--text) var(--mono); }
+
+/* Motion & look */
+.sv-keys-dl { display: grid; gap: calc(7px * var(--sp)); margin: 0; }
+.sv-keys-dl div { display: grid; grid-template-columns: minmax(140px, auto) minmax(0, 1fr); align-items: baseline; gap: calc(12px * var(--sp)); }
+.sv-keys-dl dt { min-width: 0; }
+.sv-keys-dl dd { margin: 0; color: var(--ui-dim); font-size: var(--text); }
+.sv-keys-dl kbd { padding: calc(2px * var(--sp)) calc(7px * var(--sp)); border-radius: 0; border: 1px solid var(--hair-2); background: var(--out); color: var(--ui-text); font: var(--text) var(--mono); white-space: nowrap; }
+
+/* About */
+.sv-badge { display: inline-block; padding: calc(6px * var(--sp)) calc(10px * var(--sp)); border-radius: 0; font: 600 var(--text)/1 var(--sans); }
+.sv-badge.a { background: rgba(243,215,122,.12); color: var(--yellow); }
+.sv-badge.g { background: rgba(168,224,160,.12); color: var(--green); }
+.sv-docs { display: grid; gap: calc(2px * var(--sp)); margin: 0; padding: 0; list-style: none; }
+.sv-doc { display: grid; gap: calc(2px * var(--sp)); width: 100%; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); border: 0; border-radius: 0; background: none; color: inherit; text-align: left; cursor: copy; transition: background var(--t-fade); }
+.sv-doc:hover { background: var(--ui-2); }
+.sv-doc code { color: var(--yellow); font: var(--text) var(--mono); }
+.sv-doc span { color: var(--ui-faint); font-size: var(--text); }
+
+@container pane (max-width: 560px) { .pv-table td:nth-child(2) { display: none; } .pv-table td:first-child { white-space: normal; } }
+
+/* Narrow (a phone, or a narrow dock tab): the menu becomes a strip of tabs over the pane. */
+@container setv (max-width: 760px) {
+  .setv-in { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .setv-nav { padding: calc(8px * var(--sp)) calc(12px * var(--sp)); border-right: 0; border-bottom: 1px solid var(--hair); }
+  .setv-title { display: none; }
+  .setv-tabs { flex-direction: row; flex-wrap: wrap; gap: calc(4px * var(--sp)); }
+  .setv-tabs button { width: auto; padding: calc(8px * var(--sp)) calc(12px * var(--sp)); white-space: nowrap; }
+  .setv-tabs button.on { box-shadow: inset 0 -2px 0 var(--yellow); }
+  .setv-dot { margin-left: calc(2px * var(--sp)); }
+  .setv-pane { padding: calc(22px * var(--sp)) calc(16px * var(--sp)) calc(70px * var(--sp)); }
+  .setv-head h2 { font-size: var(--text); font-weight: 650; }
+  .sv-box { padding: calc(16px * var(--sp)); }
+  .sv-keys-dl div { grid-template-columns: minmax(0, 1fr); gap: calc(2px * var(--sp)); }
+}
+
+/* The dock's tab: the same view, compact; the tab scrolls as one, the menu stays in view. */
+.setv.dock { height: auto; min-height: 100%; font-size: var(--text); }
+.setv.dock .setv-in { height: auto; min-height: 100%; grid-template-columns: 184px minmax(0, 1fr); align-items: start; }
+.setv.dock .setv-nav { position: sticky; top: 0; z-index: 1; padding: calc(14px * var(--sp)) calc(8px * var(--sp)); background: var(--ui); }
+.setv.dock .setv-title { margin: calc(2px * var(--sp)) calc(10px * var(--sp)) calc(10px * var(--sp)); font-size: var(--text); font-weight: 650; }
+.setv.dock .setv-tabs button { padding: calc(8px * var(--sp)) calc(10px * var(--sp)); font-size: var(--text); }
+.setv.dock .setv-pane { overflow: visible; padding: calc(18px * var(--sp)) calc(18px * var(--sp)) calc(40px * var(--sp)); }
+.setv.dock .setv-head h2 { font-size: var(--text); font-weight: 650; }
+.setv.dock .setv-head p { margin-bottom: calc(16px * var(--sp)); font-size: var(--text); }
+.setv.dock .sv-box { margin-bottom: calc(12px * var(--sp)); padding: calc(14px * var(--sp)) calc(16px * var(--sp)); border-radius: 0; }
+.setv.dock .sv-mark { width: calc(38px * var(--ctl)); height: calc(38px * var(--ctl)); border-radius: 0; }
+@container setv (max-width: 760px) {
+  .setv.dock .setv-in { grid-template-columns: minmax(0, 1fr); }
+  .setv.dock .setv-nav { padding: calc(6px * var(--sp)) calc(8px * var(--sp)); border-bottom: 1px solid var(--hair); }
+  .setv.dock .setv-pane { padding: calc(14px * var(--sp)) calc(12px * var(--sp)) calc(32px * var(--sp)); }
+}

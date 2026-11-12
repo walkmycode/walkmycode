@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "nodes": [
+    "file:app/page.tsx",
+    "file:lib/api.ts",
+    "file:lib/auth.ts",
+    "file:prisma/schema.prisma",
+    "route:app/api/login/route.ts#POST /api/login",
+    "route:app/api/users/[id]/route.ts#GET /api/users/[id]",
+    "svc:stripe",
+    "table:session",
+    "table:user"
+  ],
+  "edges": [
+    "calls-route:file:app/page.tsx->route:app/api/login/route.ts#POST /api/login",
+    "calls:route:app/api/login/route.ts#POST /api/login->file:lib/auth.ts",
+    "calls:route:app/api/users/[id]/route.ts#GET /api/users/[id]->file:lib/auth.ts",
+    "defines:file:prisma/schema.prisma->table:session",
+    "defines:file:prisma/schema.prisma->table:user",
+    "reads:file:lib/auth.ts->table:session",
+    "reads:file:lib/auth.ts->table:user",
+    "uses-service:file:lib/auth.ts->svc:stripe"
+  ]
+}
