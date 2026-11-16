@@ -24,6 +24,10 @@ export function outputHost(api: OutputDockApi): OutputHost {
     popOut() {
       const open = api.getPanel(OUTPUT_ID);
       if (open) {
+        // A sidebar the tool strip hid comes back first: setActive alone brings the panel forward inside a
+        // hidden group, and the Terminal button then opens a terminal nobody can see.
+        const group = open.group?.api;
+        if (group && group.location.type === "grid" && !group.isVisible) group.setVisible(true);
         open.api.setActive();
         return;
       }

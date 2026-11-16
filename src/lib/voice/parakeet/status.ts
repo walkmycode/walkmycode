@@ -34,7 +34,7 @@ export function parakeetLine(s: ParakeetStatus): string {
     return `Downloading… ${mb(received)} of ${mb(total)} (${pct}%)`;
   }
   if (s.state === "installed") {
-    if (s.source === "ireliabee") return "Already on this computer: WalkMyCode uses the copy iReliabee downloaded, and never changes or removes it.";
+    if (s.source === "shared") return "Already on this computer: WalkMyCode uses the copy another app downloaded, and never changes or removes it.";
     return `On this computer (${mb(s.bytes)}, in .walkmycode/models in your home folder).`;
   }
   return `Not on this computer yet: a one-off download of ${mb(s.install.total)} from GitHub (${mb(s.bytes)} once unpacked).`;

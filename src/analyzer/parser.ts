@@ -6,7 +6,7 @@
 import { Language, Parser, type Node } from "web-tree-sitter";
 import { assetUrl } from "./assets";
 
-export type GrammarName = "tsx" | "typescript" | "javascript" | "python" | "dart" | "php";
+export type GrammarName = "tsx" | "typescript" | "javascript" | "python" | "dart" | "php" | "rust";
 
 /** Each grammar's file, from node_modules. No npm package ships a Dart grammar
  * this runtime loads, so it is built from source and kept in vendor/
@@ -19,6 +19,7 @@ export const GRAMMAR_FILES: Record<GrammarName, string> = {
   python: "tree-sitter-python/tree-sitter-python.wasm",
   dart: "../vendor/tree-sitter-dart/tree-sitter-dart.wasm",
   php: "tree-sitter-php/tree-sitter-php.wasm",
+  rust: "tree-sitter-rust/tree-sitter-rust.wasm",
 };
 
 type Loader = (name: GrammarName) => Promise<string | Uint8Array>;
@@ -63,7 +64,7 @@ export async function parse(name: GrammarName, source: string): Promise<Node> {
  * the config readers; null when the path has no JS grammar. */
 export async function parseJsSnippet(path: string, source: string): Promise<Node | null> {
   const g = grammarFor(path);
-  if (!g || g === "python" || g === "dart" || g === "php") return null;
+  if (!g || g === "python" || g === "dart" || g === "php" || g === "rust") return null;
   return parse(g, source);
 }
 
@@ -87,6 +88,8 @@ export function grammarFor(path: string): GrammarName | null {
       return "dart";
     case "php":
       return "php";
+    case "rs":
+      return "rust";
     default:
       return null;
   }

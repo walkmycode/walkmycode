@@ -9,6 +9,7 @@ import "./settings.css";
 import LanternLight from "@/components/LanternLight";
 import { MOTION_BOOT } from "@/lib/motion";
 import { LOOK_BOOT } from "@/lib/look";
+import { DESKTOP_BOOT } from "@/lib/desktopBoot";
 
 // One font family everywhere, as in an IDE: Inter for all text (controls, titles, the guide's
 // answers, diagrams), JetBrains Mono only for code.
@@ -24,10 +25,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     // The motion switch, text size and density (Settings → Motion & look) are set on <html> before the first paint, so a page
-    // that should be still never starts moving; React keeps that attribute when it hydrates.
+    // that should be still never starts moving; React keeps that attribute when it hydrates. In the desktop app it also
+    // marks <html data-desktop>, so the top bar makes room for the window buttons from the first paint.
     <html lang="en-GB" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT + LOOK_BOOT }} />
+        <script dangerouslySetInnerHTML={{ __html: MOTION_BOOT + LOOK_BOOT + DESKTOP_BOOT }} />
       </head>
       <body>
         <div className={`${sans.variable} ${mono.variable} root`}>{children}</div>

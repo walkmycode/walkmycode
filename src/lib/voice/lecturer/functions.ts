@@ -105,8 +105,8 @@ export const FUNCTION_NAMES = LECTURER_FUNCTIONS.map((f) => f.name);
 export const FUNCTIONS_VERSION = "2026-10-01.1";
 
 /** The functions as Deepgram's Settings want them: name, description, parameters, and no endpoint. */
-export function deepgramFunctions(): { name: string; description: string; parameters: LecturerFunction["parameters"]; defer_until_eot?: true }[] {
-  return LECTURER_FUNCTIONS.map((f) => ({
+export function deepgramFunctions(list: LecturerFunction[] = LECTURER_FUNCTIONS): { name: string; description: string; parameters: LecturerFunction["parameters"]; defer_until_eot?: true }[] {
+  return list.map((f) => ({
     name: f.name,
     description: f.description,
     parameters: { type: "object", properties: { ...f.parameters.properties }, ...(f.parameters.required ? { required: [...f.parameters.required] } : {}) },

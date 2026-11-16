@@ -6,6 +6,7 @@
   --wall-2: #2d2924;
   --board: #1f3a31;
   --board-2: #244437;
+  --dg-card: #172c24;
   --frame: #6b4a2b;
   --frame-2: #4d3420;
   --chalk: #f1efe6;
@@ -36,7 +37,10 @@
   --code-bg: #16291f;
   --code-gutter: #132219;
   --code-gutter-ink: #6d8177;
-  --top-h: calc(58px * var(--ctl));
+  /* A title bar's height (Windows 11's caption is 32px): 32px at the default size, a little more at large text.
+     In the desktop app it is the window's title bar (docs/DESKTOP.md). Every control in it is --top-ctl tall, centred. */
+  --top-h: max(32px, calc(44px * var(--ctl)));
+  --top-ctl: calc(var(--top-h) - 8px);
   /* Lane colours */
   --lane-ui: var(--blue);
   --lane-api: var(--yellow);
@@ -62,6 +66,7 @@
   --wall-2: #232428;
   --board: #1b1c1f;
   --board-2: #26282c;
+  --dg-card: #141518;
   --frame: #3c3f44;
   --frame-2: #2b2d30;
   --chalk: #dfe1e5;
@@ -180,6 +185,29 @@ h2 { margin: 0; font: 650 var(--text)/1.15 var(--sans); color: var(--yellow); }
 .ctl { font: 600 var(--text) var(--sans); color: var(--ui-text); background: var(--ui-2); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(8px * var(--sp)) calc(12px * var(--sp)); cursor: pointer; display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
 .ctl.primary { background: var(--yellow); color: #2a241b; border-color: transparent; }
 .ctl.compact { font-size: var(--text); padding: calc(5px * var(--sp)) calc(9px * var(--sp)); }
+/* Explore's mute (MuteButton): a speaker that crosses out; gold while muted, as a pressed switch. */
+.ctl.mute-btn { display: inline-grid; place-items: center; padding-inline: calc(7px * var(--sp)); }
+.ctl.mute-btn svg { width: calc(15px * var(--fs)); height: calc(15px * var(--fs)); }
+.ctl.mute-btn.on { color: var(--yellow); border-color: var(--yellow); }
+
+/* Every dropdown, everywhere (owner, 12 Nov): one chevron at the right, and the room it needs kept free whatever the
+   control's own padding, so a long choice ("This computer · ask first") never runs under it. */
+select:not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a3a7ae' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px 6px;
+  padding-right: calc(30px * var(--fs)) !important;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+select:not([multiple]):not([size]):hover:not(:disabled),
+select:not([multiple]):not([size]):focus-visible {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23f3d77a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+select:not([multiple]):not([size]):disabled { cursor: default; }
 .ctl.ghost { background: transparent; }
 .ctl:disabled { opacity: .45; cursor: default; }
 .ctl.on { border-color: var(--yellow); color: var(--yellow); }
@@ -219,7 +247,7 @@ input.field::placeholder, textarea.field::placeholder { color: var(--ui-faint); 
    its own parts, so a stack chip can never run over what comes next. */
 .top-mid:has(.proj) { min-width: min(9rem, 26vw); }
 .proj { position: relative; min-width: 0; display: flex; }
-.proj-chip { display: inline-flex; align-items: center; gap: calc(8px * var(--sp)); min-width: 0; max-width: 100%; overflow: hidden; height: calc(32px * var(--ctl)); padding: 0 calc(9px * var(--sp)) 0 calc(11px * var(--sp)); border: 1px solid transparent; border-radius: 0; background: none; color: var(--ui-text); font: 600 var(--text) var(--sans); cursor: pointer; transition: background var(--t-fade), border-color var(--t-fade); }
+.proj-chip { display: inline-flex; align-items: center; gap: calc(8px * var(--sp)); min-width: 0; max-width: 100%; overflow: hidden; height: var(--top-ctl); padding: 0 calc(9px * var(--sp)) 0 calc(11px * var(--sp)); border: 1px solid transparent; border-radius: 0; background: none; color: var(--ui-text); font: 600 var(--text) var(--sans); cursor: pointer; transition: background var(--t-fade), border-color var(--t-fade); }
 .proj-chip:hover, .proj-chip[aria-expanded="true"] { background: var(--ui); border-color: var(--hair-2); }
 .proj-name { min-width: 3ch; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* From a tablet up the name doesn't give way: a status line beside it does. (Up to 24
@@ -245,20 +273,45 @@ input.field::placeholder, textarea.field::placeholder { color: var(--ui-faint); 
 .top-notice { font-size: var(--text); flex: none; }
 .top-status { display: flex; align-items: center; gap: calc(6px * var(--sp)); flex: none; }
 .top-right { display: flex; align-items: center; flex: none; position: relative; }
+/* The desktop app's title bar (docs/DESKTOP.md; docs/design/desktop-titlebar.html): the bar runs to the window's
+   edge and ends with the window buttons, each the bar's full height so a maximised window's top-right pixel closes it.
+   Its text is not selectable: dragging it moves the window. html[data-desktop] is set before the first paint. */
+html[data-desktop] .top { padding-right: 0; user-select: none; -webkit-user-select: none; }
+.winctl { display: flex; align-self: stretch; flex: none; margin-left: calc(6px * var(--sp)); margin-bottom: -1px; border-left: 1px solid var(--hair); }
+.winctl button { width: 46px; height: 100%; display: grid; place-items: center; padding: 0; border: 0; border-radius: 0; background: none; color: var(--ui-dim); cursor: default; transition: background-color var(--t-tap), color var(--t-tap); }
+.winctl button:hover { background: var(--ui-raise); color: var(--ui-text); }
+.winctl button:active { background: var(--ui-2); }
+.winctl .winctl-close:hover { background: #c42b1c; color: #fff; }
+.winctl .winctl-close:active { background: #b0281b; color: #fff; }
+.winctl button:focus-visible { outline: 1px solid var(--yellow); outline-offset: -1px; }
+.winctl.away button:not(:hover) { color: var(--ui-faint); }
+.winctl-ico { width: 16px; height: 16px; display: block; }
+/* A popped-out panel in the desktop app (docs/DESKTOP.md, "Pop-outs"): its window has no frame, so the panel's
+   tab bar is the title bar, the main bar's height, ending with the window buttons flush to the edge. */
+html[data-desktop] [data-location="popout"] { --dv-tabs-and-actions-container-height: var(--top-h); }
+html[data-desktop] [data-location="popout"] .dv-void-container { cursor: default; min-width: 64px; }
+.hdr-acts:has(.winctl) { padding-right: 0; }
+.hdr-acts .winctl { margin-bottom: 0; }
 .top-actions { display: flex; align-items: center; gap: calc(8px * var(--sp)); }
 .top-more { display: none; }
 /* On a wide screen the actions sit in one rail, like the Explore / Learn switch: flat
    buttons that lift on hover; a button with something to say (running, done, failed,
    conflict) keeps its coloured edge. */
 @media (min-width: 1025px) {
-  .top-actions { gap: calc(2px * var(--sp)); padding: calc(3px * var(--sp)); border: 1px solid var(--hair); border-radius: 0; background: var(--ui); }
-  .top-actions .ctl { height: calc(28px * var(--ctl)); background: transparent; border-radius: 0; }
+  .top-actions { gap: calc(2px * var(--sp)); height: var(--top-ctl); padding: calc(2px * var(--sp)); border: 1px solid var(--hair); border-radius: 0; background: var(--ui); }
+  .top-actions .ctl { background: transparent; border-radius: 0; }
+  .top .top-actions .ctl, .top .top-actions .cost, .top .top-actions .layout-menu { height: 100%; }
   .top-actions .ctl:not(.running):not(.good):not(.bad):not(.conflict) { border-color: transparent; }
   .top-actions .ctl:hover:not(:disabled), .top-actions .ctl[aria-expanded="true"] { background: var(--ui-raise); transform: none; }
   .top-actions .setup-pill { border-radius: 0; }
   .top-actions .cost { padding: 0 calc(8px * var(--sp)); }
 }
-.top .ctl, .top .badge, .top .cost { height: calc(30px * var(--ctl)); white-space: nowrap; }
+.top .ctl, .top .badge, .top .cost { height: var(--top-ctl); white-space: nowrap; }
+/* The segmented Explore / Learn switch, the AI pill and the gear: --top-ctl tall like the rest of the bar. */
+.top .rooms { height: var(--top-ctl); padding: calc(2px * var(--sp)); }
+.top .rooms a { display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; }
+.top .ai-pill { height: var(--top-ctl); }
+.top .iconbtn { width: var(--top-ctl); height: var(--top-ctl); }
 .top .cost { display: inline-flex; align-items: center; gap: calc(4px * var(--sp)); }
 .top .brand-dot { display: block; width: calc(14px * var(--ctl)); height: calc(14px * var(--ctl)); border-radius: 50%; background: var(--yellow); box-shadow: 0 0 12px rgba(243,215,122,.55); }
 /* Narrowing, in order: a room's detail line, the model id and call count, the actions
@@ -736,6 +789,10 @@ button.evchip { cursor: pointer; }
 .talk-btn:hover { border-color: var(--hair-3); }
 .talk-btn.on { color: var(--yellow); border-color: rgba(243,215,122,.5); }
 .talk-btn.end { color: var(--ink); background: var(--yellow); border-color: var(--yellow); }
+/* Raise your hand: up (waiting for "Go ahead") and the floor read as one pressed button, not a dead one. */
+.talk-btn.hand-btn:disabled { cursor: default; }
+.talk-btn.hand-btn.on { opacity: 1; }
+.talk-pill.hand-up .talk-ring i { animation: talk-pulse calc(1.2s * var(--m)) ease-in-out infinite; }
 .talk-btn:focus-visible, .talk-pill + .ctl:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 .lecture .talk-pill { align-self: flex-start; }
 @media (max-width: 520px) { .talk-pill { flex-wrap: wrap; border-radius: 0; } }
@@ -745,13 +802,108 @@ button.evchip { cursor: pointer; }
 .settings.voice-settings { padding-top: 0; }
 .voice-settings .speed { width: 100%; max-width: 320px; accent-color: var(--yellow); }
 .voice-settings .chips.seg { margin-top: calc(2px * var(--sp)); }
-.tree { font: var(--text) var(--mono); overflow: auto; padding: calc(6px * var(--sp)) calc(8px * var(--sp)); }
-.tree button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--ui-dim); padding: calc(1px * var(--sp)) calc(4px * var(--sp)); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: inherit; border-radius: 0; }
-.tree button:hover { color: var(--ui-text); background: rgba(255,255,255,.05); }
-.tree button.on { color: var(--yellow); }
+/* The Files panel (FileTree, docs/MOTION.md §4.10): a bar with where the open file is, then the rows, of
+   which only those in view exist (each placed at its own top). */
+.tree-panel { display: flex; flex-direction: column; min-height: 0; position: relative; }
+.tree-bar { display: flex; align-items: center; gap: calc(6px * var(--sp)); flex: none; padding: calc(3px * var(--sp)) calc(4px * var(--sp)) calc(3px * var(--sp)) calc(8px * var(--sp)); border-bottom: 1px solid var(--hair); font: var(--text) var(--mono); color: var(--ui-dim); }
+/* Right-to-left only to clip a long path at its start, keeping the file name; the segments inside read left to right. */
+.tree-crumbs { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; direction: rtl; text-align: left; }
+.tree-crumbs > span { direction: ltr; unicode-bidi: isolate; }
+.tree-crumbs > span > span { display: inline-block; }
+.tree-crumbs span span + span::before { content: "/"; color: var(--ui-faint); margin: 0 calc(3px * var(--sp)); }
+.tree-crumbs .last { color: var(--yellow); font-weight: 600; }
+.tree-tools { display: flex; flex: none; gap: calc(1px * var(--sp)); }
+.tree-tools button { display: grid; place-items: center; width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); padding: 0; border: 0; border-radius: 0; background: none; color: var(--ui-dim); cursor: pointer; }
+.tree-tools button:hover:not(:disabled) { color: var(--ui-text); background: var(--hair); }
+.tree-tools button.on { color: var(--yellow); }
+.tree-tools button:disabled { opacity: .4; cursor: default; }
+.tree-tools .tool-ico { width: calc(14px * var(--fs)); height: calc(14px * var(--fs)); }
+.tree { font: var(--text) var(--mono); overflow: auto; position: relative; overscroll-behavior: contain; }
+.tree-body { position: relative; }
+.tree-probe { position: absolute; visibility: hidden; height: 1.65em; pointer-events: none; }
+.tree button[role="treeitem"] { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: calc(4px * var(--sp)); height: 1.65em; padding-right: calc(8px * var(--sp)); text-align: left; background: none; border: 0; border-radius: 0; color: var(--ui-dim); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree button[role="treeitem"]:hover { color: var(--ui-text); background: var(--hair); }
+.tree button[role="treeitem"]:focus-visible { outline: 1px solid var(--yellow); outline-offset: -1px; }
+.tree .name { overflow: hidden; text-overflow: ellipsis; }
+.tree .skipped { opacity: .55; }
 .tree .dir { color: var(--ui-text); font-weight: 600; }
-.tree .dir.repo { color: var(--yellow); margin-top: calc(4px * var(--sp)); }
+.tree .dir.repo { color: var(--yellow); }
 .tree .repotag { margin-left: calc(6px * var(--sp)); font: 600 var(--text) var(--sans); color: var(--ui-dim); border: 1px solid var(--ui-line); border-radius: 0; padding: 0 calc(6px * var(--sp)); }
+/* The way to the open file: its folders in gold, the file lit, a trace's files numbered. */
+.tree .dir.trail { color: var(--yellow); }
+.tree .file.on { color: var(--yellow); font-weight: 600; }
+.tree .file.visited:not(.on) { color: var(--ui-text); }
+.tree .step { margin-left: auto; flex: none; min-width: 1.3em; padding: 0 calc(4px * var(--sp)); font: 600 var(--text)/1.25 var(--sans); text-align: center; color: var(--ink, #1e1f22); background: var(--yellow); }
+.tree .step.held { background: none; color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); font-weight: 600; }
+.tree-rail { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.tree-rail path { fill: none; stroke: var(--yellow); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.tree-away { position: absolute; left: 50%; z-index: 2; translate: -50% 0; max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: calc(2px * var(--sp)) calc(10px * var(--sp)); border: 1px solid var(--yellow); border-radius: 0; background: var(--ui-raise); color: var(--yellow); font: var(--text) var(--mono); cursor: pointer; }
+.tree-away.up { top: calc(34px * var(--ctl)); }
+.tree-away.down { bottom: calc(8px * var(--sp)); }
+/* The file the live debugger stopped in (FileTree.tsx, src/ide/debugAt.ts): the row tinted, a pointer with the
+   stopped line sliding in at each stop and pulsing while it waits, as an IDE's project view marks it. */
+.tree .file.debugging { background: linear-gradient(90deg, rgba(243,215,122,.16), rgba(243,215,122,.04) 75%, transparent); }
+.tree .file.debugging .name { color: var(--yellow); font-weight: 600; }
+.tree .dbg-ptr { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: calc(4px * var(--sp)); padding: 0 calc(6px * var(--sp)); border: 1px solid rgba(243,215,122,.55); background: rgba(243,215,122,.12); color: var(--yellow); font: 600 var(--text)/1.4 var(--mono);
+  animation: dbg-ptr-in var(--t-move) var(--ease-spring) both; }
+.tree .dbg-ptr i { width: 0; height: 0; border-style: solid; border-width: 4px 0 4px 6px; border-color: transparent transparent transparent var(--yellow); animation: dbg-ptr-pulse calc(1100ms * var(--m) + 1ms) ease-in-out infinite; }
+@keyframes dbg-ptr-in { from { opacity: 0; transform: translateX(10px) scale(.9); } }
+@keyframes dbg-ptr-pulse { 50% { opacity: .35; transform: translateX(2px); } }
+/* Every file, and the search over them (FileTree.tsx; mockup docs/design/files-all.html). */
+.tree-bar[hidden], .tree[hidden] { display: none; }
+.tree .fk, .tree-hit .fk { flex: none; display: inline-block; width: calc(9px * var(--fs)); height: calc(11px * var(--fs)); margin-right: calc(5px * var(--sp)); vertical-align: -1px; border: 1.5px solid currentColor; clip-path: polygon(0 0, 62% 0, 100% 32%, 100% 100%, 0 100%); color: var(--ui-faint); }
+.fk.code { color: var(--blue); }
+.fk.doc { color: var(--green); }
+.fk.config { color: #e9b27a; }
+.fk.image { color: var(--purple); }
+/* A file's drawing (FileIcon.tsx, src/lib/fileIcon.ts; mockup docs/design/files-icons.html): the analogy
+   scenes' drawings, small in the tree and search without their ground shadow, whole for a file shown big. */
+.fic { flex: none; display: inline-grid; place-items: center; width: calc(15px * var(--fs)); height: calc(15px * var(--fs)); margin-right: calc(6px * var(--sp)); vertical-align: -3px; }
+.fic > svg.art { width: 100%; height: 100%; transition: transform var(--t-tap) var(--ease-spring); }
+.fic.row svg.art .d-sh, .fic.hit svg.art .d-sh { display: none; }
+.fic > .fk { margin-right: 0; }
+.tree button[role="treeitem"]:hover .fic > svg.art { transform: scale(1.12); }
+.tree .file.unmapped .fic { opacity: .75; }
+.fic.hit { grid-row: span 2; align-self: center; width: calc(26px * var(--fs)); height: calc(26px * var(--fs)); margin-right: calc(8px * var(--sp)); }
+.fic.big { display: grid; width: calc(72px * var(--fs)); height: calc(72px * var(--fs)); margin: 0 auto calc(10px * var(--sp)); }
+.tree .file.unmapped .name { color: var(--ui-faint); }
+.tree .file.unmapped:hover .name { color: var(--ui-dim); }
+.tree-search { flex: none; padding: calc(8px * var(--sp)) calc(8px * var(--sp)) calc(6px * var(--sp)); border-bottom: 1px solid var(--hair); }
+.tree-field { display: flex; align-items: center; height: calc(28px * var(--ctl)); border: 1px solid var(--ui-line); background: var(--out); transition: border-color var(--t-tap), box-shadow var(--t-dim); cursor: text; }
+.tree-field:focus-within { border-color: rgba(243,215,122,.55); box-shadow: 0 0 0 3px rgba(243,215,122,.10); }
+.tree-field svg { flex: none; width: calc(14px * var(--fs)); height: calc(14px * var(--fs)); margin: 0 calc(6px * var(--sp)) 0 calc(8px * var(--sp)); color: var(--ui-faint); transition: color var(--t-tap); }
+.tree-field:focus-within svg { color: var(--yellow); }
+.tree-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: none; color: var(--ui-text); font: var(--text) var(--mono); }
+.tree-field input::placeholder { color: var(--ui-faint); font-family: var(--sans); }
+.tree-field kbd { flex: none; margin-right: calc(6px * var(--sp)); padding: calc(2px * var(--sp)) calc(5px * var(--sp)); border: 1px solid var(--ui-line); color: var(--ui-faint); font: var(--text)/1 var(--mono); }
+.tree-clear { flex: none; display: grid; place-items: center; width: calc(24px * var(--ctl)); height: calc(24px * var(--ctl)); margin-right: calc(2px * var(--sp)); border: 0; background: none; color: var(--ui-dim); cursor: pointer; animation: fade-in var(--t-fade) ease-out both; }
+.tree-clear:hover { color: var(--ui-text); background: var(--hair); }
+.tree-chips { display: flex; flex-wrap: wrap; gap: calc(4px * var(--sp)); margin-top: calc(6px * var(--sp)); }
+.tree-chips button { display: inline-flex; align-items: center; gap: calc(5px * var(--sp)); padding: calc(2px * var(--sp)) calc(8px * var(--sp)); border: 1px solid var(--hair-2); border-radius: 0; background: none; color: var(--ui-dim); font: var(--text) var(--sans); cursor: pointer; transition: color var(--t-tap), border-color var(--t-tap), background var(--t-tap); }
+.tree-chips button:hover { color: var(--ui-text); border-color: var(--hair-3); }
+.tree-chips button b { font: 500 var(--text) var(--mono); color: var(--ui-faint); }
+.tree-chips button[aria-pressed="true"] { color: var(--yellow); border-color: rgba(243,215,122,.55); background: rgba(243,215,122,.10); }
+.tree-chips button[aria-pressed="true"] b { color: rgba(243,215,122,.7); }
+.tree-hits { overflow: auto; overscroll-behavior: contain; padding: 0 0 calc(6px * var(--sp)); }
+.tree-count { margin: 0; padding: calc(6px * var(--sp)) calc(10px * var(--sp)) calc(2px * var(--sp)); color: var(--ui-faint); font: var(--text) var(--mono); min-height: 1.6em; }
+.tree-hit { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: calc(2px * var(--sp)); width: 100%; padding: calc(5px * var(--sp)) calc(10px * var(--sp)); border: 0; border-radius: 0; background: none; text-align: left; color: var(--ui-text); font: var(--text) var(--mono); cursor: pointer;
+  animation: tree-hit-in var(--t-move) var(--ease-settle) both; animation-delay: calc(var(--k, 0) * 22ms * var(--m)); }
+.tree-hit .fk { grid-row: span 2; align-self: start; margin-top: calc(3px * var(--sp)); }
+.tree-hit .hit-name, .tree-hit .hit-dir { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-hit .hit-dir { color: var(--ui-faint); }
+.tree-hit.unmapped .hit-name { color: var(--ui-dim); }
+.tree-hit mark { background: none; color: var(--yellow); font-weight: 650; text-decoration: underline; text-decoration-color: rgba(243,215,122,.55); text-underline-offset: 3px; }
+.tree-hit:hover { background: var(--hair); }
+.tree-hit.sel { background: rgba(243,215,122,.10); }
+.tree-hit.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--yellow); box-shadow: var(--glow); animation: tree-hit-bar var(--t-tap) var(--ease-out) both; }
+.tree-none { margin: 0; padding: calc(28px * var(--sp)) calc(16px * var(--sp)); text-align: center; color: var(--ui-faint); animation: tree-hit-in var(--t-move) var(--ease-settle) both; }
+.tree-none b { display: block; margin-bottom: calc(4px * var(--sp)); color: var(--ui-dim); font-weight: 600; }
+.tree-more { margin: 0; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); color: var(--ui-faint); }
+@keyframes tree-hit-in { from { opacity: 0; transform: translateY(6px) scale(.99); } }
+@keyframes tree-hit-bar { from { transform: scaleY(0); } }
+.code-unread { display: grid; place-items: center; align-content: center; padding: calc(24px * var(--sp)); text-align: center; }
+.code-unread .note { max-width: 46ch; color: var(--ui-dim); }
+.code-unread b { color: var(--ui-text); font-family: var(--mono); font-weight: 600; }
 /* The analysis bar: compositor-only (scaleX fill, translated dot), so it keeps
    moving while the parser blocks the main thread. */
 .progressbar { position: relative; height: calc(6px * var(--ctl)); margin: calc(2px * var(--sp)) 0; }
@@ -892,9 +1044,21 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
   transition-delay: calc(min(var(--i, 0), 10) * 25ms * var(--m)), calc(min(var(--i, 0), 10) * 25ms * var(--m)), 0s;
   @starting-style { opacity: 0; transform: translateY(6px); }
 }
-.tree button { transition: opacity 120ms ease-out, transform calc(120ms * var(--m)) var(--ease-out), color var(--t-fade), background var(--t-tap); @starting-style { opacity: 0; transform: translateY(-3px); } }
+/* The Files panel's motion: rows rise in when their folder opens (staggered by --k), the folder glyph turns,
+   the rail draws down to the file, which gets a post, a sweep and one ping. Opacity, transform and one stroke. */
+.tree button[role="treeitem"] { transition: color var(--t-fade), background var(--t-tap); }
+.tree .enter { animation: tree-rise var(--t-dim) var(--ease-settle) both; animation-delay: calc(var(--k, 0) * 12ms * var(--m)); }
+@keyframes tree-rise { from { opacity: 0; transform: translateY(-4px); } }
 .tree .glyph { display: inline-block; width: 1ch; transition: transform var(--t-tap) var(--ease-spring); }
 .tree .dir.open .glyph { transform: rotate(90deg); }
+.tree-rail path.draw { animation: tree-draw var(--t-draw) var(--ease-out) both; }
+@keyframes tree-draw { from { stroke-dashoffset: 1; } }
+.tree .file.beacon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(243,215,122,.14), rgba(243,215,122,.03) 70%, transparent); transform-origin: left; animation: tree-sweep var(--t-land) var(--ease-out) both; pointer-events: none; }
+.tree .file.beacon::after { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; background: var(--yellow); box-shadow: var(--glow); animation: tree-post var(--t-land) var(--ease-spring) both; }
+@keyframes tree-sweep { from { transform: scaleX(0); opacity: 0; } 40% { opacity: 1; } }
+@keyframes tree-post { from { transform: scaleY(0); } }
+.tree-crumbs span span { animation: tree-crumb var(--t-dim) var(--ease-settle) both; animation-delay: calc(var(--i) * var(--t-step)); }
+@keyframes tree-crumb { from { opacity: 0; transform: translateX(-4px); } }
 /* The dock's groups rise into place when they first appear (and when one is docked back). */
 .lantern .dv-groupview { transition: opacity var(--t-fade) var(--ease-out), transform var(--t-move) var(--ease-settle); @starting-style { opacity: 0; transform: translateY(10px); } }
 /* The brand pops in and carries the light's home: a small glowing dot. */
@@ -988,7 +1152,7 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
 .board .made-asks .ctl { font: 500 var(--text) var(--sans); text-align: left; background: rgba(0, 0, 0, .22); border-color: rgba(255, 255, 255, .14); color: var(--chalk); }
 .board .made-asks .ctl:hover { border-color: var(--yellow); color: #fff; }
 
-/* A diagram (src/learn/components/Diagram.tsx, dressed by src/lib/diagramStyle.ts): the Ahofe blueprint on the
+/* A diagram (src/learn/components/Diagram.tsx, dressed by src/lib/diagramStyle.ts): the blueprint style on the
    chalkboard. No dark window: a hairline frame on the board, a faint chalk dot grid, cards a shade darker than the
    board; a bar with the kind of diagram and the view's tools, the caption, and a legend of the map's layers. */
 .dg { position: relative; border: 1px solid rgba(241,239,230,.16); border-radius: 0; overflow: hidden; background: rgba(0,0,0,.08); font-family: var(--sans); }
@@ -1012,9 +1176,10 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
 .dg-ink svg * { filter: none !important; }
 /* Messages in a sequence: a halo in the board's colour keeps them clear of any line behind them.
    (Link labels sit in pills: diagramStyle.ts.) */
-.dg-ink svg .messageText { paint-order: stroke; stroke: #1f3a31 !important; stroke-width: 4px !important; stroke-linejoin: round; }
+.dg-ink svg .messageText { paint-order: stroke; stroke: var(--board) !important; stroke-width: 3px !important; stroke-linejoin: round; }
 .dg-ink svg .node .label text, .dg-ink svg .actor tspan, .dg-ink svg text.actor { fill: var(--chalk) !important; }
-.dg-ink svg .edgeLabel text, .dg-ink svg .messageText { fill: #c9c3b3 !important; }
+.dg-ink svg .edgeLabel text { fill: #c9c3b3 !important; }
+.dg-ink svg .messageText { fill: var(--chalk) !important; font-weight: 600 !important; }
 .dg-ink svg marker path, .dg-ink svg marker polygon { fill: rgba(241,239,230,.6) !important; stroke: none !important; }
 /* Flowing only while the diagram is on screen (.dg-live, Diagram.tsx): no work for what can't be seen. */
 .dg-flow { animation: dg-flow 2.4s linear infinite; animation-play-state: paused; }
@@ -1037,3 +1202,5 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
 .map-empty { position: absolute; inset: 0; margin: auto; width: min(460px, calc(100% - 32px)); height: fit-content; padding: calc(18px * var(--sp)) calc(20px * var(--sp)); border-radius: 0; background: var(--ui); border: 1px solid var(--ui-line); color: var(--ui-text); font: var(--text)/1.5 var(--sans); box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 5; }
 .map-empty b { color: var(--yellow); }
 .map-empty p { margin: calc(6px * var(--sp)) 0 0; color: var(--ui-dim); }
+/* A map made before WalkMyCode could draw its language (src/components/MapAgain.tsx): its one action under the words. */
+.map-again-act { margin-top: calc(12px * var(--sp)); }

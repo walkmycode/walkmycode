@@ -7,6 +7,8 @@ export interface RepoRow {
   kind: "local" | "demo";
   files: SourceFile[];
   handle?: FileSystemDirectoryHandle;
+  /** The desktop app's folder: its path on disk, read again by the server. */
+  path?: string;
   /** The folder had more files than one repo may hold; only the first ones are in. */
   capped?: boolean;
 }

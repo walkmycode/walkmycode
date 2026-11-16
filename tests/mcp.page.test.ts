@@ -522,7 +522,7 @@ describe("voice on the page", () => {
   });
 
   it("reads with the saved narrator, except in Free voice, where the browser reads everything", () => {
-    const view: VoiceView = { narrator: "elevenlabs", voiceId: null, speed: 1, lecturer: "elevenagents", lecturerModel: "haiku", input: "hands-free", headphones: false, stt: "browser", keys: { ELEVENLABS_API_KEY: { has_key: true, source: "settings" } }, readiness: { narrator: null, lecturer: null } };
+    const view: VoiceView = { narrator: "elevenlabs", voiceId: null, speed: 1, lecturer: "elevenagents", lecturerModel: "haiku", lecturerStyle: "lively", input: "hands-free", headphones: false, stt: "browser", keys: { ELEVENLABS_API_KEY: { has_key: true, source: "settings" } }, readiness: { narrator: null, lecturer: null } };
     assert.equal(narratorInForce(view).narrator, "elevenlabs");
     setBrowserOnly(true);
     try {

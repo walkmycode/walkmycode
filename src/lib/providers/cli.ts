@@ -1,5 +1,5 @@
 // "My subscription": the guide answered by an AI app on this computer, on the user's own plan,
-// instead of an API key (issue #12; the design follows iReliabee's): Claude Code on a Claude plan,
+// instead of an API key (issue #12): Claude Code on a Claude plan,
 // Codex on a ChatGPT plan, the Gemini CLI on a Google account. What differs between them is in
 // agents.ts; everything else is here and the same for all three.
 //
@@ -18,6 +18,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { appDir } from "@/lib/dataDir";
 import { findOnPath } from "@/lib/localrun/toolchains";
 import { killTree, spawnTracked } from "@/lib/localrun/processes";
 import { SYSTEM, TOUR_ADDENDUM } from "@/lib/claude/prompts";
@@ -246,7 +247,7 @@ function startJob(id: AgentId, o: { model: string; mode: "ask" | "tour"; mapSumm
   // The bridge's address, job and key in a file only this user can read, never on a command line
   // (Codex takes its MCP settings as arguments, which other programs can list).
   write("run.json", JSON.stringify({ url: o.toolUrl, job: jobId, key, tools: join(dir, "tools.json") }));
-  const bridge = { command: process.execPath, args: [join(process.cwd(), "scripts", "cli-tools-mcp.mjs")], env: { WMC_RUN_FILE: join(dir, "run.json") } };
+  const bridge = { command: process.execPath, args: [join(appDir(), "scripts", "cli-tools-mcp.mjs")], env: { WMC_RUN_FILE: join(dir, "run.json") } };
   const guide = [
     SYSTEM + (o.mode === "tour" ? TOUR_ADDENDUM : ""),
     "You are answering inside WalkMyCode. Read the project ONLY through the walkmycode tools; they are the project the user has open. Reply with the answer itself, in markdown.",

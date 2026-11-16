@@ -16,7 +16,7 @@ import { AGENT_URL, buildAgentSettings, PROMPT_LIMIT } from "../src/lib/voice/ag
 import { VoiceError } from "../src/lib/voice/errors";
 import type { AudioIO } from "../src/lib/voice/lecturer/audio";
 import type { ServerMessage } from "../src/lib/voice/lecturer/deepgram/protocol";
-import { initialState, KEEPALIVE_MS, micRoute, reduce, TAIL_MS, type Action, type AgentState, type Effect } from "../src/lib/voice/lecturer/deepgram/reducer";
+import { FLOOR_MAX_MS, FLOOR_QUIET_MS, GO_AHEAD, HAND_WAIT_MS, initialState, KEEPALIVE_MS, micRoute, reduce, TAIL_MS, type Action, type AgentState, type Effect } from "../src/lib/voice/lecturer/deepgram/reducer";
 import { DeepgramLecturer, type WebSocketLike } from "../src/lib/voice/lecturer/deepgram/session";
 import { ElevenAgentsLecturer, type ElevenConversationLike } from "../src/lib/voice/lecturer/elevenagents";
 import { FUNCTION_NAMES } from "../src/lib/voice/lecturer/functions";
@@ -138,6 +138,80 @@ describe("Deepgram session reducer", () => {
     assert.equal(r.effects.filter((e) => e.do === "play").length, 0);
     r = drive([msg({ type: "AgentStartedSpeaking" }, 400), { type: "audio", frame, at: 410 }], r.s);
     assert.equal(r.effects.filter((e) => e.do === "play").length, 1);
+  });
+
+  it("raise your hand: he stops at once, says “Go ahead” over what he was saying, then the floor (and, held to talk, the mic) is the student's", () => {
+    const frame = new ArrayBuffer(8);
+    // Hold to talk, mid-reply.
+    let { s } = drive([...LIVE, msg({ type: "AgentStartedSpeaking" }, 100), { type: "audio", frame, at: 110 }]);
+    assert.equal(s.mic, "off");
+    let r = drive([{ type: "hand", at: 200 }, { type: "audio", frame, at: 210 }], s);
+    assert.ok(r.effects.some((e) => e.do === "flush"), "his voice stops now");
+    assert.equal(r.effects.filter((e) => e.do === "play").length, 0, "the rest of the reply is dropped");
+    assert.deepEqual(sent(r.effects), [{ type: "InjectAgentMessage", message: GO_AHEAD[0], behavior: "interrupt" }]);
+    assert.deepEqual(events(r.effects), [{ type: "speaking", on: false }, { type: "hand", state: "asking" }]);
+    // A second press while it is up does nothing.
+    assert.deepEqual(drive([{ type: "hand", at: 220 }], r.s).effects, []);
+    // As Deepgram really sends it (measured on the live agent): the interrupted reply's tail still in flight,
+    // then the "Go ahead." text, then its audio, with no AgentStartedSpeaking. Then the mic opens by itself.
+    r = drive([{ type: "audio", frame, at: 250 }, msg({ type: "ConversationText", role: "assistant", content: "Go ahead." }, 300), { type: "audio", frame, at: 310 }, msg({ type: "AgentAudioDone" }, 320), { type: "drained", at: 330 }], r.s);
+    assert.equal(r.effects.filter((e) => e.do === "play").length, 1, "the old tail is dropped; “Go ahead” is heard");
+    assert.deepEqual(events(r.effects).filter((e) => e.type === "hand" || e.type === "mic"), [{ type: "hand", state: "floor" }, { type: "mic", open: true, mode: "push-to-talk" }]);
+    assert.equal(r.s.mic, "live");
+    // The student speaks; when the turn ends the mic lets go with the usual tail and the hand comes down.
+    r = drive([msg({ type: "UserStartedSpeaking" }, 400), msg({ type: "EndOfTurn" }, 900)], r.s);
+    assert.equal(r.s.hand, "none");
+    assert.equal(r.s.holding, false);
+    assert.equal(r.s.mic, "silence", "the end-of-turn tail");
+    assert.equal(micRoute(r.s, 900 + TAIL_MS), "off");
+    assert.ok(events(r.effects).some((e) => e.type === "hand" && e.state === "down"));
+    s = r.s;
+    // The next hand says the next line.
+    r = drive([{ type: "hand", at: 1000 }], s);
+    assert.equal((sent(r.effects)[0] as { message: string }).message, GO_AHEAD[1]);
+  });
+
+  it("raise your hand: a refused or lost “Go ahead” still gives the floor; silence takes it back; hands-free just listens", () => {
+    let { s } = drive(LIVE);
+    let r = drive([{ type: "hand", at: 100 }, msg({ type: "InjectionRefused" }, 120)], s);
+    assert.equal(r.s.hand, "floor");
+    assert.equal(r.s.mic, "live");
+    // Nobody speaks into the floor: it closes again.
+    r = drive([{ type: "tick", at: 120 + FLOOR_QUIET_MS }], r.s);
+    assert.equal(r.s.hand, "none");
+    assert.equal(r.s.holding, false);
+    // Nothing comes back at all: the floor anyway.
+    r = drive([{ type: "hand", at: 20_000 }, { type: "tick", at: 20_000 + HAND_WAIT_MS - 1 }], r.s);
+    assert.equal(r.s.hand, "asking");
+    r = drive([{ type: "tick", at: 20_000 + HAND_WAIT_MS }], r.s);
+    assert.equal(r.s.hand, "floor");
+    // The student's own press takes over.
+    r = drive([{ type: "press", at: 24_000 }], r.s);
+    assert.equal(r.s.hand, "none");
+    assert.equal(r.s.handHold, false);
+    // Hands-free: the mic is open anyway, so the floor holds nothing.
+    ({ s } = drive([{ type: "connect", at: 0, input: "hands-free" }, ...LIVE.slice(1)]));
+    r = drive([{ type: "hand", at: 100 }, msg({ type: "InjectionRefused" }, 110)], s);
+    assert.equal(r.s.hand, "floor");
+    assert.equal(r.s.handHold, false);
+    // A noisy room: Deepgram thinks the student started speaking and never hears the end (seen on a real
+    // desktop). The hand still goes up, and "Hearing you…" stops.
+    ({ s } = drive([{ type: "connect", at: 0, input: "hands-free" }, ...LIVE.slice(1), msg({ type: "UserStartedSpeaking" }, 200)]));
+    r = drive([{ type: "hand", at: 5000 }], s);
+    assert.equal((sent(r.effects)[0] as { type: string }).type, "InjectAgentMessage");
+    assert.deepEqual(events(r.effects), [{ type: "listening", on: false }, { type: "hand", state: "asking" }]);
+    assert.equal(r.s.userSpeaking, false);
+    // A hands-free floor nobody speaks into ends too (seen in Chrome: "Your turn" stayed up), so a hand can go up
+    // again; and a noisy room's endless "speech" ends it at the cap.
+    r = drive([msg({ type: "InjectionRefused" }, 5100), { type: "tick", at: 5100 + FLOOR_QUIET_MS }], r.s);
+    assert.equal(r.s.hand, "none");
+    r = drive([{ type: "hand", at: 20_000 }, msg({ type: "InjectionRefused" }, 20_010), msg({ type: "UserStartedSpeaking" }, 20_100), { type: "tick", at: 20_010 + FLOOR_QUIET_MS }], r.s);
+    assert.equal(r.s.hand, "floor", "not while the student is (or seems to be) speaking");
+    r = drive([{ type: "tick", at: 20_010 + FLOOR_MAX_MS }], r.s);
+    assert.equal(r.s.hand, "none");
+    // While the student holds the mic, a hand is pointless: nothing happens.
+    ({ s } = drive([...LIVE, { type: "press", at: 100 }]));
+    assert.deepEqual(drive([{ type: "hand", at: 110 }], s).effects, []);
   });
 
   it("speaking ends when the speaker drains after AgentAudioDone, not at a gap in the stream", () => {

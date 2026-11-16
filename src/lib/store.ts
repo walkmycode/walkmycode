@@ -18,6 +18,8 @@ export interface RepoSource {
   kind: "local" | "demo" | "github";
   /** Kept so "Refresh" can re-read a local folder after asking permission again. */
   handle?: FileSystemDirectoryHandle;
+  /** The desktop app's folder: its path on disk (docs/DESKTOP.md, "Folders"). */
+  path?: string;
   fileCount: number;
   addedAt: string;
 }

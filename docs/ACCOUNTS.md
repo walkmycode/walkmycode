@@ -1,6 +1,6 @@
 # WalkMyCode accounts — FINAL spec (`docs/ACCOUNTS.md`)
 
-Email-code registration, database sessions, GitHub sign-in, for the **hosted** full app (`WALKMYCODE_MODE=hosted`). BYOK self-host has no accounts; Lite uses the viewer's Claude identity. Both are untouched except for one `gate()` helper that knows which mode it is in, and the same-origin guard that `/api/claude` gains in every mode. All paths are under `codebase-guide\`. iReliabee was read only.
+Email-code registration, database sessions, GitHub sign-in, for the **hosted** full app (`WALKMYCODE_MODE=hosted`). BYOK self-host has no accounts; Lite uses the viewer's Claude identity. Both are untouched except for one `gate()` helper that knows which mode it is in, and the same-origin guard that `/api/claude` gains in every mode. All paths are under `codebase-guide\`.
 
 ## 0. What changed since the reviewed draft
 
@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS admin_actions (
 );
 ```
 
-Later, unchanged in intent: `0002_tokens.sql` — `refresh_tokens(token_hash PK, account_id REFERENCES accounts(id) ON DELETE CASCADE, family TEXT NOT NULL, device, label, created_at, last_used, expires_at, revoked_at, replaced_by)`; presenting a token whose `replaced_by` is set revokes every row with the same `family`. `0003_credits.sql` — iReliabee's `ledger`, `holds`, `usage_events`, `free_devices`, `checkouts` with `account_id REFERENCES accounts(id) ON DELETE RESTRICT`, the partial unique index `idx_ledger_ref ON ledger (account_id, ref) WHERE ref != ''`, and the conditional-INSERT `openHold`; balance stays derived.
+Later, unchanged in intent: `0002_tokens.sql` — `refresh_tokens(token_hash PK, account_id REFERENCES accounts(id) ON DELETE CASCADE, family TEXT NOT NULL, device, label, created_at, last_used, expires_at, revoked_at, replaced_by)`; presenting a token whose `replaced_by` is set revokes every row with the same `family`. `0003_credits.sql` — `ledger`, `holds`, `usage_events`, `free_devices`, `checkouts` with `account_id REFERENCES accounts(id) ON DELETE RESTRICT`, the partial unique index `idx_ledger_ref ON ledger (account_id, ref) WHERE ref != ''`, and the conditional-INSERT `openHold`; balance stays derived.
 
 `src/lib/db/index.ts` (`import "server-only"`): `db()` returns one `createClient({url: WALKMYCODE_DB_URL ?? "file:.walkmycode/walkmycode.db", authToken: WALKMYCODE_DB_AUTH_TOKEN})` per process (memoised on `globalThis` so `next dev` re-evaluation does not leak clients); for `file:` URLs runs `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000`; then `migrate()` reads the migrations dir, applies each unapplied file inside `batch([...], "write")` and inserts into `schema_migrations`. `WALKMYCODE_DB_URL=file::memory:` gives tests a fresh database. Helpers: `one<T>(sql, args)`, `all<T>`, `run(sql, args) → rowsAffected`, `tx(fn)` wrapping `transaction("write")`, `now()` in whole seconds.
 
@@ -393,5 +393,3 @@ the same verify **without** `-b jar.txt` → 401 `bad_code`;
 1. **Domain and sender.** Which domain sends the codes (Resend needs DNS records for it) and which address answers replies — `hello@` / `support@` / `privacy@`?
 2. **GitHub app type.** An OAuth App is enough for sign-in. Read-only repo access later is cleaner as a GitHub App (fine-grained "Contents: read"); shall sign-in use the GitHub App from the start so people grant once?
 3. **Turso from day one, or a file on the VPS?** The code is identical; Turso adds a hosted replica and point-in-time restore, the file adds nothing to run.
-
----

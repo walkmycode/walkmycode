@@ -15,6 +15,7 @@ import ModelBadge from "@/components/ModelBadge";
 import TopBar from "@/components/TopBar";
 import { restoreRepo, useRepo, useWorkspace } from "@/lib/store";
 import CostMeter from "@/components/CostMeter";
+import MuteButton from "@/components/voice/MuteButton";
 import { MCP, TARGET } from "@/lib/adapters/target";
 import { pickSettings, pickVoice } from "@/lib/adapters/select";
 import { useAiRoute } from "@/lib/adapters/useAiRoute";
@@ -167,6 +168,7 @@ function MapTop() {
       <SetupPill />
       <SourceControl />
       <TerminalButton />
+      <MuteButton />
       <LayoutMenu />
       {/* WalkMyCode Lite keeps its "Your Claude" badge; the app has the AI pill instead, and
           WalkMyCode for Claude its "Claude is listening" pill, which names the AI app too. */}

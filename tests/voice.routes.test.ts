@@ -270,12 +270,13 @@ describe("POST /api/voice/token", () => {
 describe("GET /api/voice/settings", () => {
   it("builds Deepgram's Settings for the saved model, with nothing secret in them", async () => {
     writeKey("DEEPGRAM_API_KEY", DG_KEY);
-    saveVoice({ lecturer: "deepgram-agent", lecturerModel: "smarter" });
+    saveVoice({ lecturer: "deepgram-agent", lecturerModel: "smarter", lecturerStyle: "excited" });
     const res = await guarded(settingsHandler())(get("/api/voice/settings"));
     const text = await seen(res);
-    const s = JSON.parse(text) as { type: string; agent: { think: { provider: { model: string } } } };
+    const s = JSON.parse(text) as { type: string; agent: { think: { provider: { model: string } }[]; speak: { provider: { expressivity?: number } } } };
     assert.equal(s.type, "Settings");
-    assert.equal(s.agent.think.provider.model, "claude-sonnet-5");
+    assert.deepEqual(s.agent.think.map((t) => t.provider.model), ["claude-sonnet-5-5", "claude-sonnet-5"]);
+    assert.equal(s.agent.speak.provider.expressivity, 2, "the saved style reaches Deepgram");
     assert.doesNotMatch(text, /"(temperature|endpoint|headers)":/);
     const foreign = await guarded(settingsHandler())(get("/api/voice/settings", { "sec-fetch-site": "cross-site" }));
     assert.equal(foreign.status, 403);
@@ -285,16 +286,17 @@ describe("GET /api/voice/settings", () => {
 describe("/api/voice/config", () => {
   it("serves the choice, the keys' standing and readiness, and saves a patch", async () => {
     writeKey("DEEPGRAM_API_KEY", DG_KEY);
-    let res = await guarded(configGetHandler())(get("/api/voice/config"));
+    const up = fake(() => json(GRANT));
+    let res = await guarded(configGetHandler({ fetch: up.fetch }))(get("/api/voice/config"));
     let body = JSON.parse(await seen(res)) as { saved: Record<string, unknown>; keys: Record<string, { has_key: boolean }>; readiness: Record<string, { code: string } | null> };
     assert.equal(body.saved.narrator, "elevenlabs");
     assert.equal(body.keys.DEEPGRAM_API_KEY.has_key, true);
     assert.equal(body.keys.ELEVENLABS_API_KEY.has_key, false);
     assert.equal(body.readiness.narrator?.code, "missing_key");
 
-    res = await guarded(configPostHandler())(post("/api/voice/config", { narrator: "deepgram", voice_id: "aura-2-pandora-en", speed: 0.9, lecturer: "deepgram-agent", lecturer_model: "smarter" }));
+    res = await guarded(configPostHandler({ fetch: up.fetch }))(post("/api/voice/config", { narrator: "deepgram", voice_id: "aura-2-pandora-en", speed: 0.9, lecturer: "deepgram-agent", lecturer_model: "smarter" }));
     body = JSON.parse(await seen(res)) as typeof body;
-    assert.deepEqual(body.saved, { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 0.9, lecturer: "deepgram-agent", lecturerModel: "smarter", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
+    assert.deepEqual(body.saved, { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 0.9, lecturer: "deepgram-agent", lecturerModel: "smarter", lecturerStyle: "lively", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
     assert.deepEqual(body.readiness, { narrator: null, lecturer: null });
     assert.deepEqual(loadVoice(), { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 0.9, lecturer: "deepgram-agent", lecturerModel: "smarter" });
 
@@ -302,13 +304,67 @@ describe("/api/voice/config", () => {
     assert.equal(bad.status, 400);
 
     // Hold to talk (noisy rooms) and headphones are saved choices too, kept with the rest.
-    res = await guarded(configPostHandler())(post("/api/voice/config", { input: "push-to-talk", headphones: true }));
+    res = await guarded(configPostHandler({ fetch: up.fetch }))(post("/api/voice/config", { input: "push-to-talk", headphones: true }));
     body = JSON.parse(await seen(res)) as typeof body;
     assert.equal(body.saved.input, "push-to-talk");
     assert.equal(body.saved.headphones, true);
     assert.equal(loadVoice().lecturerModel, "smarter");
     const wrong = await guarded(configPostHandler())(post("/api/voice/config", { input: "always-on" }));
     assert.equal(wrong.status, 400);
+    assert.equal(up.calls.length, 1, "Deepgram is asked about a key once");
+  });
+
+  it("says before anyone taps Talk that a Deepgram key without the Member role cannot start it", async () => {
+    writeKey("DEEPGRAM_API_KEY", DG_KEY);
+    saveVoice({ narrator: "deepgram", lecturer: "deepgram-agent" });
+    const up = fake(() => json({ err_code: "FORBIDDEN", err_msg: "Insufficient permissions." }, 403));
+    const config = guarded(configGetHandler({ fetch: up.fetch }));
+    type Body = { keys: Record<string, { has_key: boolean; note?: string }>; readiness: Record<string, { code: string; title: string; message: string } | null> };
+    let body = JSON.parse(await seen(await config(get("/api/voice/config")))) as Body;
+    assert.equal(up.calls[0].url, "https://api.deepgram.com/v1/auth/grant");
+    assert.equal(up.calls[0].headers.authorization, `Token ${DG_KEY}`);
+    assert.equal(body.keys.DEEPGRAM_API_KEY.has_key, true);
+    assert.match(body.keys.DEEPGRAM_API_KEY.note ?? "", /Reads aloud, but can't start Talk.*Member role/);
+    assert.equal(body.readiness.lecturer?.title, "Your Deepgram key can't start Talk");
+    assert.match(body.readiness.lecturer!.message, /create a key with the Member role/);
+    assert.equal(body.readiness.narrator, null, "a Default key still reads aloud");
+    await seen(await config(get("/api/voice/config")));
+    assert.equal(up.calls.length, 1, "the answer is kept for the key");
+
+    // A new key is a new question; a Member key clears the note and Talk is ready.
+    writeKey("DEEPGRAM_API_KEY", DG_KEY.replace("beef", "cafe"));
+    const ok = fake(() => json(GRANT));
+    body = JSON.parse(await seen(await guarded(configGetHandler({ fetch: ok.fetch }))(get("/api/voice/config")))) as Body;
+    assert.equal(ok.calls.length, 1);
+    assert.equal(body.keys.DEEPGRAM_API_KEY.note, undefined);
+    assert.deepEqual(body.readiness, { narrator: null, lecturer: null });
+  });
+
+  it("blocks reading aloud too for a key Deepgram refuses outright, and says nothing when Deepgram can't be asked", async () => {
+    writeKey("DEEPGRAM_API_KEY", DG_KEY);
+    saveVoice({ narrator: "deepgram", lecturer: "deepgram-agent" });
+    type Body = { keys: Record<string, { note?: string }>; readiness: Record<string, { code: string } | null> };
+    const offline = fake(() => Promise.reject(new TypeError("fetch failed")));
+    let body = JSON.parse(await seen(await guarded(configGetHandler({ fetch: offline.fetch }))(get("/api/voice/config")))) as Body;
+    assert.deepEqual(body.readiness, { narrator: null, lecturer: null });
+    assert.equal(body.keys.DEEPGRAM_API_KEY.note, undefined);
+
+    const refused = fake(() => json({ err_code: "INVALID_AUTH" }, 401));
+    body = JSON.parse(await seen(await guarded(configGetHandler({ fetch: refused.fetch }))(get("/api/voice/config")))) as Body;
+    assert.equal(refused.calls.length, 1, "an offline answer was not kept");
+    assert.equal(body.readiness.lecturer?.code, "invalid_key");
+    assert.equal(body.readiness.narrator?.code, "invalid_key");
+    assert.match(body.keys.DEEPGRAM_API_KEY.note ?? "", /rejected this key/);
+  });
+
+  it("learns from Talk's own grants: a refused grant shows in Settings without another question", async () => {
+    writeKey("DEEPGRAM_API_KEY", DG_KEY);
+    saveVoice({ lecturer: "deepgram-agent" });
+    const up = fake(() => json({ err_msg: "Insufficient permissions." }, 403));
+    assert.equal((await guarded(tokenHandler({ fetch: up.fetch }))(post("/api/voice/token", {}))).status, 502);
+    const never = fake(() => assert.fail("asked Deepgram again"));
+    const body = JSON.parse(await seen(await guarded(configGetHandler({ fetch: never.fetch }))(get("/api/voice/config")))) as { readiness: { lecturer: { title: string } | null } };
+    assert.equal(body.readiness.lecturer?.title, "Your Deepgram key can't start Talk");
   });
 });
 

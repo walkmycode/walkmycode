@@ -163,4 +163,15 @@ describe("readKeys", () => {
     rmSync(keysPath());
     assert.equal(readKeys().size, 0);
   });
+
+  it("re-reads a change written in the same clock tick (same mtime, new size)", () => {
+    const tick = new Date(1_700_000_002_000);
+    writeFileSync(keysPath(), "OPENAI_API_KEY=one\n");
+    utimesSync(keysPath(), tick, tick);
+    assert.equal(readKeys().get("OPENAI_API_KEY"), "one");
+    writeFileSync(keysPath(), "OPENAI_API_KEY=three\n");
+    utimesSync(keysPath(), tick, tick);
+    assert.equal(readKeys().get("OPENAI_API_KEY"), "three");
+    rmSync(keysPath());
+  });
 });

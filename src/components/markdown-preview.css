@@ -1,0 +1,69 @@
+/* A Markdown file as it reads (MarkdownPreview.tsx): VS Code's and GitHub's preview, in the app's colours.
+   Text in the one size (var(--text)); headings larger by a step each, as the scene player's end card is. */
+.mdp { box-sizing: border-box; max-width: 980px; margin: 0 auto; padding: calc(22px * var(--sp)) calc(30px * var(--sp)) calc(48px * var(--sp)); color: var(--chalk); font: var(--text)/1.65 var(--sans); overflow-wrap: break-word; }
+.mdp > :first-child { margin-top: 0; }
+.mdp h1, .mdp h2, .mdp h3, .mdp h4, .mdp h5, .mdp h6 { margin: calc(24px * var(--sp)) 0 calc(12px * var(--sp)); font-weight: 700; line-height: 1.25; letter-spacing: -.01em; color: var(--chalk); scroll-margin-top: calc(12px * var(--sp)); }
+.mdp h1 { font-size: calc(var(--text) * 2); padding-bottom: calc(8px * var(--sp)); border-bottom: 1px solid var(--ui-line); }
+.mdp h2 { font-size: calc(var(--text) * 1.5); padding-bottom: calc(6px * var(--sp)); border-bottom: 1px solid var(--ui-line); }
+.mdp h3 { font-size: calc(var(--text) * 1.25); }
+.mdp h4 { font-size: var(--text); }
+.mdp h5 { font-size: var(--text); color: var(--ui-dim); }
+.mdp h6 { font-size: var(--text); color: var(--ui-faint); }
+.mdp p, .mdp ul, .mdp ol, .mdp blockquote, .mdp .mdp-table, .mdp .mdp-code, .mdp .mdp-alert, .mdp .mdp-html { margin: 0 0 calc(14px * var(--sp)); }
+.mdp strong { font-weight: 700; color: #fff; }
+.mdp em { font-style: italic; }
+.mdp del { opacity: .7; }
+.mdp a { color: var(--blue); text-decoration: none; }
+.mdp a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.mdp a.mdp-file { border-bottom: 1px dotted color-mix(in srgb, var(--blue) 60%, transparent); }
+.mdp a.mdp-file:hover { text-decoration: none; border-bottom-style: solid; }
+.mdp .mdp-deadlink { color: var(--ui-dim); }
+.mdp code { padding: calc(1px * var(--sp)) calc(5px * var(--sp)); font: var(--text) var(--mono); color: #f2c9a0; background: rgba(255,255,255,.07); border-radius: 4px; }
+.mdp ul, .mdp ol { padding-left: calc(26px * var(--sp)); }
+.mdp li { margin: calc(3px * var(--sp)) 0; }
+.mdp li > p { margin: 0; }
+.mdp li > p + p, .mdp li > :is(ul, ol, .mdp-code, blockquote) { margin-top: calc(6px * var(--sp)); margin-bottom: 0; }
+.mdp li::marker { color: var(--ui-dim); }
+.mdp li.mdp-task { list-style: none; margin-left: calc(-20px * var(--sp)); }
+.mdp li.mdp-task > input { margin: 0 calc(8px * var(--sp)) 0 0; vertical-align: -1px; accent-color: var(--green); }
+.mdp li.mdp-task > span { display: inline; }
+.mdp blockquote { padding: calc(2px * var(--sp)) calc(16px * var(--sp)); color: var(--ui-dim); border-left: 4px solid var(--ui-line); }
+.mdp blockquote > :last-child { margin-bottom: 0; }
+.mdp hr { height: 2px; margin: calc(24px * var(--sp)) 0; border: 0; background: var(--ui-line); }
+.mdp img { max-width: 100%; vertical-align: middle; }
+.mdp .mdp-imgchip { display: inline-flex; align-items: center; gap: calc(4px * var(--sp)); padding: 0 calc(6px * var(--sp)); font-size: var(--text); color: var(--ui-dim); border: 1px dashed var(--ui-line); }
+.mdp .mdp-html { color: var(--ui-dim); }
+.mdp .mdp-html img { margin: 0 calc(2px * var(--sp)); }
+
+.mdp .mdp-code { position: relative; border: 1px solid var(--ui-line); background: var(--code-bg); }
+.mdp .mdp-codebar { display: flex; align-items: center; justify-content: space-between; padding: calc(4px * var(--sp)) calc(10px * var(--sp)); border-bottom: 1px solid var(--ui-line); font: var(--text) var(--mono); color: var(--ui-faint); }
+.mdp .mdp-codebar button { padding: 0 calc(6px * var(--sp)); border: 0; background: none; color: var(--ui-dim); font: var(--text) var(--sans); cursor: pointer; opacity: 0; transition: opacity var(--t-dim, .15s); }
+.mdp .mdp-code:hover .mdp-codebar button, .mdp .mdp-codebar button:focus-visible { opacity: 1; }
+.mdp .mdp-codebar button:hover { color: var(--chalk); }
+.mdp .mdp-code pre { margin: 0; padding: calc(12px * var(--sp)) calc(14px * var(--sp)); overflow-x: auto; }
+.mdp .mdp-code pre code { padding: 0; background: none; color: var(--chalk); font: var(--text)/1.55 var(--mono); border-radius: 0; white-space: pre; }
+/* The editor's colours (src/ide/Editor.tsx, "chalk"), so a block reads as it does in the source. */
+.mdp .tok-keyword, .mdp .tok-operatorKeyword, .mdp .tok-controlKeyword, .mdp .tok-definitionKeyword, .mdp .tok-modifier { color: #f3d77a; font-weight: 600; }
+.mdp .tok-string, .mdp .tok-string2 { color: #a8e0a0; }
+.mdp .tok-number, .mdp .tok-bool, .mdp .tok-null, .mdp .tok-atom { color: #9fd3f0; }
+.mdp .tok-comment { color: #8fa39a; font-style: italic; }
+.mdp .tok-variableName.tok-definition, .mdp .tok-typeName, .mdp .tok-className, .mdp .tok-namespace { color: #f2a7a0; }
+.mdp .tok-propertyName, .mdp .tok-attributeName { color: #f3d77a; }
+.mdp .tok-macroName, .mdp .tok-function { color: #f2c9a0; }
+.mdp .tok-operator, .mdp .tok-punctuation { color: #cfd8d3; }
+
+.mdp .mdp-table { overflow-x: auto; }
+.mdp table { border-collapse: collapse; font-size: var(--text); }
+.mdp th, .mdp td { padding: calc(6px * var(--sp)) calc(13px * var(--sp)); border: 1px solid var(--ui-line); text-align: left; vertical-align: top; }
+.mdp th { font-weight: 700; background: rgba(255,255,255,.04); }
+.mdp tbody tr:nth-child(2n) td { background: rgba(255,255,255,.025); }
+
+.mdp .mdp-alert { padding: calc(8px * var(--sp)) calc(16px * var(--sp)); border-left: 4px solid var(--a); }
+.mdp .mdp-alert > :last-child { margin-bottom: 0; }
+.mdp .mdp-alert-title { margin-bottom: calc(4px * var(--sp)); font-weight: 700; color: var(--a); }
+.mdp .mdp-alert.note { --a: #7fb2f0; }
+.mdp .mdp-alert.tip { --a: #8fd69a; }
+.mdp .mdp-alert.important { --a: #b79cf0; }
+.mdp .mdp-alert.warning { --a: #f0c050; }
+.mdp .mdp-alert.caution { --a: #ee8f86; }
+.mdp .mdp-plain { white-space: pre-wrap; font: var(--text) var(--mono); }

@@ -40,13 +40,21 @@
 .ide.frameless { border: 0; border-radius: 0; padding: 0; background: transparent; height: 100%; min-height: 0; }
 .ide.frameless .ide-grid { flex: 1; min-height: 0; }
 .ide.frameless .ide-grid.single, .ide.frameless .ide-left { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* Code only turns the grid into this column: stretch it, or the editor is as wide as its longest line, not the panel. */
+.ide.frameless .ide-grid.single { align-items: stretch; }
 .ide.frameless .ide-editor { flex: 1; height: auto; min-height: 120px; resize: none; border-radius: 0; }
 .ide .ide-editor.locked { opacity: .97; }
 .ide .code-bar { display: flex; gap: calc(8px * var(--sp)); flex-wrap: wrap; align-items: center; }
 /* One size along the run bar and the output's head: buttons, "Run on", its select, the tabs, Pop out. */
 .ide .code-bar .ctl, .ide .out-head .ctl { font-size: var(--text); padding: calc(5px * var(--sp)) calc(10px * var(--sp)); border-radius: 0; }
 .ide .engine { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); font-size: var(--text); color: var(--ui-dim); }
-.ide .engine select { font: 500 var(--text) var(--sans); background: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(5px * var(--sp)) calc(8px * var(--sp)); }
+.ide .engine select { font: 500 var(--text) var(--sans); background-color: var(--ui-2); color: var(--ui-text); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(5px * var(--sp)) calc(8px * var(--sp)); }
+/* "Code only" (Ide.tsx): hides the run bar, the output and the questions; gold while on. */
+.ide .ctl.code-only svg { width: calc(14px * var(--fs)); height: calc(14px * var(--fs)); flex: none; }
+/* Code only and Hide chat as icons (owner, 13 Nov): square, the icon a little larger. */
+.ide .ctl.code-only.icon { display: inline-grid; place-items: center; padding-inline: calc(7px * var(--sp)); }
+.ide .ctl.code-only.icon svg { width: calc(17px * var(--fs)); height: calc(17px * var(--fs)); }
+.ide .ctl.code-only.on { color: var(--yellow); border-color: var(--yellow); }
 
 /* Output. */
 .ide .output { background: var(--out, #0f1512); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); height: 240px; overflow: auto; }
@@ -156,14 +164,9 @@
   -webkit-appearance: none;
   color-scheme: dark;
   background-color: var(--ui-2);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23f3d77a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 11px center;
-  background-size: 12px 8px;
   color: var(--ui-text);
   border: 1px solid var(--ui-line);
   border-radius: 0;
-  padding-right: calc(34px * var(--sp));
   cursor: pointer;
   transition: border-color .15s ease, background-color .15s ease;
 }
@@ -177,3 +180,96 @@
 .ide .engine select option { background-color: var(--ui); color: var(--ui-text); }
 .ide select option:checked,
 .ide .engine select option:checked { background-color: #4a3f24; color: #f3d77a; }
+
+/* The live debugger (LiveDebug.tsx; mockup docs/design/debug-native.html): the toolbar, variables and call stack
+   above the Output while a program on this computer is being debugged, and the "get the debugger" card. */
+.ide .live-debug { display: flex; flex-direction: column; flex: none; border: 1px solid var(--hair-2); background: var(--board); animation: fade-in var(--t-fade) ease-out both; }
+.ide .dbar { display: flex; flex-wrap: wrap; align-items: center; gap: calc(4px * var(--sp)); padding: calc(5px * var(--sp)) calc(8px * var(--sp)); border-bottom: 1px solid var(--hair); background: var(--wall-2, var(--ui)); }
+.ide .dstate { display: inline-flex; align-items: center; gap: calc(8px * var(--sp)); margin-right: calc(8px * var(--sp)); font-weight: 600; color: var(--ui-text); }
+.ide .dstate i { width: 8px; height: 8px; flex: none; background: var(--yellow); box-shadow: 0 0 0 3px rgba(243,215,122,.18); }
+.ide .dstate.run i { background: var(--green); box-shadow: 0 0 0 3px rgba(168,224,160,.18); animation: dbg-beat calc(1000ms * var(--m) + 1ms) ease-in-out infinite; }
+@keyframes dbg-beat { 50% { opacity: .35; } }
+.ide .dbtn { display: inline-flex; align-items: center; gap: calc(5px * var(--sp)); padding: calc(3px * var(--sp)) calc(8px * var(--sp)); border: 1px solid var(--hair-2); border-radius: 0; background: none; color: var(--ui-text); font: 600 var(--text) var(--sans); cursor: pointer; }
+.ide .dbtn:hover:not(:disabled) { background: var(--hair); border-color: var(--hair-3); }
+.ide .dbtn:disabled { opacity: .4; cursor: default; }
+.ide .dbtn svg { width: calc(14px * var(--fs)); height: calc(14px * var(--fs)); flex: none; }
+.ide .dbtn kbd { font: 500 var(--text) var(--mono); color: var(--ui-faint); }
+.ide .dbtn.stop { color: var(--pink); border-color: rgba(242,167,160,.35); }
+.ide .dbar .sp { flex: 1; }
+.ide .dtool { color: var(--ui-faint); font: var(--text) var(--mono); }
+.ide .dpanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); height: clamp(150px, 28vh, 320px); overflow: auto; }
+.ide .dsec { min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--hair); }
+.ide .dsec:last-child { border-right: 0; }
+.ide .dsec h3 { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: calc(6px * var(--sp)); margin: 0; padding: calc(6px * var(--sp)) calc(10px * var(--sp)); background: var(--board); font: 650 var(--text)/1 var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ui-dim); }
+.ide .dsec h3 b { margin-left: auto; font: 500 var(--text) var(--mono); text-transform: none; letter-spacing: 0; color: var(--ui-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ide .dvars, .ide .dvars ul, .ide .dstack { list-style: none; margin: 0; padding: 0; }
+.ide .dvar { display: flex; align-items: baseline; gap: calc(6px * var(--sp)); width: 100%; padding: calc(1px * var(--sp)) calc(10px * var(--sp)) calc(1px * var(--sp)) calc((10px + var(--d, 0) * 14px) * var(--sp)); border: 0; border-radius: 0; background: none; text-align: left; font: var(--text)/1.6 var(--mono); color: var(--ui-text); white-space: nowrap; cursor: pointer; }
+.ide .dvar:disabled { cursor: default; }
+.ide .dvar:hover:not(:disabled) { background: var(--hair); }
+.ide .dvar .tw { width: 1ch; flex: none; color: var(--ui-faint); }
+.ide .dvar .ty { color: var(--ui-faint); }
+.ide .dvar .vl { color: var(--blue); overflow: hidden; text-overflow: ellipsis; }
+.ide .dvar .vl.str { color: var(--green); }
+.ide .dvar.changed .vl { color: var(--yellow); animation: dbg-flash calc(900ms * var(--m) + 1ms) ease-out; }
+@keyframes dbg-flash { from { background: rgba(243,215,122,.28); } }
+.ide .dnone { margin: 0; padding: calc(6px * var(--sp)) calc(10px * var(--sp)); color: var(--ui-faint); }
+.ide .dstack button { display: flex; gap: calc(8px * var(--sp)); width: 100%; padding: calc(1px * var(--sp)) calc(10px * var(--sp)); border: 0; border-radius: 0; background: none; text-align: left; font: var(--text)/1.6 var(--mono); color: var(--ui-dim); white-space: nowrap; cursor: pointer; }
+.ide .dstack button:hover { background: var(--hair); }
+.ide .dstack button.on { background: rgba(243,215,122,.10); color: var(--ui-text); box-shadow: inset 2px 0 0 var(--yellow); }
+.ide .dstack button.ext { opacity: .55; }
+.ide .dstack .fn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ide .dstack li, .ide .dvars li { min-width: 0; }
+.ide .dstack .at { margin-left: auto; flex: none; color: var(--ui-faint); }
+.ide .get-debugger { border: 1px solid var(--hair-3); background: var(--ui); animation: fade-in var(--t-fade) ease-out both; }
+.ide .get-debugger header { padding: calc(12px * var(--sp)) calc(14px * var(--sp)) calc(10px * var(--sp)); border-bottom: 1px solid var(--hair); background: radial-gradient(120% 140% at 0% 0%, rgba(243,215,122,.12), transparent 55%), var(--ui-2); }
+.ide .get-debugger .eb { font: 650 var(--text)/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.ide .get-debugger h3 { margin: calc(6px * var(--sp)) 0 0; font: 700 var(--text)/1.25 var(--sans); color: var(--ui-text); }
+.ide .get-debugger > p { margin: calc(10px * var(--sp)) calc(14px * var(--sp)) 0; color: var(--ui-dim); }
+.ide .get-debugger > p b { color: var(--ui-text); }
+.ide .get-debugger dl { display: grid; grid-template-columns: auto 1fr; gap: calc(3px * var(--sp)) calc(14px * var(--sp)); margin: calc(10px * var(--sp)) calc(14px * var(--sp)) 0; font: var(--text) var(--mono); }
+.ide .get-debugger dt { color: var(--ui-faint); }
+.ide .get-debugger dd { margin: 0; color: var(--ui-text); overflow-wrap: anywhere; }
+.ide .get-debugger .err { margin: calc(10px * var(--sp)) calc(14px * var(--sp)) 0; color: var(--pink); }
+.ide .getdbg-progress { position: relative; height: calc(18px * var(--ctl)); margin: calc(12px * var(--sp)) calc(14px * var(--sp)) 0; border: 1px solid var(--hair); background: var(--board); overflow: hidden; }
+.ide .getdbg-progress i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, rgba(217,189,98,.55), rgba(243,215,122,.55)); transition: width var(--t-move) var(--ease-out); }
+.ide .getdbg-progress span { position: relative; display: block; padding: 0 calc(8px * var(--sp)); font: var(--text)/1.4 var(--mono); color: var(--ui-text); }
+.ide .get-debugger footer { display: flex; align-items: center; gap: calc(8px * var(--sp)); margin-top: calc(12px * var(--sp)); padding: calc(10px * var(--sp)) calc(14px * var(--sp)); border-top: 1px solid var(--hair); }
+.ide .get-debugger footer .sp { flex: 1; }
+@media (max-width: 720px) { .ide .dpanes { grid-template-columns: 1fr; height: auto; max-height: 50vh; } .ide .dbtn .lbl, .ide .dbtn kbd { display: none; } }
+
+/* The running program's input (Output.tsx, Stdin): a line typed for it, as in a terminal. */
+.out-stdin { display: flex; align-items: center; gap: calc(6px * var(--sp)); flex: none; margin-top: calc(4px * var(--sp)); padding: calc(3px * var(--sp)) calc(4px * var(--sp)) calc(3px * var(--sp)) calc(8px * var(--sp)); border: 1px solid var(--ui-line); background: var(--out); animation: fade-in var(--t-fade) ease-out both; }
+.out-stdin:focus-within { border-color: rgba(243,215,122,.55); box-shadow: 0 0 0 3px rgba(243,215,122,.10); }
+.out-stdin .prompt { flex: none; color: var(--yellow); font: 600 var(--text) var(--mono); }
+.out-stdin input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--ui-text); font: var(--text) var(--mono); }
+.out-stdin input::placeholder { color: var(--ui-faint); font-family: var(--sans); }
+
+/* The Run panel (src/shell/panels/OutputPanel.tsx): the editor's run section, drawn into the slot. */
+.run-panel { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.run-panel-head { display: flex; align-items: center; gap: calc(8px * var(--sp)); flex: none; padding: 0 0 calc(6px * var(--sp)); min-width: 0; }
+.run-panel-of { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-dim); font: var(--text) var(--mono); }
+.run-panel-head .sp { flex: 1; }
+.run-slot { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.run-slot:empty { display: none; }
+.run-slot:not(:empty) + .run-fallback { display: none; }
+.run-fallback { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.run-dock { display: flex; flex-direction: column; gap: calc(8px * var(--sp)); flex: 1; min-height: 0; overflow: auto; }
+.run-dock .code-bar { flex-wrap: wrap; }
+.run-dock .out-wrap { flex: 1 1 auto; min-height: calc(120px * var(--sp)); }
+.run-dock .engine { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.run-dock .engine select { min-width: 0; max-width: 100%; }
+
+/* A Markdown file (src/ide/mdView.ts): as it reads, its source, or both side by side. The editor stays
+   mounted under the preview, so its place, selection and blame are kept when switching. */
+.md-view { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+.md-view.md-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.md-view.md-preview > .ide-editor { display: none; }
+.md-view > .ide-editor { min-height: 0; }
+.md-pane { min-width: 0; min-height: 0; overflow: auto; background: var(--code-bg); }
+.md-view.md-split > .md-pane { border-left: 1px solid var(--ui-line); }
+.md-switch { display: inline-flex; border: 1px solid var(--ui-line); }
+.md-switch button { display: inline-flex; align-items: center; gap: calc(5px * var(--sp)); padding: calc(3px * var(--sp)) calc(9px * var(--sp)); border: 0; background: none; color: var(--ui-dim); font: var(--text) var(--sans); cursor: pointer; }
+.md-switch button + button { border-left: 1px solid var(--ui-line); }
+.md-switch button:hover { color: var(--chalk); }
+.md-switch button[aria-pressed="true"] { background: rgba(243, 215, 122, .14); color: var(--chalk); }
+.md-switch svg { width: 14px; height: 14px; }

@@ -20,6 +20,7 @@ import type { GitAsk } from "@/lib/localrun/protocol";
 import { cleanDraft, draftPrompt } from "@/lib/localrun/gitDraft";
 import { gitOp, LOCAL_BUILD, setupRoot, type GitAnswer } from "../client";
 import { useConsent } from "../Consent";
+import { shortDate } from "./FileGit";
 import { useLocalStatus } from "../OutputArea";
 import "./git.css";
 
@@ -481,10 +482,10 @@ function History({ run }: { run: Run }) {
   return (
     <ol className="git-log">
       {log.map((c) => (
-        <li key={c.hash}>
+        <li key={c.hash} title={c.date ? new Date(c.date).toLocaleString("en-GB", { dateStyle: "full", timeStyle: "short" }) : undefined}>
           <span className="git-subject">{c.subject}</span>
           <span className="git-meta">
-            <code>{c.hash}</code> · {c.author} · {c.when}
+            <code>{c.hash}</code> · {c.author} · {c.date ? `${shortDate(new Date(c.date))} (${c.when})` : c.when}
             {c.refs && <span className="git-refs">{c.refs.replace(/^HEAD -> /, "")}</span>}
           </span>
         </li>

@@ -8,21 +8,25 @@
  *
  * Keys: ← → move between boards, Space plays or pauses, / starts a question.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lessonLanguage } from "@/learn/lib/lessonLanguage";
+import dynamic from "next/dynamic";
 import { actionOf, HINTS, hintsUsed, solutionOpen, speakable } from "@/learn/lib/chat";
 import { sampleMessage, type Sample } from "@/learn/lib/claude";
 import { testsIn, testVerdict } from "@/learn/lib/exercise";
 import { Chalk, plain } from "@/learn/lib/markup";
 import type { Note } from "@/learn/lib/notebook";
-import { cleanFeedback, cleanPoints, gradePrompt, writtenCheckPrompt } from "@/learn/lib/professor";
-import { cleanScene, sceneLanguage, scenePrompt } from "@/learn/lib/scene";
+import { cleanFeedback, cleanPoints, DIAGRAM_RULES, gradePrompt, writtenCheckPrompt } from "@/learn/lib/professor";
+import { sceneLanguage, scenePrompt } from "@/learn/lib/scene";
+import { boardCode } from "./BoardCode";
+import { cleanAnyScene } from "@/lib/scene/any";
 import type { Card } from "@/learn/lib/recall";
 import type { Store } from "@/learn/lib/store";
 import type { Board, CodeLanguage, Lesson, Profile } from "@/learn/lib/types";
 import { useChat } from "@/learn/lib/useChat";
+import type { Used } from "@/learn/lib/worlds";
 import { useVoice } from "@/learn/lib/voice";
 import { openSettings } from "@/lib/settingsNav";
-import AnalogyScene from "./AnalogyScene";
 import CodePanel from "./CodePanel";
 import Diagram from "./Diagram";
 import Markdown from "./Markdown";
@@ -31,6 +35,12 @@ import ProfessorFace, { useFaceOn, useFaceSize } from "./ProfessorFace";
 import { captionParts, type WordSpan } from "@/learn/lib/caption";
 import { faceSize as savedFaceSize, faceState, setFaceSize, stepFaceSize } from "@/learn/lib/face";
 import TaxiLab from "./TaxiLab";
+import { TARGET } from "@/lib/adapters/target";
+import ProfessorTalk, { type TalkShow } from "./ProfessorTalk";
+
+// The scene and its drawings load the first time one is watched, not with the lesson.
+const AnalogyScene = dynamic(() => import("./AnalogyScene"), { ssr: false, loading: () => <p className="note">Setting the scene…</p> });
+import { boardDiagramPrompt, type ProfessorUi } from "@/learn/lib/talk";
 
 type Props = {
   lesson: Lesson;
@@ -44,6 +54,8 @@ type Props = {
   onDropNote: (id: string) => void;
   cards: Card[];
   onReview: (card: Card, knew: boolean) => void;
+  /** What the course's other lessons pictured (usedPictures), so scenes and answers pick fresh pictures. */
+  used?: Used;
 };
 
 const PAD_STARTS: Record<string, string> = {
@@ -51,7 +63,7 @@ const PAD_STARTS: Record<string, string> = {
   javascript: `// Your scratchpad for this lesson. Ctrl+Enter runs the code.\n\nconsole.log("Hello from JavaScript");\n`,
   typescript: `// Your scratchpad for this lesson. Ctrl+Enter runs the code.\n\nconst greeting: string = "Hello from TypeScript";\nconsole.log(greeting);\n`,
   sql: `-- Your scratchpad for this lesson. Ctrl+Enter runs the SQL.\n\nCREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text TEXT);\nINSERT INTO notes (text) VALUES ('Hello from SQL');\nSELECT * FROM notes;\n`,
-  rust: `// Your scratchpad for this lesson. Ctrl+Enter compiles and runs it on your laptop.\n\nfn main() {\n    println!("Hello from Rust");\n}\n`,
+  rust: `// Your scratchpad for this lesson. Ctrl+Enter compiles and runs it.\n\nfn main() {\n    println!("Hello from Rust");\n}\n`,
 };
 const padStart = (language: string) => PAD_STARTS[language] ?? PAD_STARTS.python;
 
@@ -72,8 +84,13 @@ const steps = (b: Board) => b.lines.length + (b.analogy ? 1 : 0);
 /** The talk boards have all been seen: the lesson's recall cards open. */
 export const boardsSeen = (l: Lesson) => l.boards.every((b, i) => b.kind !== "talk" || l.seen.includes(i));
 
-export default function Player({ lesson, profile, sample, store, save, onNext, notes, onNote, onDropNote, cards, onReview }: Props) {
-  const voice = useVoice();
+/** What the professor says at a step of a board: the line's own words, then the analogy. */
+const sayAt = (b: Board, step: number) => (step < b.lines.length ? b.lines[step].s : `Here is a picture to hold on to. ${plain(b.analogy ?? "")}`);
+
+export default function Player({ lesson, profile, sample, store, save, onNext, notes, onNote, onDropNote, cards, onReview, used }: Props) {
+  // The lesson's audio is kept under the lesson, as a map's narration is under the map.
+  const voiceScope = useMemo(() => ({ map: `learn:${lesson.id}`, generatedAt: String(lesson.createdAt) }), [lesson.id, lesson.createdAt]);
+  const voice = useVoice(voiceScope);
   const first = Math.min(lesson.at || 0, lesson.boards.length - 1);
   const [idx, setIdx] = useState(first);
   const [shown, setShown] = useState(() => steps(lesson.boards[first]));
@@ -99,6 +116,8 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
   const [watching, setWatching] = useState<number | null>(null);
   const [sceneBusy, setSceneBusy] = useState(false);
   const [sceneErr, setSceneErr] = useState("");
+  /** The student's own picture for this board's scene: null while the box is shut. */
+  const [ownPicture, setOwnPicture] = useState<string | null>(null);
   const [scenePanels, setScenePanels] = useState(() => {
     try {
       return localStorage.getItem(SCENE_PANELS) === "1";
@@ -114,9 +133,34 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
   // cancels it cleanly (each run has a number; a stale run just stops).
   const run = useRef(0);
   const lessonRef = useRef(lesson);
+  const idxRef = useRef(first);
+  useEffect(() => {
+    idxRef.current = idx;
+  }, [idx]);
+  /** A live talk with the professor (ProfessorTalk): its sound, made in the click that opened it; null when there is none. */
+  const [talkAudio, setTalkAudio] = useState<AudioContext | null>(null);
+  const [talkShow, setTalkShow] = useState<TalkShow | null>(null);
+  const talking = !!talkAudio;
+  // One professor's voice at a time: while a talk can speak, the board's voice is hushed, so a scene he draws in the
+  // talk (or Play, or Read aloud) runs at reading pace without a second voice over his. An ended talk (its strip still
+  // showing "Back to the lesson") gives the voice back at once.
+  const [talkLive, setTalkLive] = useState(false);
+  const { setHushed } = voice;
+  useEffect(() => setHushed(talking && talkLive), [setHushed, talking, talkLive]);
+  const talkingRef = useRef(false);
+  useEffect(() => {
+    talkingRef.current = talking;
+  }, [talking]);
   lessonRef.current = lesson;
   const speakRef = useRef(voice.speak);
   speakRef.current = voice.speak;
+  const prefetchRef = useRef(voice.prefetch);
+  prefetchRef.current = voice.prefetch;
+  // A board on screen has its first line's audio fetched already, so Play starts at once.
+  const boardFirst = sayAt(lesson.boards[idx], 0);
+  useEffect(() => {
+    voice.prefetch(boardFirst);
+  }, [voice, boardFirst]);
   const stopVoice = useRef(voice.stop);
   stopVoice.current = voice.stop;
   const mutedRef = useRef(voice.muted);
@@ -127,8 +171,8 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
   const writing = board.kind === "write";
   const exercise = coding || writing;
   const boardKey = `b${idx}`;
-  // The scratchpad speaks the lesson's language: that of its exercise, if it has one.
-  const padLanguage = lesson.boards.find((b) => b.kind === "code")?.language ?? lesson.boards.find((b) => b.example)?.example?.language ?? "python";
+  // The scratchpad speaks the lesson's language: its exercise's or example's, else what its course and boards are about.
+  const padLanguage = lessonLanguage(lesson);
   // The code open now: a pad when one is open, else the board's own exercise.
   const open: Pad | null = pad ?? (coding ? { key: boardKey, language: board.language ?? "python", starter: board.starter ?? "", label: board.exercise ?? "Exercise" } : null);
   const onExercise = !!open && !pad && coding;
@@ -163,6 +207,7 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
     profile,
     sample,
     store,
+    used,
     context: () => {
       const h = here.current;
       if (h.writing) return { board: h.idx, code: writtenRef.current, passed: lessonRef.current.checks?.[h.boardKey]?.passed };
@@ -199,9 +244,12 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
         const b = lessonRef.current.boards[i];
         for (; step < steps(b); step++) {
           if (my !== run.current) return;
-          const said = step < b.lines.length ? b.lines[step].s : `Here is a picture to hold on to. ${plain(b.analogy ?? "")}`;
+          const said = sayAt(b, step);
           setShown(step + 1);
           setCaption(said);
+          // The next line is fetched while this one is heard, so it starts the moment this one ends.
+          const nextB = step + 1 < steps(b) ? b : !interactive(b) ? lessonRef.current.boards[i + 1] : undefined;
+          if (nextB) prefetchRef.current(sayAt(nextB, nextB === b ? step + 1 : 0));
           await speakRef.current(said);
           if (my !== run.current) return;
           await sleep(reduced ? 150 : 450);
@@ -258,7 +306,7 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
       // The professor, a size smaller or larger (also in Settings → Voice).
       if (e.key === "[") setFaceSize(stepFaceSize(savedFaceSize(), -1));
       if (e.key === "]") setFaceSize(stepFaceSize(savedFaceSize(), 1));
-      if (e.key === " ") {
+      if (e.key === " " && !talkingRef.current) {
         e.preventDefault();
         toggle();
       }
@@ -270,22 +318,53 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
   useEffect(() => () => { run.current++; sceneCtl.current?.abort(); stopVoice.current(); }, []);
 
   /* ── The analogy, to watch ── */
-  const watch = async () => {
+  const watch = async (picture = "") => {
     stop();
     setSceneErr("");
-    if (board.scene) return setWatching(idx);
+    // A picture of the student's own is drawn afresh; otherwise the scene kept with the board is shown.
+    if (board.scene && !picture) return setWatching(idx);
     if (!sample || sceneBusy) return;
     const at = idx;
     const ctl = new AbortController();
     sceneCtl.current = ctl;
     setSceneBusy(true);
     try {
-      const scene = cleanScene(await sample.json(scenePrompt(lessonRef.current, at, profile), { signal: ctl.signal, cache: false }), sceneLanguage(lessonRef.current));
+      const { drawingNames } = await import("@/lib/drawings");
+      const scene = cleanAnyScene(await sample.json(scenePrompt(lessonRef.current, at, profile, drawingNames(), picture, used), { signal: ctl.signal, cache: false }), sceneLanguage(lessonRef.current));
       if (!scene) throw { code: "invalid_json" };
       const l = lessonRef.current;
       save({ ...l, boards: l.boards.map((b, i) => (i === at ? { ...b, scene } : b)) });
+      setOwnPicture(null);
       // Still on that board: show it.
       if (here.current.idx === at) setWatching(at);
+    } catch (e) {
+      setSceneErr(sampleMessage(e));
+    } finally {
+      setSceneBusy(false);
+    }
+  };
+  /** A UML class, state or flow diagram the professor drew in a talk, added to the board under its lines. */
+  const drawDiagram = async (what: string, kind: "class" | "state" | "flow") => {
+    if (!sample || sceneBusy) return;
+    const at = idx;
+    const ctl = new AbortController();
+    sceneCtl.current = ctl;
+    setSceneBusy(true);
+    setSceneErr("");
+    try {
+      const got = await sample.json<{ title?: unknown; diagram?: unknown }>(boardDiagramPrompt(lessonRef.current, at, what, kind, DIAGRAM_RULES), { signal: ctl.signal, cache: false });
+      const diagram = typeof got?.diagram === "string" ? got.diagram.trim().slice(0, 3000) : "";
+      if (!diagram) throw { code: "invalid_json" };
+      const title = typeof got.title === "string" && got.title.trim() ? got.title.trim().slice(0, 120) : `The ${kind} diagram`;
+      const l = lessonRef.current;
+      const line = { w: `**${title}**`, s: title, diagram };
+      const lines = [...l.boards[at].lines, line];
+      save({ ...l, boards: l.boards.map((b, i) => (i === at ? { ...b, lines } : b)) });
+      // Back on the board, every line written, the new diagram last.
+      if (here.current.idx === at) {
+        setWatching(null);
+        setShown(steps({ ...l.boards[at], lines }));
+      }
     } catch (e) {
       setSceneErr(sampleMessage(e));
     } finally {
@@ -301,6 +380,8 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
     }
   };
   const scene = watching === idx ? board.scene : undefined;
+  // Code on the board as an editor draws it, in the lesson's language (none: backticks stay chalk).
+  const codeOf = boardCode(sceneLanguage(lesson));
 
   /* ── The professor ── */
   const ask = (text: string, action?: Parameters<typeof chat.send>[1]) => {
@@ -315,6 +396,30 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
     lastOutput.current = "";
     if (value !== undefined) setCode(p.key, value, true);
     setPad(p);
+  };
+
+  // What the professor's functions do to the lesson during a live talk (lib/talk.ts).
+  const professorUi: ProfessorUi = {
+    lesson: () => lessonRef.current,
+    index: () => idxRef.current,
+    goTo: (i) => go(i, false),
+    openExample: () => {
+      const b = lessonRef.current.boards[idxRef.current];
+      if (b.example) {
+        openCode({ key: `ex-${b.example.name}`, language: b.example.language, starter: b.example.code, label: b.example.name });
+        return `the board's example, ${b.example.name}`;
+      }
+      setPad({ key: "pad", language: padLanguage, starter: padStart(padLanguage), label: "Scratchpad" });
+      return "an empty code scratchpad (this board has no example)";
+    },
+    saveNote: (text) => onNote(text, "prof", lessonRef.current),
+    // He draws on the board: the scene redrawn (a picture to watch, or its sequence diagram), or a UML diagram added.
+    draw: (what, kind) => {
+      if (!sample || sceneBusy) return false;
+      if (kind === "class" || kind === "state" || kind === "flow") void drawDiagram(what, kind);
+      else void watch(kind === "sequence" ? `${what}. Show it as a UML sequence diagram (view "sequence").` : what);
+      return true;
+    },
   };
 
   const check = lesson.checks?.[boardKey];
@@ -355,7 +460,7 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
   };
 
   // What the professor is doing, for its face: listening, speaking, or thinking about an answer.
-  const face = faceState({ listening, speaking: voice.speaking, thinking: chat.busy || sceneBusy, pleased });
+  const face = faceState({ listening: listening || !!talkShow?.userSpeaking, speaking: voice.speaking || !!talkShow?.agentSpeaking, thinking: chat.busy || sceneBusy || !!talkShow?.thinking, pleased });
   const doing = { idle: "", speaking: "speaking", thinking: "thinking…", listening: "listening…", pleased: "well done" }[face];
   const last = idx === lesson.boards.length - 1;
   const done = shown >= steps(board);
@@ -368,6 +473,17 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
     return lesson.seen.includes(i) ? "✓" : "○";
   };
   const firstPractice = lesson.boards.findIndex((b) => b.kind !== "talk" && b.kind !== "lab-taxi");
+  // The professor in the board's lower-right corner, as a lecturer on a video, his words beside him as
+  // subtitles (owner, 12 Nov: the board fills the room); under the controls while an analogy scene has the stage.
+  const presenter = (
+    <div className={`presenter${showFace ? "" : " no-face"}`}>
+      <div className="who">
+        <p className="name">The professor{doing && <span> · {doing}</span>}</p>
+        {talking ? <TalkLine show={talkShow} /> : <Transcript saying={voice.saying} fallback={caption} />}
+      </div>
+      {showFace && <ProfessorFace state={face} size={faceSize} />}
+    </div>
+  );
 
   return (
     <div className={`studio${outline ? "" : " no-outline"}${scene && !scenePanels ? " wide" : ""}`}>
@@ -420,7 +536,7 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
         </nav>
         {scene && (
           <AnalogyScene
-            key={idx}
+            key={`${idx}-${scene.title}-${"view" in scene ? scene.view ?? "stage" : "timeline"}`}
             scene={scene}
             where={`${plain(board.title)} · board ${idx + 1} of ${lesson.boards.length}`}
             panels={scenePanels}
@@ -433,11 +549,11 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
         <div className="frame" hidden={!!scene}>
           <section className={`board${exercise ? " is-exercise" : ""}`} aria-live="polite">
             <p className="board-n">{idx + 1} / {lesson.boards.length}</p>
-            <h2><Chalk text={board.title} /></h2>
+            <h2><Chalk text={board.title} code={codeOf} /></h2>
             <div className="lines">
               {board.lines.map((l, i) => (
                 <div key={`${idx}-${i}`} className={`line${i < shown ? " shown" : ""}${playing && i === shown - 1 ? " now" : ""}`}>
-                  {l.w && <Chalk text={l.w} />}
+                  {l.w && <Chalk text={l.w} code={codeOf} />}
                   {l.diagram && <Diagram source={l.diagram} label={plain(l.w)} />}
                   {l.table && (
                     <div className="tablebox">
@@ -452,15 +568,26 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
               {board.analogy && (
                 <aside className={`analogy line${shown > board.lines.length ? " shown" : ""}${playing && shown === steps(board) ? " now" : ""}`} aria-label="Analogy">
                   <p className="eyebrow"><span aria-hidden="true">💡</span> Analogy</p>
-                  <p><Chalk text={board.analogy} /></p>
+                  <p><Chalk text={board.analogy} code={codeOf} /></p>
                   {(board.scene || sample) && (
-                    <p className="analogy-acts">
+                    <div className="analogy-acts">
                       <button className="chalk-btn" type="button" disabled={sceneBusy} onClick={() => void watch()} title="The picture and the real code side by side, step by step">
                         {sceneBusy ? "Drawing the picture…" : "▶ Watch it happen"}
                       </button>
                       {sceneBusy && <button className="chalk-btn ghost" type="button" onClick={() => sceneCtl.current?.abort()}>Stop</button>}
+                      {sample && !sceneBusy && ownPicture === null && (
+                        <button className="chalk-btn ghost" type="button" onClick={() => setOwnPicture("")} title="Have it drawn in a picture of your own: a football team, a kitchen, a bus queue">
+                          My own picture
+                        </button>
+                      )}
+                      {sample && !sceneBusy && ownPicture !== null && (
+                        <form className="own" onSubmit={(e) => { e.preventDefault(); if (ownPicture.trim().length > 2) void watch(ownPicture.trim()); }}>
+                          <input autoFocus value={ownPicture} maxLength={200} onChange={(e) => setOwnPicture(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setOwnPicture(null); }} placeholder="Explain it as… a football team, a kitchen, a bus queue" aria-label="Your own picture for this idea" />
+                          <button className="chalk-btn" type="submit" disabled={ownPicture.trim().length < 3}>Draw it</button>
+                        </form>
+                      )}
                       {sceneErr && <span className="err" role="alert">{sceneErr}</span>}
-                    </p>
+                    </div>
                   )}
                 </aside>
               )}
@@ -540,6 +667,7 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
               )}
             </div>
           </section>
+          {!scene && presenter}
         </div>
 
         {open && (
@@ -577,6 +705,23 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
           </div>
         )}
 
+        {talking && talkAudio ? (
+          <ProfessorTalk
+            lesson={lesson}
+            idx={idx}
+            profile={profile}
+            notes={notes.filter((n) => n.lessonId === lesson.id).map((n) => n.text)}
+            ui={professorUi}
+            audio={talkAudio}
+            onHeard={chat.heard}
+            onShow={setTalkShow}
+            onLive={setTalkLive}
+            onClose={() => {
+              setTalkAudio(null);
+              setTalkShow(null);
+            }}
+          />
+        ) : (
         <div className="controls" role="toolbar" aria-label="Lesson controls">
           <button className="ctl icon" type="button" aria-pressed={outline} onClick={() => setOutline((v) => !v)} title={outline ? "Hide the outline" : "Show the outline"} aria-label={outline ? "Hide the outline" : "Show the outline"}>☰</button>
           <button className="ctl" type="button" disabled={idx === 0} onClick={() => go(idx - 1, playing)}>◀ Back</button>
@@ -602,19 +747,25 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
             Voice{voice.label ? `: ${voice.label}` : ""}
           </button>
           <label htmlFor="mute"><input id="mute" type="checkbox" checked={voice.muted} onChange={(e) => { if (e.target.checked) voice.stop(); voice.setMuted(e.target.checked); }} /> Read only</label>
+          {!LITE && (
+            <button
+              className="ctl talk-start"
+              type="button"
+              onClick={() => {
+                // The sound is made in this click, so the browser lets the professor speak and the microphone listen.
+                stop();
+                setTalkAudio(new AudioContext());
+              }}
+              title="Talk with the professor out loud, hands-free: interrupt him any time (Deepgram, billed by the minute)"
+              data-testid="talk-start"
+            >
+              🎙 Talk
+            </button>
+          )}
         </div>
-
-        {showFace ? (
-          <div className="voice-strip">
-            <ProfessorFace state={face} size={faceSize} />
-            <div className="who">
-              <p className="name">The professor{doing && <span> · {doing}</span>}</p>
-              <Transcript saying={voice.saying} fallback={caption} />
-            </div>
-          </div>
-        ) : (
-          <Transcript saying={voice.saying} fallback={caption} />
         )}
+
+        {scene && presenter}
         <p className="keys studio-keys"><kbd>←</kbd> <kbd>→</kbd> boards · <kbd>Space</kbd> play or pause · <kbd>/</kbd> ask the professor{showFace && <> · <kbd>[</kbd> <kbd>]</kbd> professor smaller or larger</>}</p>
         {voice.note && <p className="note">The voice could not speak ({voice.note}), so the lesson carries on in read-only pace. Check Settings → Voice.</p>}
       </div>
@@ -636,11 +787,21 @@ export default function Player({ lesson, profile, sample, store, save, onNext, n
         cardsOpen={boardsSeen(lesson)}
         onReview={onReview}
         speak={voice.speak}
+        stopVoice={voice.stop}
         onOpenCode={(snippet, lang) => openCode({ key: "snip", language: asLanguage(lang, padLanguage), starter: snippet, label: "Code from the professor" }, snippet)}
         onGoBoard={(i) => go(i, false)}
       />
     </div>
   );
+}
+
+const LITE = TARGET === "lite";
+
+/** A live talk's line under the professor: what he is saying, or what the student just said. */
+function TalkLine({ show }: { show: TalkShow | null }) {
+  if (!show?.line) return <p className="caption" aria-hidden="true">{show?.userSpeaking ? "Listening…" : show?.thinking ? "Thinking…" : "He is listening: just talk."}</p>;
+  if (show.line.role === "you") return <p className="caption you" aria-hidden="true">You: “{show.line.text}”</p>;
+  return <p className="caption live" aria-hidden="true">{show.line.text}</p>;
 }
 
 /** What the professor is saying, with the word being spoken lit; between lines, the last thing said. */

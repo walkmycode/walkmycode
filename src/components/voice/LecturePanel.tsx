@@ -30,7 +30,7 @@ import { stopNarration } from "@/lib/voice/narrate";
 import { tourControl } from "@/lib/voice/tourBus";
 import { useVoiceView } from "@/lib/voice/view";
 import { setTalkControl, talk, type TalkControl } from "./Talk";
-import TalkPill, { useConversation, useLevel } from "./TalkPill";
+import TalkPill, { useConversation, useLevel, type HandState } from "./TalkPill";
 import { codeRoom, runAnswer } from "@/ide/codeRoom";
 
 interface Caption {
@@ -74,6 +74,7 @@ export default function LecturePanel({ onDismiss }: { onDismiss: () => void }) {
   const [calls, setCalls] = useState<string[]>([]);
   const [since, setSince] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [hand, setHand] = useState<HandState>("down");
   const level = useLevel();
 
   const session = useRef<LecturerSession | null>(null);
@@ -229,11 +230,16 @@ export default function LecturePanel({ onDismiss }: { onDismiss: () => void }) {
         case "level":
           level.sink.set(e.level);
           break;
+        case "hand":
+          setHand(e.state === "down" ? "down" : e.state);
+          dispatch({ type: "activity", at });
+          break;
         case "error":
           setError(e.error);
           break;
         case "close":
           setClosed({ reason: e.reason, seconds: e.seconds });
+          setHand("down");
           dispatch({ type: "end", at, reason: e.reason === "idle" ? "idle" : e.reason === "error" ? "error" : "ended" });
           level.sink.set(0);
           if (talk.control === control) setTalkControl(null);
@@ -281,6 +287,12 @@ export default function LecturePanel({ onDismiss }: { onDismiss: () => void }) {
     const down = (e: KeyboardEvent) => {
       if (e.key === "Escape" && talk.control) {
         talk.control.end();
+        return;
+      }
+      // H raises a hand: he stops, says "Go ahead", then listens.
+      if ((e.key === "h" || e.key === "H") && talk.control && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !typing(e.target)) {
+        e.preventDefault();
+        session.current?.raiseHand?.();
         return;
       }
       if (e.code !== "Space" || e.ctrlKey || e.metaKey || e.altKey || typing(e.target) || talk.control?.input !== "push-to-talk") return;
@@ -337,7 +349,9 @@ export default function LecturePanel({ onDismiss }: { onDismiss: () => void }) {
               session.current?.setMuted(muted);
             }}
             onEnd={end}
-            holdHint="Hold Space or Talk to speak"
+            holdHint="Hold Space or Talk to speak, or press H to raise your hand"
+            hand={hand}
+            onHand={status === "live" && lecturer === "deepgram-agent" ? () => session.current?.raiseHand?.() : undefined}
           />
         ) : (
           <>

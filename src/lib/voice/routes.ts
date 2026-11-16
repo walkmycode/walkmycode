@@ -89,6 +89,63 @@ const keyId = (key: string) => createHash("sha256").update(key).digest("hex").sl
 
 export function clearVoiceCache(): void {
   voiceCache.clear();
+  talkKeys.clear();
+  talkChecks.clear();
+}
+
+// ── Can the Deepgram key start Talk? ──
+// Talk's lecturer needs a short grant (/v1/auth/grant), and Deepgram gives one
+// only to keys with the Member role or above. A key with the Default role still
+// reads aloud and hears, so "saved" alone does not say Talk will start. The
+// answer is asked of Deepgram once per key (a 30-second grant, thrown away) and
+// kept, by the key's fingerprint, for six hours; every real grant updates it.
+
+/** What Deepgram said to a grant for this key: Talk can start, the key lacks the Member role, or the key is refused outright. */
+export type TalkKey = "ok" | "no-member" | "rejected";
+const TALK_KEY_TTL_MS = 6 * 60 * 60_000;
+const TALK_CHECK_MS = 4000;
+const talkKeys = new Map<string, { said: TalkKey; at: number }>();
+const talkChecks = new Map<string, Promise<TalkKey | null>>();
+
+/** A grant's HTTP status as an answer about the key; null when it says nothing about the key (a busy or broken Deepgram). */
+function talkKeyOf(status: number): TalkKey | null {
+  if (status >= 200 && status < 300) return "ok";
+  if (status === 403) return "no-member";
+  if (status === 401) return "rejected";
+  return null;
+}
+
+function rememberTalkKey(key: string, status: number): void {
+  const said = talkKeyOf(status);
+  if (said) talkKeys.set(keyId(key), { said, at: Date.now() });
+}
+
+/** Whether this key can start Talk, asking Deepgram the first time; null when Deepgram could not be asked. */
+export function checkTalkKey(key: string, fetchImpl: FetchLike): Promise<TalkKey | null> {
+  const id = keyId(key);
+  const hit = talkKeys.get(id);
+  if (hit && Date.now() - hit.at < TALK_KEY_TTL_MS) return Promise.resolve(hit.said);
+  const asking = talkChecks.get(id);
+  if (asking) return asking;
+  const check = (async () => {
+    try {
+      const res = await fetchImpl(`${DEEPGRAM_BASE}/v1/auth/grant`, {
+        method: "POST",
+        headers: { authorization: `Token ${key}`, "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ ttl_seconds: TOKEN_TTL }),
+        signal: AbortSignal.timeout(TALK_CHECK_MS),
+      });
+      await res.body?.cancel().catch(() => {});
+      rememberTalkKey(key, res.status);
+      return talkKeyOf(res.status);
+    } catch {
+      return null; // offline or slow: say nothing, as before this check existed
+    } finally {
+      talkChecks.delete(id);
+    }
+  })();
+  talkChecks.set(id, check);
+  return check;
 }
 
 /** The account's voices (GET /v1/voices), cached for ten minutes per key. */
@@ -387,9 +444,14 @@ export function transcribeHandler(deps: { fetch?: FetchLike } = {}) {
 /** A Deepgram grant for the browser's agent socket: { access_token, expires_in }. The key stays here. */
 export function tokenHandler(deps: { fetch?: FetchLike } = {}) {
   return async (req: Request): Promise<Response> => {
-    const fetchImpl = deps.fetch ?? fetch;
     const key = keyForEnv("DEEPGRAM_API_KEY")?.value;
     if (!key) return fail(voiceFriendly("missing_key", "deepgram", { feature: "lecturer" }), 400);
+    // Every real grant also answers "can this key start Talk?" for Settings and the Talk button.
+    const fetchImpl: FetchLike = (url, init) =>
+      (deps.fetch ?? fetch)(url, init).then((res) => {
+        rememberTalkKey(key, res.status);
+        return res;
+      });
     try {
       const up = await upstream(
         fetchImpl,
@@ -410,12 +472,14 @@ export function tokenHandler(deps: { fetch?: FetchLike } = {}) {
 
 // ── GET /api/voice/settings ──
 
-/** Deepgram's agent Settings for the saved lecturer model, with the persona as the prompt. */
+/** Deepgram's agent Settings for the saved lecturer model and voice style, with the persona as the prompt.
+ * `?room=learn`: the Learn room's professor (his persona, functions and Think Live). */
 export function settingsHandler() {
-  return async (): Promise<Response> => {
+  return async (req?: Request): Promise<Response> => {
     const c = resolveVoice();
     const model = c.lecturer === "deepgram-agent" ? c.lecturerModel : LECTURERS["deepgram-agent"].defaultModel;
-    return Response.json(buildAgentSettings({ model }), { headers: NO_STORE });
+    const room = req && new URL(req.url).searchParams.get("room") === "learn" ? "learn" : "explore";
+    return Response.json(buildAgentSettings({ model, style: c.lecturerStyle, room, headphones: c.headphones }), { headers: NO_STORE });
   };
 }
 
@@ -427,15 +491,37 @@ const SaveBody = z.object({
   speed: z.number().optional(),
   lecturer: z.string().optional(),
   lecturer_model: z.string().optional(),
+  lecturer_style: z.string().max(20).optional(),
   input: z.enum(["hands-free", "push-to-talk"]).optional(),
   headphones: z.boolean().optional(),
   stt: z.string().max(40).optional(),
 });
 
-/** The saved voice choice, whether each voice key is set, and what is not ready. Never a key. */
-export function voiceSnapshot() {
+/** What Settings says under a Deepgram key that Deepgram answered no for. */
+export const TALK_KEY_NOTE: Record<Exclude<TalkKey, "ok">, string> = {
+  "no-member": "Reads aloud, but can't start Talk: Deepgram only lets keys with the Member role start a live conversation. Replace it with a Member key.",
+  rejected: "Deepgram rejected this key: it may be mistyped, revoked or expired. Replace it with a fresh one.",
+};
+
+/**
+ * The saved voice choice, whether each voice key is set, and what is not ready.
+ * Never a key. A saved Deepgram key is also asked whether it can start Talk
+ * (once per key), so Settings and the Talk button say so before anyone taps.
+ */
+export async function voiceSnapshot(fetchImpl: FetchLike = fetch) {
   const saved = resolveVoice();
-  return { saved, keys: voiceKeys(), readiness: voiceReadiness(saved) };
+  const keys = voiceKeys();
+  const readiness = voiceReadiness(saved);
+  const dg = keyForEnv("DEEPGRAM_API_KEY")?.value;
+  const said = dg ? await checkTalkKey(dg, fetchImpl) : null;
+  if (said === "no-member" || said === "rejected") {
+    keys.DEEPGRAM_API_KEY = { ...keys.DEEPGRAM_API_KEY, note: TALK_KEY_NOTE[said] };
+    const refused = voiceFriendly("invalid_key", "deepgram", { status: said === "no-member" ? 403 : 401 });
+    if (saved.lecturer === "deepgram-agent") readiness.lecturer = refused;
+    // A refused key cannot read aloud either; a key without Member still can.
+    if (said === "rejected" && NARRATORS[saved.narrator].env === "DEEPGRAM_API_KEY") readiness.narrator = refused;
+  }
+  return { saved, keys, readiness };
 }
 
 /** Whether on-device speech to text can run now: the model is on this computer, the engine is in this build, and this is not a hosted server. */
@@ -443,11 +529,11 @@ export async function parakeetReady(): Promise<boolean> {
   return !hostedSttRefusal() && !!findModel() && (await engineAvailable());
 }
 
-export function configGetHandler() {
-  return async (): Promise<Response> => Response.json({ ...voiceSnapshot(), parakeet: { ready: await parakeetReady() } }, { headers: NO_STORE });
+export function configGetHandler(deps: { fetch?: FetchLike } = {}) {
+  return async (): Promise<Response> => Response.json({ ...(await voiceSnapshot(deps.fetch)), parakeet: { ready: await parakeetReady() } }, { headers: NO_STORE });
 }
 
-export function configPostHandler() {
+export function configPostHandler(deps: { fetch?: FetchLike } = {}) {
   return async (req: Request): Promise<Response> => {
     const parsed = SaveBody.safeParse(await req.json());
     if (!parsed.success) throw new HttpError(400, issues(parsed.error));
@@ -458,11 +544,12 @@ export function configPostHandler() {
       ...(p.speed !== undefined ? { speed: p.speed } : {}),
       ...(p.lecturer !== undefined ? { lecturer: p.lecturer as never } : {}),
       ...(p.lecturer_model !== undefined ? { lecturerModel: p.lecturer_model as never } : {}),
+      ...(p.lecturer_style !== undefined ? { lecturerStyle: p.lecturer_style as never } : {}),
       ...(p.input !== undefined ? { input: p.input } : {}),
       ...(p.headphones !== undefined ? { headphones: p.headphones } : {}),
       ...(p.stt !== undefined ? { stt: p.stt as never } : {}),
     });
-    return Response.json({ ok: true, ...voiceSnapshot(), parakeet: { ready: await parakeetReady() } }, { headers: NO_STORE });
+    return Response.json({ ok: true, ...(await voiceSnapshot(deps.fetch)), parakeet: { ready: await parakeetReady() } }, { headers: NO_STORE });
   };
 }
 

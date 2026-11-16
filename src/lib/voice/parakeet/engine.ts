@@ -1,14 +1,17 @@
 // The on-device recognizer (docs/VOICE.md §4d): sherpa-onnx-node's
 // OfflineRecognizer running Parakeet-TDT as a NeMo transducer, on the CPU.
 // Loaded lazily and once per server process (about 3 s; kept on globalThis so
-// a dev reload does not load a second 630 MB model), and decodes are run one
-// at a time. sherpa-onnx-node is a native module: it is loaded at run time
+// a dev reload does not load a second 630 MB model). Decodes run in two
+// lanes, each one at a time: the final text's and the live previews'. A final
+// never waits behind a preview (sherpa-onnx can't stop one that has begun, so
+// the two share the CPU for a moment instead). sherpa-onnx-node is a native module: it is loaded at run time
 // from node_modules, never bundled (next.config.ts, mcp/build.mjs), and a
 // build without it says so instead of failing.
 import "server-only";
 import { cpus } from "node:os";
 import { join } from "node:path";
 import { findModel, type ModelSource } from "./model";
+import type { DecodeKind } from "./session";
 
 export type EngineState = "cold" | "loading" | "ready" | "failed";
 
@@ -32,19 +35,26 @@ interface Global {
   loading: Promise<Loaded> | null;
   loadMs: number | null;
   error: string | null;
-  /** The tail of the decode queue. */
-  lock: Promise<unknown>;
+  /** The tail of each lane's queue. */
+  lanes?: Lanes;
 }
 
 const KEY = Symbol.for("walkmycode.parakeet");
 
 function g(): Global {
   const all = globalThis as unknown as Record<symbol, Global | undefined>;
-  all[KEY] ??= { state: "cold", loading: null, loadMs: null, error: null, lock: Promise.resolve() };
+  all[KEY] ??= { state: "cold", loading: null, loadMs: null, error: null };
+  // Kept across a dev reload, from before there were lanes.
+  all[KEY].lanes ??= { final: Promise.resolve(), preview: Promise.resolve() };
   return all[KEY]!;
 }
 
-/** Threads for the recognizer: most of a small machine, never more than 4, always one core left. */
+/**
+ * Threads for the recognizer: most of a small machine, never more than 4, always one core left.
+ * Measured on an i7-1255U (2 performance + 8 efficiency cores, 12 threads): 4 decodes 1–12 s of
+ * speech fastest; 6 is no faster, 8 is up to half again slower (the work lands on the efficiency
+ * cores), 2 is as fast for under 3 s and slower beyond.
+ */
 export function threadCount(cores: number = cpus().length): number {
   return Math.max(1, Math.min(4, cores - 1));
 }
@@ -133,15 +143,21 @@ export function preload(): Promise<void> {
   return s.loading.then(() => {});
 }
 
-/** 16 kHz mono float32 to text. Loads the model on first use; one decode at a time, in the order asked. */
-export function decode(samples: Float32Array): Promise<string> {
-  const s = g();
-  const run = s.lock.then(async () => {
-    await preload();
-    return (await s.loading!).decode(samples);
-  });
-  s.lock = run.catch(() => {});
+export type Lanes = Record<DecodeKind, Promise<unknown>>;
+
+/** Run `job` after the jobs already in its lane, whatever runs in the other. */
+export function inLane<T>(lanes: Lanes, kind: DecodeKind, job: () => Promise<T>): Promise<T> {
+  const run = lanes[kind].then(job);
+  lanes[kind] = run.catch(() => {});
   return run;
+}
+
+/** 16 kHz mono float32 to text. Loads the model on first use; one decode at a time in each lane, in the order asked. */
+export function decode(samples: Float32Array, kind: DecodeKind = "final"): Promise<string> {
+  return inLane(g().lanes!, kind, async () => {
+    await preload();
+    return (await g().loading!).decode(samples);
+  });
 }
 
 /** Forget the loaded model (it was removed from disk). The native memory goes when it is collected. */

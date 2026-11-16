@@ -15,10 +15,13 @@ import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { configPath } from "../providers/config";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { appDir } from "../dataDir";
 import { createLocalRun, hostedRefusal, type LocalRun } from "./hub";
 import { spawnTracked } from "./processes";
 import { sameToken } from "./tokens";
+import { listenBrowsable } from "../blockedPorts";
 
 export const SOCKET_PATH = "/localrun";
 
@@ -72,10 +75,14 @@ const KEY = Symbol.for("walkmycode.localrun");
  * indexed repo; its name is the workspace's name from then on.
  */
 function indexProject(root: string, name: string): Promise<{ ok: boolean; workspace?: string; message?: string }> {
-  const tsx = join(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
+  // The desktop app ships scripts/index.ts bundled (scripts/desktop/stage.mjs) and has no tsx.
+  const app = appDir();
+  const bundled = join(app, "scripts", "index.mjs");
+  const tsx = join(app, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
+  const [file, script] = existsSync(bundled) ? [process.execPath, bundled] : [tsx, join(app, "scripts", "index.ts")];
   return new Promise((done) => {
     let err = "";
-    const child = spawnTracked(tsx, [join(process.cwd(), "scripts", "index.ts"), root, "--name", name], { cwd: process.cwd(), env: process.env, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawnTracked(file, [script, root, "--name", name], { cwd: process.cwd(), env: process.env, stdio: ["ignore", "ignore", "pipe"] });
     child.stderr?.on("data", (b: Buffer) => (err = (err + b.toString()).slice(-2000)));
     child.once("error", (e) => done({ ok: false, message: `The project couldn't be mapped: ${e.message}` }));
     child.once("close", (code) => done(code === 0 ? { ok: true, workspace: name } : { ok: false, message: `The project couldn't be mapped: ${err.trim().split("\n").pop() ?? `code ${code}`}` }));
@@ -98,7 +105,7 @@ function textOf(data: RawData): string {
 }
 
 /** Start the socket server (once). */
-export function startSocketServer(lr: LocalRun, o: { token?: string; port?: number } = {}): Promise<Running> {
+export async function startSocketServer(lr: LocalRun, o: { token?: string; port?: number } = {}): Promise<Running> {
   const token = o.token ?? randomBytes(24).toString("base64url");
   const origins = new Set<string>();
   const http = createServer((_req, res) => {
@@ -141,24 +148,27 @@ export function startSocketServer(lr: LocalRun, o: { token?: string; port?: numb
     wss.handleUpgrade(req, socket, head, onSocket);
   });
 
-  return new Promise((ok, fail) => {
-    http.once("error", fail);
-    http.listen(o.port ?? 0, "127.0.0.1", () => {
-      http.off("error", fail);
-      port = (http.address() as AddressInfo).port;
-      ok({
-        port,
-        token,
-        origins,
-        close: async () => {
-          for (const c of wss.clients) c.terminate();
-          await new Promise<void>((done) => wss.close(() => done()));
-          http.closeAllConnections();
-          await new Promise<void>((done) => http.close(() => done()));
-        },
+  const listen = (at: number) =>
+    new Promise<number>((ok, fail) => {
+      http.once("error", fail);
+      http.listen(at, "127.0.0.1", () => {
+        http.off("error", fail);
+        ok((http.address() as AddressInfo).port);
       });
     });
-  });
+  // A port a browser would refuse (6566 and the like: src/lib/blockedPorts.ts) is given back for another.
+  port = await listenBrowsable(listen, () => new Promise<void>((done) => http.close(() => done())), o.port ?? 0);
+  return {
+    port,
+    token,
+    origins,
+    close: async () => {
+      for (const c of wss.clients) c.terminate();
+      await new Promise<void>((done) => wss.close(() => done()));
+      http.closeAllConnections();
+      await new Promise<void>((done) => http.close(() => done()));
+    },
+  };
 }
 
 /** Where the page that sent `req` connects: started on first use, its origin let in. Null when it may not. */

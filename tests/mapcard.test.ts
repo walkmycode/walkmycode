@@ -78,8 +78,8 @@ describe("cardOf and cardMeta", () => {
       ] as CodeMap["services"],
       stats: { files: 1142, parsed: 900, routes: 507, tables: 9, edges: 0, likely: 0, ms: 1, services: 4, links: 0, crossService: 0 },
     });
-    const c = cardOf(m, "ahofe-all");
-    assert.equal(c.name, "ahofe-all");
+    const c = cardOf(m, "shopfront-all");
+    assert.equal(c.name, "shopfront-all");
     assert.deepEqual(c.apps, ["web", "mobile", "api"]);
     assert.deepEqual(cardMeta(c), { tag: "3 repos", line: "Next.js + Flutter + FastAPI — 1,142 files · 507 routes" });
   });
@@ -140,7 +140,7 @@ describe("timeAgo", () => {
 describe("examples", () => {
   it("offers maps named example-… as examples, titled in words", () => {
     assert.equal(isExample("example-online-shop"), true);
-    assert.equal(isExample("ahofe-all"), false);
+    assert.equal(isExample("shopfront-all"), false);
     assert.equal(exampleTitle("example-online-shop"), "Online shop");
   });
 });

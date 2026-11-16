@@ -1,6 +1,9 @@
 // Speech to text on this computer (docs/VOICE.md §4d) without a microphone,
 // a model or a network: the energy detector and endpointing on synthetic
-// audio, the preview scheduler, a listening session with a fake engine, the
+// audio, the preview scheduler, cutting an utterance into pieces and
+// stitching their words, the engine's two lanes, a listening session with a
+// fake engine (pieces written while the user talks, previews that never delay
+// the final text), the
 // download verifier and the safe extraction on small made-up archives, the
 // settings state (the catalogue, the saved choice, the fallback, the words
 // Settings shows), the stream route and its guard, the page's stream client,
@@ -18,12 +21,13 @@ import { Ear, type MicHandle } from "../src/lib/voice/handsfree/ear";
 import { parakeetFallback, pickListener } from "../src/lib/voice/listen";
 import { ParakeetStream, PIECE_FRAMES, STREAM_URL, type ParakeetEvents, type ParakeetLike } from "../src/lib/voice/parakeet/client";
 import { DETECT_DEFAULTS, FRAME, int16ToFloat32, rmsOf, UtteranceDetector, type DetectEvent } from "../src/lib/voice/parakeet/detect";
-import { threadCount } from "../src/lib/voice/parakeet/engine";
-import { dictate } from "../src/lib/voice/parakeet/hear";
+import { inLane, threadCount, type Lanes } from "../src/lib/voice/parakeet/engine";
+import { dictate, FLUSH_GRACE_MS } from "../src/lib/voice/parakeet/hear";
 import { findModel, installModel, InstallError, isInstalled, MODEL, moveIntoPlace, NEEDED_BYTES, removeOwnModel, type InstallProgress, type ModelDirs } from "../src/lib/voice/parakeet/model";
+import { cutAt, PIECE_DEFAULTS, stitch } from "../src/lib/voice/parakeet/pieces";
 import { PreviewScheduler } from "../src/lib/voice/parakeet/previews";
 import { actionHandler, hostedSttRefusal, parakeetStatus, resetParakeetRoutes, statusHandler, streamHandler } from "../src/lib/voice/parakeet/routes";
-import { SttSession, type SttEvent } from "../src/lib/voice/parakeet/session";
+import { SttSession, type DecodeKind, type SessionDeps, type SttEvent } from "../src/lib/voice/parakeet/session";
 import { parakeetLine, parakeetPercent, parakeetUsable, type ParakeetStatus } from "../src/lib/voice/parakeet/status";
 import { extractWanted, TarRefused, unsafePath } from "../src/lib/voice/parakeet/tar";
 
@@ -71,7 +75,7 @@ describe("Parakeet: the energy detector and endpointing", () => {
     assert.equal(int16ToFloat32(new Uint8Array([1, 2, 3])).length, 1, "an odd last byte is dropped");
   });
 
-  it("uses iReliabee's numbers", () => {
+  it("uses the tuned numbers", () => {
     assert.equal(DETECT_DEFAULTS.ratio, 2.5);
     assert.equal(DETECT_DEFAULTS.minRms, 0.0015);
     assert.equal(DETECT_DEFAULTS.minSpeechS, 0.15);
@@ -166,6 +170,29 @@ describe("Parakeet: the energy detector and endpointing", () => {
     assert.equal(quiet.flush(), null);
   });
 
+  it("reads the utterance so far by frame: its voice, its pauses, where it was last voiced", () => {
+    const d = new UtteranceDetector();
+    feed(d, cat(room(1), voice(1), room(0.2), voice(0.5), room(0.1)));
+    assert.equal(d.speaking, true);
+    assert.ok(d.frameCount >= 100 && d.frameCount <= 105, `pre-roll and 1.8 s: ${d.frameCount}`);
+    assert.equal(d.quietFrames, 5, "0.1 s of quiet at the end");
+    assert.equal(d.lastVoiced, d.frameCount - 6);
+    assert.ok(Math.abs(d.voicedFrom(0) - 75) <= 2, `1.5 s voiced: ${d.voicedFrom(0)}`);
+    assert.ok(Math.abs(d.voicedFrom(d.frameCount - 30) - 25) <= 1, `the last 0.5 s of voice: ${d.voicedFrom(d.frameCount - 30)}`);
+    const pause = d.gap(20);
+    const pauseAt = d.frameCount - 5 - 25 - 10;
+    assert.ok(pause >= pauseAt && pause < pauseAt + 10, `the middle of the 0.2 s pause: ${pause}, it is ${pauseAt}…${pauseAt + 9}`);
+    assert.equal(d.gap(d.frameCount - 3), d.frameCount - 2, "a pause still going: its middle");
+    const loud = new UtteranceDetector();
+    feed(loud, cat(room(1), voice(1)));
+    const at = loud.gap(5, 40);
+    assert.ok(at >= 5 && at < 40, "no pause: the quietest frame");
+    // The end says where the voice stopped, in the frames handed over.
+    const end = feed(d, room(1.2)).find((x) => x.e.type === "end")?.e;
+    assert.ok(end?.type === "end" && end.lastVoiced === pauseAt + 10 + 24, JSON.stringify(end?.type === "end" && end.lastVoiced));
+    assert.equal(d.lastVoiced, -1);
+  });
+
   it("takes audio in any piece size, and reset forgets the utterance", () => {
     const d = new UtteranceDetector();
     const audio = cat(room(1), voice(2), room(2));
@@ -175,18 +202,18 @@ describe("Parakeet: the energy detector and endpointing", () => {
     const r = new UtteranceDetector();
     feed(r, cat(room(1), voice(1)));
     assert.equal(r.speaking, true);
-    assert.ok(secs(r.tail(8)) > 1 && secs(r.tail(0.5)) === 0.5, "the tail is what a preview decodes");
+    assert.ok(secs(r.slice(0)) > 1 && secs(r.slice(r.frameCount - 25)) === 0.5, "a slice is what a piece or a preview decodes");
     r.reset();
     assert.equal(r.speaking, false);
-    assert.equal(r.tail(8).length, 0);
+    assert.equal(r.slice(0).length, 0);
     assert.deepEqual(feed(r, room(2)), []);
   });
 });
 
 describe("Parakeet: the preview scheduler", () => {
-  const speaking = (voicedS: number) => ({ speaking: true, voicedS });
+  const speaking = (voicedS: number, more: { fresh?: boolean; busy?: boolean } = {}) => ({ speaking: true, voicedS, ...more });
 
-  it("starts after 0.8 s of voice, then every second, never two at once", () => {
+  it("starts after 0.8 s of voice, then at most once a second, never two at once", () => {
     const p = new PreviewScheduler();
     assert.equal(p.due(0, speaking(0.5)), false, "too little said");
     assert.equal(p.due(0, { speaking: false, voicedS: 5 }), false, "nobody is speaking");
@@ -198,6 +225,25 @@ describe("Parakeet: the preview scheduler", () => {
     assert.equal(p.due(1100, speaking(1.8)), true);
   });
 
+  it("the final text goes first, and nothing new said is nothing to preview", () => {
+    const p = new PreviewScheduler();
+    assert.equal(p.due(0, speaking(2, { busy: true })), false, "a piece of the final text is being written");
+    assert.equal(p.due(0, speaking(2, { fresh: false })), false, "nothing said since the last preview");
+    assert.equal(p.due(0, speaking(2, { fresh: true, busy: false })), true);
+  });
+
+  it("paces itself to the computer: after a preview that took T, it rests T/2", () => {
+    const p = new PreviewScheduler();
+    p.begin(0);
+    p.finish(1600); // took 1.6 s: rest 0.8 s
+    assert.equal(p.due(2000, speaking(3)), false, "1 s since it began, but only 0.4 s of rest");
+    assert.equal(p.due(2400, speaking(3)), true);
+    p.begin(2400);
+    p.finish(2600); // quick again: the interval rules
+    assert.equal(p.due(3300, speaking(3)), false);
+    assert.equal(p.due(3400, speaking(3)), true);
+  });
+
   it("a new utterance does not wait out the interval", () => {
     const p = new PreviewScheduler();
     p.begin(1000);
@@ -207,113 +253,270 @@ describe("Parakeet: the preview scheduler", () => {
     assert.equal(p.due(1300, speaking(1)), true);
   });
 
-  it("turns previews off after two slow ones, and says why", () => {
+  it("turns previews off after two slower than 2.5 s, and says why", () => {
     const p = new PreviewScheduler();
     p.begin(0);
-    assert.equal(p.finish(700), null, "exactly 70% is not slow");
-    p.begin(1000);
-    assert.equal(p.finish(1701), null, "the first slow one is forgiven");
-    assert.equal(p.off, null);
+    assert.equal(p.finish(2500), null, "exactly 2.5 s is not slow");
     p.begin(3000);
-    assert.equal(p.finish(3500), null, "a quick one changes nothing");
-    p.begin(4000);
-    const why = p.finish(4900);
-    assert.match(why ?? "", /Live previews are off .* 0\.9 s/);
+    assert.equal(p.finish(5501), null, "the first slow one is forgiven");
+    assert.equal(p.off, null);
+    p.begin(6000);
+    assert.equal(p.finish(6500), null, "a quick one changes nothing");
+    p.begin(7000);
+    const why = p.finish(10_000);
+    assert.match(why ?? "", /Live previews are off .* 3\.0 s/);
     assert.equal(p.off, why);
-    assert.equal(p.due(9000, speaking(5)), false, "off for the session");
+    assert.equal(p.due(20_000, speaking(5)), false, "off for the session");
   });
 
-  it("an utterance that ends while a preview runs does not make it look slow", () => {
+  it("a preview that shared the computer with the final text is not counted as slow", () => {
     const p = new PreviewScheduler();
-    p.begin(1000);
-    p.utteranceEnded();
-    assert.equal(p.finish(1200), null);
-    p.begin(2000);
-    p.utteranceEnded();
-    assert.equal(p.finish(2100), null);
+    for (let i = 0; i < 3; i++) {
+      p.begin(i * 10_000);
+      if (i === 1) p.utteranceEnded();
+      else p.share();
+      assert.equal(p.finish(i * 10_000 + 4000), null);
+    }
     assert.equal(p.off, null);
+    p.share(); // no preview running: nothing to excuse
+    p.begin(40_000);
+    p.finish(44_000);
+    p.begin(50_000);
+    assert.match(p.finish(54_000) ?? "", /off/);
+  });
+});
+
+describe("Parakeet: cutting an utterance into pieces", () => {
+  /** An utterance `seconds` long, all voiced, ending in `quietS` of quiet, whose longest pause is at `gapAt`. */
+  const heard = (seconds: number, quietS = 0, gapAt = -1) => ({
+    frameCount: Math.round(seconds / 0.02),
+    quietFrames: Math.round(quietS / 0.02),
+    voicedFrom: (from: number) => Math.round((seconds - quietS) / 0.02) - from,
+    gap: (from: number) => (gapAt >= 0 ? Math.round(gapAt / 0.02) : from),
+  });
+
+  it("uses its numbers: a 0.3 s pause ends a piece of 1.5 s or more; without one, it is cut by 5 s", () => {
+    assert.deepEqual(PIECE_DEFAULTS, { pauseS: 0.3, minS: 1.5, maxS: 5, forcedMinS: 1, minVoicedS: 0.4 });
+  });
+
+  it("cuts at a pause once the piece is long enough, never shorter", () => {
+    assert.equal(cutAt(heard(1.2, 0.4), 0), null, "1.2 s: too short to be a piece");
+    assert.equal(cutAt(heard(2, 0.2), 0), null, "0.2 s is not a pause yet");
+    assert.equal(cutAt(heard(2, 0.3), 0), 100, "cut where the pause has reached: the next piece starts in it");
+    assert.equal(cutAt(heard(4, 0.3), 100), 200, "a later piece, from its own start");
+    assert.equal(cutAt(heard(4, 0.3), 150), null, "only 1 s since the last cut");
+  });
+
+  it("waits while there is little voice in it", () => {
+    const quiet = { ...heard(3, 0.5), voicedFrom: () => 10 };
+    assert.equal(cutAt(quiet, 0), null);
+  });
+
+  it("with no pause by 5 s, cuts in the longest pause after its first second", () => {
+    assert.equal(cutAt(heard(4.9, 0.1, 2), 0), null);
+    assert.equal(cutAt(heard(5, 0.1, 2.2), 0), 110);
+    let asked = -1;
+    cutAt({ ...heard(7, 0, 4), gap: (from: number) => ((asked = from), 0) }, 100);
+    assert.equal(asked, 150, "the search starts 1 s into the piece");
+  });
+
+  it("stitches the pieces' words, mending the seams the model marked as a continuation", () => {
+    assert.equal(stitch(["The map shows a small square.", "and the lines are imports."]), "The map shows a small square, and the lines are imports.");
+    assert.equal(stitch(["When you click a square", "The guide opens the file."]), "When you click a square the guide opens the file.");
+    assert.equal(stitch(["It ends here.", "The next one starts."]), "It ends here. The next one starts.", "a sentence that ended stays ended");
+    assert.equal(stitch(["Open the file", "React renders it."]), "Open the file React renders it.", "a name keeps its capital");
+    assert.equal(stitch(["I said", "I would."]), "I said I would.");
+    assert.equal(stitch(["Wait...", "and see."]), "Wait... and see.", "an ellipsis stays");
+    assert.equal(stitch(["Use e.g.", "and so on."]), "Use e.g. and so on.", "an abbreviation stays");
+    assert.equal(stitch(["", " One. ", "", "two"]), "One, two");
+    assert.equal(stitch([]), "");
+  });
+});
+
+describe("Parakeet: the engine's lanes", () => {
+  it("a final never waits behind a preview; each lane keeps its order", async () => {
+    const lanes: Lanes = { final: Promise.resolve(), preview: Promise.resolve() };
+    const order: string[] = [];
+    let endPreview!: () => void;
+    const preview = inLane(lanes, "preview", () => new Promise<string>((ok) => (endPreview = () => ok("preview"))));
+    const next = inLane(lanes, "preview", async () => (order.push("second preview"), "p2"));
+    const final = inLane(lanes, "final", async () => (order.push("final"), "final"));
+    const failing = inLane(lanes, "final", async () => Promise.reject(new Error("no")));
+    const after = inLane(lanes, "final", async () => (order.push("final after a failure"), "f3"));
+    assert.equal(await final, "final");
+    await assert.rejects(failing, /no/);
+    assert.equal(await after, "f3");
+    assert.deepEqual(order, ["final", "final after a failure"], "the preview is still running");
+    endPreview();
+    assert.equal(await preview, "preview");
+    await next;
+    assert.deepEqual(order, ["final", "final after a failure", "second preview"]);
   });
 });
 
 /** A fake engine: says how many seconds it was given; the test decides when it answers. */
 function fakeEngine() {
-  const calls: { seconds: number; done: (text?: string) => void }[] = [];
+  const calls: { seconds: number; kind?: DecodeKind; answered: boolean; done: (text?: string) => void; fail: (e: Error) => void }[] = [];
   return {
     calls,
-    decode: (samples: Float32Array) =>
-      new Promise<string>((ok) => {
+    /** Answer every preview still running. */
+    previews(text = "a preview") {
+      for (const c of calls) if (c.kind === "preview" && !c.answered) c.done(text);
+    },
+    decode: (samples: Float32Array, kind?: DecodeKind) =>
+      new Promise<string>((ok, fail) => {
         const seconds = Math.round((samples.length / 16000) * 10) / 10;
-        calls.push({ seconds, done: (text) => ok(text ?? `heard ${seconds}s`) });
+        const call = {
+          seconds,
+          kind,
+          answered: false,
+          done: (text?: string) => ((call.answered = true), ok(text ?? `heard ${seconds}s`)),
+          fail: (e: Error) => ((call.answered = true), fail(e)),
+        };
+        calls.push(call);
       }),
   };
 }
 const tick = () => new Promise<void>((r) => setImmediate(r));
 
 describe("Parakeet: a listening session (fake engine)", () => {
-  it("speech → previews of the last 8 s every second → the final text", async () => {
-    const heard: number[] = [];
-    let now = 0;
-    const s = new SttSession({
-      decode: async (a) => {
-        heard.push(Math.round((a.length / 16000) * 10) / 10);
-        return `take ${heard.length}`;
-      },
-      now: () => now,
-    });
-    const types = (e: SttEvent[]) => e.map((x) => x.type);
-    /** Audio in 0.2 s pieces, as the page sends it, in real time. */
+  /** A session on a clock, fed in 0.2 s pieces as the page sends them. */
+  function live(deps: Omit<SessionDeps, "now">) {
+    const clock = { now: 0 };
+    const s = new SttSession({ ...deps, now: () => clock.now });
     const push = async (audio: Float32Array) => {
       for (let i = 0; i < audio.length; i += 3200) {
         s.push(audio.subarray(i, i + 3200));
-        now += 200;
+        clock.now += 200;
         await tick();
       }
     };
-    await push(room(1));
-    assert.deepEqual(s.take(), []);
-    await push(voice(0.6));
-    assert.deepEqual(types(s.take()), ["speech"]);
-    assert.equal(heard.length, 0, "under 0.8 s of voice: no preview yet");
-    await push(voice(0.4));
-    assert.equal(heard.length, 1, "a preview began once 0.8 s was voiced");
-    assert.deepEqual(s.take(), [{ type: "partial", text: "take 1" }]);
-    await push(voice(12));
-    const previews = s.take();
-    assert.ok(previews.every((e) => e.type === "partial"), types(previews).join(","));
-    assert.ok(previews.length >= 11 && previews.length <= 13, `about one a second over 12 s: ${previews.length}`);
-    assert.equal(Math.max(...heard), 8, "a preview decodes at most the last 8 s");
-    assert.ok(heard[1] > 1.5 && heard[1] < 3, `early previews decode what there is: ${heard[1]}`);
-    const before = heard.length;
+    return { s, clock, push };
+  }
+  const types = (e: SttEvent[]) => e.map((x) => x.type);
+
+  it("writes an utterance down in pieces at the speaker's pauses while they talk; the final is the pieces", async () => {
+    const asked: { kind?: DecodeKind; seconds: number; speaking: boolean }[] = [];
+    const words = ["The map shows a square.", "and the lines", "Then imports."];
+    const { s, push } = live({
+      decode: async (a, kind) => {
+        asked.push({ kind, seconds: Math.round((a.length / 16000) * 10) / 10, speaking: s.detector.speaking });
+        return kind === "final" ? words[asked.filter((x) => x.kind === "final").length - 1] : "a preview";
+      },
+      previews: { startVoicedS: 99 },
+    });
+    await push(cat(room(1), voice(2.5), room(0.5), voice(2), room(0.5), voice(0.8)));
+    const pieces = asked.filter((x) => x.kind === "final");
+    assert.equal(pieces.length, 2, "two pieces written while still talking");
+    assert.ok(pieces.every((p) => p.speaking));
+    assert.ok(pieces[0].seconds >= 2.9 && pieces[0].seconds <= 3.3, `the first: pre-roll, 2.5 s of voice, the pause so far: ${pieces[0].seconds}`);
+    assert.ok(pieces[1].seconds >= 2.2 && pieces[1].seconds <= 2.8, `the second, from the first cut: ${pieces[1].seconds}`);
+    const shown = s.take().filter((e) => e.type === "partial");
+    assert.deepEqual(shown.at(-1), { type: "partial", text: "The map shows a square, and the lines" }, "each piece shows as it is written");
     await push(room(1.6));
     await s.settled();
-    // A last preview may land in the 1.2 s of quiet that ends the utterance.
+    assert.equal(asked.filter((x) => x.kind === "final").length, 3, "only the last 0.8 s was left to write down");
     const out = s.take().filter((e) => e.type !== "partial");
     assert.deepEqual(types(out), ["decoding", "final"]);
-    const whole = heard.at(-1)!;
-    assert.ok(heard.length > before && whole > 13 && whole < 14, `the final decodes the whole utterance: ${whole}`);
-    const final = out[1];
-    assert.ok(final.type === "final" && final.text === `take ${heard.length}` && final.audioS > 13);
+    assert.ok(out[1].type === "final" && out[1].text === "The map shows a square, and the lines then imports.", JSON.stringify(out[1]));
+    assert.ok(out[1].type === "final" && out[1].audioS > 6.5 && out[1].audioS < 7.3, `the whole utterance's length: ${out[1].type === "final" && out[1].audioS}`);
   });
 
-  it("a preview that lands after the utterance ended is not shown over the next one", async () => {
+  it("an utterance whose last piece was cut as the silence began is final as soon as that piece is written", async () => {
     const engine = fakeEngine();
-    let now = 0;
-    const s = new SttSession({ decode: engine.decode, now: () => now });
-    for (const a of [room(1), voice(1.2)]) {
-      s.push(a);
-      now += 1000;
-    }
-    assert.equal(engine.calls.length, 1, "a preview is running");
+    const { s, push } = live({ decode: engine.decode, previews: { startVoicedS: 99 } });
+    await push(cat(room(1), voice(2.5), room(0.4)));
+    assert.equal(engine.calls.length, 1, "cut at the start of the silence");
+    engine.calls[0].done("All of it.");
+    await push(room(1.2));
+    await s.settled();
+    assert.equal(engine.calls.length, 1, "nothing left to decode when the silence ended it");
+    const final = s.take().find((e) => e.type === "final");
+    assert.ok(final?.type === "final" && final.text === "All of it." && final.ms <= 200, `within the piece of audio that ended it: ${JSON.stringify(final)}`);
+  });
+
+  it("previews never delay the final: it is asked for at once, in its own lane, and a late preview is dropped", async () => {
+    const engine = fakeEngine();
+    const { s, clock, push } = live({ decode: engine.decode });
+    await push(cat(room(1), voice(1.2)));
+    assert.deepEqual(engine.calls.map((c) => c.kind), ["preview"], "a preview is running");
     s.push(room(1.5));
     await tick();
-    assert.equal(engine.calls.length, 2, "the final was asked for");
-    engine.calls[0].done("stale");
+    assert.deepEqual(engine.calls.map((c) => c.kind), ["preview", "final"], "the final was asked for while the preview still runs");
+    clock.now += 300;
     engine.calls[1].done("the real thing");
     await s.settled();
-    await tick();
     const out = s.take();
-    assert.deepEqual(out.map((e) => e.type), ["speech", "decoding", "final"]);
-    assert.ok(out[2].type === "final" && out[2].text === "the real thing");
+    assert.deepEqual(types(out), ["speech", "decoding", "final"], "the final did not wait for the preview");
+    assert.ok(out[2].type === "final" && out[2].text === "the real thing" && out[2].ms === 300);
+    engine.calls[0].done("stale");
+    await tick();
+    assert.deepEqual(s.take(), [], "the late preview is not shown");
+  });
+
+  it("no preview while a piece of the final text is being written, nor of a breath just after a cut", async () => {
+    const engine = fakeEngine();
+    const { s, push } = live({ decode: engine.decode });
+    await push(cat(room(1), voice(0.6)));
+    assert.equal(engine.calls.length, 0);
+    await push(voice(0.4));
+    assert.deepEqual(engine.calls.map((c) => c.kind), ["preview"]);
+    engine.calls[0].done("The first");
+    await push(cat(voice(1), room(0.4)));
+    const kinds = () => engine.calls.map((c) => c.kind);
+    assert.equal(kinds().at(-1), "final", `cut at the pause: ${kinds()}`);
+    const writing = engine.calls.length - 1;
+    engine.previews("The first words");
+    await push(voice(2));
+    assert.equal(engine.calls.length, writing + 1, `no preview while the piece is written: ${kinds()}`);
+    engine.calls[writing].done("The first words.");
+    await push(voice(0.4));
+    assert.equal(engine.calls.length, writing + 2, "then previews come back");
+    const preview = engine.calls.at(-1)!;
+    assert.equal(preview.kind, "preview");
+    assert.ok(preview.seconds >= 2 && preview.seconds <= 2.8, `a preview decodes only what followed the cut: ${preview.seconds}`);
+    preview.done("and more");
+    await tick();
+    assert.deepEqual(s.take().filter((e) => e.type === "partial").at(-1), { type: "partial", text: "The first words, and more" });
+    // Just after a cut, only a breath or half a word: wait for 0.8 s of voice.
+    await push(room(0.4));
+    const cutAgain = engine.calls.length;
+    engine.calls.at(-1)!.done("And more.");
+    await push(voice(0.6));
+    assert.equal(engine.calls.length, cutAgain, "0.6 s of voice since the cut: no preview yet");
+    await push(voice(0.4));
+    assert.equal(engine.calls.at(-1)!.kind, "preview");
+  });
+
+  it("previews keep coming through a long talk, each a few seconds long, never two at once", async () => {
+    const heard: { kind?: DecodeKind; seconds: number }[] = [];
+    let running = 0;
+    let most = 0;
+    const { s, push } = live({
+      decode: async (a, kind) => {
+        heard.push({ kind, seconds: a.length / 16000 });
+        if (kind === "preview") most = Math.max(most, ++running);
+        await tick();
+        if (kind === "preview") running--;
+        return kind === "final" ? "piece." : `so far ${heard.length}`;
+      },
+    });
+    await push(room(1));
+    // 20 s of talk: a breath every 3 s, and one 7 s stretch without a pause.
+    for (const seconds of [3, 3, 7, 3, 3]) await push(cat(voice(seconds), room(0.4)));
+    const during = s.take();
+    const partials = during.filter((e) => e.type === "partial");
+    assert.ok(partials.length >= 15, `about one a second over 20 s: ${partials.length}`);
+    assert.equal(during.filter((e) => e.type === "final").length, 0, "one utterance");
+    const previews = heard.filter((h) => h.kind === "preview");
+    assert.ok(Math.max(...previews.map((h) => h.seconds)) <= 5.1, `a preview stays short: ${Math.max(...previews.map((h) => h.seconds))}`);
+    assert.equal(most, 1);
+    const pieces = heard.filter((h) => h.kind === "final");
+    assert.ok(pieces.length >= 6, `the 7 s stretch was cut too: ${pieces.map((p) => p.seconds.toFixed(1))}`);
+    await push(room(1.2));
+    await s.settled();
+    const final = s.take().find((e) => e.type === "final");
+    assert.ok(final?.type === "final" && final.text.split("piece").length - 1 === pieces.length, "the final is every piece, nothing decoded twice");
   });
 
   it("flush drains what is left and resolves when its words are in", async () => {
@@ -327,26 +530,33 @@ describe("Parakeet: a listening session (fake engine)", () => {
     assert.deepEqual(s.take(), [], "nothing more");
   });
 
+  it("finals arrive in the order they were said", async () => {
+    const engine = fakeEngine();
+    const { s, push } = live({ decode: engine.decode, previews: { startVoicedS: 99 } });
+    await push(cat(room(1), voice(1), room(1.4), voice(1), room(1.4)));
+    assert.equal(engine.calls.length, 2);
+    engine.calls[1].done("second");
+    await tick();
+    assert.ok(!s.take().some((e) => e.type === "final"), "the second waits for the first");
+    engine.calls[0].done("first");
+    await s.settled();
+    assert.deepEqual(s.take().filter((e) => e.type === "final").map((e) => e.type === "final" && e.text), ["first", "second"]);
+  });
+
   it("slow previews turn themselves off with a notice; finals keep coming", async () => {
-    let now = 0;
-    const s = new SttSession({
-      decode: async () => {
-        now += 900; // every decode takes 0.9 s
+    const { s, clock, push } = live({
+      decode: async (_, kind) => {
+        if (kind === "preview") clock.now += 3000; // every preview takes 3 s
         return "words";
       },
-      now: () => now,
     });
-    s.push(room(1));
-    for (let i = 0; i < 12; i++) {
-      s.push(voice(0.5));
-      now += 500;
-      await tick();
-    }
+    await push(room(1));
+    for (let i = 0; i < 8; i++) await push(voice(1));
     const events = s.take();
     const notice = events.find((e) => e.type === "notice");
-    assert.ok(notice && notice.type === "notice" && /Live previews are off/.test(notice.message), JSON.stringify(events.map((e) => e.type)));
+    assert.ok(notice && notice.type === "notice" && /Live previews are off/.test(notice.message), JSON.stringify(types(events)));
     assert.equal(events.filter((e) => e.type === "notice").length, 1, "said once");
-    s.push(room(1.5));
+    await push(room(1.6));
     await s.settled();
     assert.ok(s.take().some((e) => e.type === "final"));
   });
@@ -361,6 +571,18 @@ describe("Parakeet: a listening session (fake engine)", () => {
     s.push(cat(voice(1), room(1.5)));
     await s.settled();
     assert.equal(s.take().at(-1)?.type, "final");
+  });
+
+  it("reset forgets the utterance and its pieces", async () => {
+    const engine = fakeEngine();
+    const { s, push } = live({ decode: engine.decode, previews: { startVoicedS: 99 } });
+    await push(cat(room(1), voice(2), room(0.4)));
+    assert.equal(engine.calls.length, 1);
+    s.reset();
+    engine.calls[0].done("forgotten");
+    await push(room(1.6));
+    await s.settled();
+    assert.deepEqual(types(s.take()), ["speech"], "no partial, no final");
   });
 });
 
@@ -504,7 +726,7 @@ describe("Parakeet: finding, downloading, verifying and removing the model", () 
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "walkmycode-model-"));
-    dirs = { own: join(home, "wmc", "models"), ireliabee: join(home, "ireliabee", "models") };
+    dirs = { own: join(home, "wmc", "models"), shared: join(home, "other-app", "models") };
   });
   after(() => rmSync(home, { recursive: true, force: true }));
 
@@ -534,14 +756,14 @@ describe("Parakeet: finding, downloading, verifying and removing the model", () 
     assert.equal(isInstalled(d), false);
   });
 
-  it("uses iReliabee's copy when it is whole, else WalkMyCode's own", () => {
+  it("uses another app's copy when it is whole, else WalkMyCode's own", () => {
     put(dirs.own, four);
     assert.deepEqual(findModel(dirs), { dir: join(dirs.own, MODEL.name), source: "walkmycode" });
-    const theirs = put(dirs.ireliabee, four);
-    assert.deepEqual(findModel(dirs), { dir: theirs, source: "ireliabee" });
+    const theirs = put(dirs.shared, four);
+    assert.deepEqual(findModel(dirs), { dir: theirs, source: "shared" });
     rmSync(join(theirs, "encoder.int8.onnx"));
     assert.equal(findModel(dirs)?.source, "walkmycode", "a broken copy of theirs is passed over");
-    assert.equal(findModel({ ...dirs, ireliabee: "" })?.source, "walkmycode");
+    assert.equal(findModel({ ...dirs, shared: "" })?.source, "walkmycode");
   });
 
   it("downloads with progress, verifies, unpacks and moves into place", async () => {
@@ -664,8 +886,8 @@ describe("Parakeet: finding, downloading, verifying and removing the model", () 
     assert.deepEqual(readdirSync(dirs.own), []);
   });
 
-  it("removes WalkMyCode's own copy only: iReliabee's folder is never touched", () => {
-    const theirs = put(dirs.ireliabee, four);
+  it("removes WalkMyCode's own copy only: another app's folder is never touched", () => {
+    const theirs = put(dirs.shared, four);
     assert.equal(removeOwnModel(dirs), false, "there was no copy of ours");
     assert.equal(isInstalled(theirs), true);
     const ours = put(dirs.own, four);
@@ -673,14 +895,14 @@ describe("Parakeet: finding, downloading, verifying and removing the model", () 
     assert.equal(existsSync(ours), false);
     assert.equal(isInstalled(theirs), true, "theirs is still whole");
     // Even pointed at the same folder, theirs is refused.
-    assert.throws(() => removeOwnModel({ own: dirs.ireliabee, ireliabee: dirs.ireliabee }), /iReliabee's copy/);
+    assert.throws(() => removeOwnModel({ own: dirs.shared, shared: dirs.shared }), /another app's copy/);
     assert.equal(isInstalled(theirs), true);
   });
 });
 
 describe("Parakeet: the settings state", () => {
   let home: string;
-  const ENV = ["WALKMYCODE_HOME", "WALKMYCODE_MODELS_DIR", "WALKMYCODE_IRELIABEE_MODELS_DIR", "WALKMYCODE_MODE"];
+  const ENV = ["WALKMYCODE_HOME", "WALKMYCODE_MODELS_DIR", "WALKMYCODE_SHARED_MODELS_DIR", "WALKMYCODE_MODE"];
   const saved: Record<string, string | undefined> = {};
   before(() => {
     for (const k of ENV) saved[k] = process.env[k];
@@ -689,7 +911,7 @@ describe("Parakeet: the settings state", () => {
     home = mkdtempSync(join(tmpdir(), "walkmycode-parakeet-"));
     process.env.WALKMYCODE_HOME = home;
     process.env.WALKMYCODE_MODELS_DIR = join(home, "models");
-    process.env.WALKMYCODE_IRELIABEE_MODELS_DIR = join(home, "ireliabee");
+    process.env.WALKMYCODE_SHARED_MODELS_DIR = join(home, "other-app");
     delete process.env.WALKMYCODE_MODE;
     resetParakeetRoutes();
   });
@@ -762,21 +984,21 @@ describe("Parakeet: the settings state", () => {
     for (const [lang, yes] of [["en", true], ["en-GB", true], ["EN_us", true], ["", true], ["fr", false], ["eng-x", false], ["de-EN", false]] as const) assert.equal(isEnglish(lang), yes, lang);
   });
 
-  it("says where the model stands: missing, iReliabee's, WalkMyCode's own", async () => {
+  it("says where the model stands: missing, another app's, WalkMyCode's own", async () => {
     let s = await status();
     assert.equal(s.state, "missing");
     assert.equal(s.source, null);
     assert.equal(s.removable, false);
     assert.equal(parakeetUsable(s), false);
     if (s.available) assert.match(parakeetLine(s), /Not on this computer yet: a one-off download of 460 MB from GitHub \(631 MB once unpacked\)/);
-    install(process.env.WALKMYCODE_IRELIABEE_MODELS_DIR);
+    install(process.env.WALKMYCODE_SHARED_MODELS_DIR);
     s = await status();
-    assert.deepEqual([s.state, s.source, s.removable], ["installed", "ireliabee", false]);
-    if (s.available) assert.match(parakeetLine(s), /Already on this computer: WalkMyCode uses the copy iReliabee downloaded/);
+    assert.deepEqual([s.state, s.source, s.removable], ["installed", "shared", false]);
+    if (s.available) assert.match(parakeetLine(s), /Already on this computer: WalkMyCode uses the copy another app downloaded/);
     install();
     s = await status();
-    assert.deepEqual([s.state, s.source, s.removable], ["installed", "ireliabee", true], "theirs is used; ours can go");
-    rmSync(process.env.WALKMYCODE_IRELIABEE_MODELS_DIR!, { recursive: true });
+    assert.deepEqual([s.state, s.source, s.removable], ["installed", "shared", true], "theirs is used; ours can go");
+    rmSync(process.env.WALKMYCODE_SHARED_MODELS_DIR!, { recursive: true });
     s = await status();
     assert.deepEqual([s.state, s.source, s.removable], ["installed", "walkmycode", true]);
     if (s.available) assert.match(parakeetLine(s), /On this computer \(631 MB/);
@@ -832,13 +1054,13 @@ describe("Parakeet: the settings state", () => {
     await assert.rejects(act(post("/api/voice/parakeet", { action: "explode" })), /install, cancel, remove or preload/);
   });
 
-  it("remove deletes WalkMyCode's copy and leaves iReliabee's", async () => {
+  it("remove deletes WalkMyCode's copy and leaves another app's", async () => {
     install();
-    install(process.env.WALKMYCODE_IRELIABEE_MODELS_DIR);
+    install(process.env.WALKMYCODE_SHARED_MODELS_DIR);
     const s = (await (await actionHandler()(post("/api/voice/parakeet", { action: "remove" }))).json()) as ParakeetStatus;
-    assert.deepEqual([s.state, s.source, s.removable], ["installed", "ireliabee", false]);
+    assert.deepEqual([s.state, s.source, s.removable], ["installed", "shared", false]);
     assert.equal(existsSync(join(process.env.WALKMYCODE_MODELS_DIR!, MODEL.name)), false);
-    assert.equal(isInstalled(join(process.env.WALKMYCODE_IRELIABEE_MODELS_DIR!, MODEL.name)), true);
+    assert.equal(isInstalled(join(process.env.WALKMYCODE_SHARED_MODELS_DIR!, MODEL.name)), true);
   });
 
   it("preload loads only when the model is there, and never fails the request", async () => {
@@ -1160,6 +1382,24 @@ describe("Parakeet: the Ear and the Learn dictation (fake microphone and stream)
     flushed();
     await tick();
     assert.equal(seen.at(-1), "done:What is a closure? And why does it matter?");
+    assert.equal(r.log.at(-1), "close");
+  });
+
+  it("the Learn mic: a flush that never comes back ends with the words already shown, once", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const r = rig();
+    const seen: string[] = [];
+    r.stream.flush = () => new Promise<void>(() => r.log.push("flush"));
+    const d = dictate({ onText: () => {}, onDone: (w) => seen.push(`done:${w}`) }, { mic: r.mic, stream: (on) => (r.setOn(on), r.stream) });
+    await tick();
+    r.on().final?.("What is a closure?");
+    r.on().partial?.("and why");
+    d?.stop();
+    d?.stop();
+    t.mock.timers.tick(FLUSH_GRACE_MS - 1);
+    assert.deepEqual(seen, []);
+    t.mock.timers.tick(1);
+    assert.deepEqual(seen, ["done:What is a closure? and why"]);
     assert.equal(r.log.at(-1), "close");
   });
 

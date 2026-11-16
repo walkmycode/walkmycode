@@ -295,9 +295,11 @@ describe("marking against a mark scheme", () => {
   });
 
   it("sets the professor's examples in the United Kingdom", () => {
-    assert.match(PERSONA, /set in the United Kingdom: British first names \(Emily, Jack/);
+    assert.match(PERSONA, /set in the United Kingdom today/);
     assert.match(PERSONA, /pounds and pence/);
-    assert.match(PERSONA, /a queue at a bus stop, a London bus/);
+    assert.match(PERSONA, /first names are as varied as Britain's own/);
+    // No fixed cast or fixed worlds: they made every lesson the same picture (tests/learn.worlds.test.ts).
+    assert.doesNotMatch(PERSONA, /Emily|Jack|corner shop|London bus/);
     assert.doesNotMatch(scenePrompt(lesson, 0, DEFAULT_PROFILE), /Ama|Kofi|Accra|cedi/);
   });
 });

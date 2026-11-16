@@ -7,6 +7,7 @@ import { extractJs } from "../src/analyzer/extract/js";
 import { extractPy } from "../src/analyzer/extract/py";
 import { extractDart } from "../src/analyzer/extract/dart";
 import { extractPhp } from "../src/analyzer/extract/php";
+import { extractRust } from "../src/analyzer/extract/rust";
 import type { FileFacts } from "../src/analyzer/facts";
 import { GRAMMAR_FILES, grammarFor, parse, setGrammarLoader } from "../src/analyzer/parser";
 import type { SourceFile } from "../src/analyzer/types";
@@ -34,5 +35,5 @@ export async function factsOf(path: string, content: string): Promise<FileFacts>
   const g = grammarFor(path);
   if (!g) throw new Error(`no grammar for ${path}`);
   const root = await parse(g, content);
-  return g === "python" ? extractPy(root, content) : g === "dart" ? extractDart(root, content) : g === "php" ? extractPhp(root, content, path) : extractJs(root, content);
+  return g === "python" ? extractPy(root, content) : g === "dart" ? extractDart(root, content) : g === "php" ? extractPhp(root, content, path) : g === "rust" ? extractRust(root, content) : extractJs(root, content);
 }

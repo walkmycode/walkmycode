@@ -4,9 +4,14 @@
  * lesson's other work (store.ts, "chat-<lessonId>"), so a student carries on
  * where they stopped. The teaching rules are docs/LEARNING.md's.
  */
+import { DRAWING_LIST } from "../../lib/drawings/names";
+import { PICTURE_BLOCK } from "../../lib/scene/diagram";
+import { SCENE_BLOCK } from "../../lib/scene/model";
+import { KINDS_BRIEF } from "../../lib/scene/kinds";
 import { plain } from "./markup";
 import { PERSONA, student } from "./professor";
 import type { Board, HandRaise, Lesson, Profile } from "./types";
+import { NOTHING_USED, varietyNote, type Used } from "./worlds";
 
 export type ActionId = "ten" | "hint" | "example" | "quiz" | "connect" | "why" | "again";
 
@@ -22,6 +27,10 @@ export type ChatMsg = {
   /** The professor's answer failed, or was stopped part-way. */
   err?: string;
   stopped?: boolean;
+  /** Said out loud in a live talk with the professor (lib/talk.ts), not typed. */
+  voice?: boolean;
+  /** What he looked at on the computer to answer: searches and documents, in order. */
+  looked?: { tool: "find" | "read"; what: string; note?: string }[];
 };
 
 export type Chat = { lessonId: string; msgs: ChatMsg[]; draft?: string; updatedAt: number };
@@ -166,14 +175,17 @@ function exerciseBlock(b: Board, work: { code?: string; output?: string; passed?
 
 export const CHAT_RULES = `How you answer in this conversation:
 - The first sentence answers the question. Then at most two short paragraphs, 150 words in all unless they ask for more.
-- A new idea gets one everyday picture a child would understand, on a line of its own starting with "💡": concrete things a ten-year-old has touched, one idea only, saying what stands for what (the toy is the value), true to the code, and naming where the picture stops being true when that matters.
+- A new idea gets one everyday picture a child would understand, on a line of its own starting with "💡": concrete things a ten-year-old has touched, one idea only, saying what stands for what (this thing is the value), true to the code, and naming where the picture stops being true when that matters.
 - Light Markdown only: short paragraphs, **bold** for a key term, \`code\` for names, a fenced code block with its language for code, a short list when steps matter. No headings, no tables.
+- ${SCENE_BLOCK} Use one when the student asks to see it, to be shown a picture, or for a diagram of how something moves or changes; keep the lesson's own picture when it has one. ${KINDS_BRIEF}
+- ${PICTURE_BLOCK}
+- ${DRAWING_LIST}
 - On an exercise, hints come before answers: a nudge, then a pointer, then a near-answer. Never write the full solution unless the student says they have tried and asks for it plainly.
 - If they answer a question you asked, say first whether they are right, then why.
 - Any question is welcome, on the topic or not: answer it briefly and lead back to the lesson.
 - End with a line holding only ??? and then two short questions a curious student might ask next, one per line, in the student's voice (at most 12 words each).`;
 
-function preamble(lesson: Lesson, profile: Profile, upTo: number): string {
+function preamble(lesson: Lesson, profile: Profile, upTo: number, board: number, used: Used): string {
   const boards = lesson.boards.slice(0, upTo + 1);
   return `${PERSONA}
 
@@ -183,7 +195,8 @@ You are teaching "${lesson.title}" (course: ${lesson.course}). ${lesson.summary}
 The lesson's boards the student has reached, in order:
 ${boards.map(boardText).join("\n")}
 
-${CHAT_RULES}`;
+${CHAT_RULES}
+${varietyNote(`${lesson.id}:${board}`, used, "chat")}`;
 }
 
 export type AskContext = { board: number; code?: string; output?: string; passed?: boolean };
@@ -192,16 +205,26 @@ export type AskContext = { board: number; code?: string; output?: string; passed
  * The messages sent for the next answer: the lesson and the rules first, then
  * the recent conversation, with the last question saying which board is on
  * screen and (on an exercise) what the student's code looks like now. Roles
- * alternate and start with the student, as every provider expects.
+ * alternate and start with the student, as every provider expects. `used` is
+ * what the course's other lessons pictured (usedPictures), for fresh pictures.
  */
-export function chatTurns(lesson: Lesson, profile: Profile, msgs: ChatMsg[], ctx: AskContext): Turn[] {
+/**
+ * The documents an answer read on the computer, as a line before it, so a follow-up question ("and section 3?")
+ * can read the same file again by its path. The answer's text alone does not say which file it was.
+ */
+export function readNote(m: Pick<ChatMsg, "looked">): string {
+  const read = (m.looked ?? []).filter((l) => l.tool === "read" && l.what);
+  return read.length ? `[Read on the computer: ${read.map((l) => (l.note ? `${l.what} (${l.note})` : l.what)).join("; ")}]\n\n` : "";
+}
+
+export function chatTurns(lesson: Lesson, profile: Profile, msgs: ChatMsg[], ctx: AskContext, used: Used = NOTHING_USED): Turn[] {
   const said = msgs.filter((m) => m.text.trim() && !(m.role === "prof" && m.err && !m.text.trim())).slice(-RECALL);
   // Start at a question of the student's.
   while (said.length && said[0].role !== "you") said.shift();
   const turns: Turn[] = [];
   for (const m of said) {
     const role = m.role === "you" ? "user" : "assistant";
-    const content = (m.role === "prof" ? m.text : m.text).slice(0, TURN_MAX);
+    const content = (m.role === "prof" ? `${readNote(m)}${m.text}` : m.text).slice(0, TURN_MAX);
     const last = turns.at(-1);
     if (last && last.role === role) last.content += `\n\n${content}`;
     else turns.push({ role, content });
@@ -213,7 +236,7 @@ export function chatTurns(lesson: Lesson, profile: Profile, msgs: ChatMsg[], ctx
   const exercise = b && (b.kind === "code" || b.kind === "write") ? `\n\n${exerciseBlock(b, ctx)}` : "";
   const lastTurn = turns.at(-1)!;
   lastTurn.content = `${here} ${lastTurn.content}${exercise}`.trim();
-  turns[0].content = `${preamble(lesson, profile, Math.min(upTo, lesson.boards.length - 1))}\n\n---\n\n${turns[0].content}`;
+  turns[0].content = `${preamble(lesson, profile, Math.min(upTo, lesson.boards.length - 1), ctx.board, used)}\n\n---\n\n${turns[0].content}`;
   return turns;
 }
 

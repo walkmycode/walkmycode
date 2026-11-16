@@ -4,9 +4,11 @@
 // into the document it was made in, so when the panel moves to a pop-out
 // window the editor is re-rooted there (docs/SHELL.md §7). The editor itself
 // is never remounted by a move, so scroll and selection survive.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { fileKind } from "@/lib/fileTree";
 import dynamic from "next/dynamic";
 import type { IDockviewPanelProps } from "dockview-react";
+import { useFileGit } from "@/ide/localrun/git/FileGit";
 import type { Selection } from "@/ide/Editor";
 import type { AskVia } from "@/ide/Ide";
 import { MCP } from "@/lib/adapters/target";
@@ -21,7 +23,10 @@ import { light } from "@/lib/light";
 import { useShell } from "../WorkspaceProvider";
 import { glideAfterJump } from "./codeScroll";
 import AddFolder, { CODE_MISSING } from "@/components/AddFolder";
+import FileIcon from "@/components/FileIcon";
 import { eolOf, toLF, withEol } from "./lineEndings";
+import { languageOf } from "@/ide/Editor";
+import { setMdView, useMdView, type MdView } from "@/ide/mdView";
 
 // The shared IDE (CodeMirror, its runners and the Learn room's markup with KaTeX) loads
 // with the first file opened, not with the map: the map paints and answers clicks first.
@@ -34,6 +39,23 @@ const Ide = dynamic(() => import("@/ide/Ide"), {
   ),
 });
 
+// A Markdown file as it reads (README.md and the rest): loaded with the first one opened.
+const MarkdownPreview = dynamic(() => import("@/components/MarkdownPreview"), {
+  ssr: false,
+  loading: () => <p className="note" style={{ padding: 16 }}>Drawing the preview…</p>,
+});
+
+const MD_VIEWS: { id: MdView; label: string; tip: string; icon: React.ReactNode }[] = [
+  {
+    id: "preview",
+    label: "Preview",
+    tip: "The file as it reads",
+    icon: <path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z M8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />,
+  },
+  { id: "split", label: "Split", tip: "The source and the preview side by side", icon: <path d="M2 2.5h12v11H2z M8 2.5v11" /> },
+  { id: "source", label: "Source", tip: "The Markdown itself", icon: <path d="M5.5 4.5L2 8l3.5 3.5 M10.5 4.5L14 8l-3.5 3.5" /> },
+];
+
 export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: string }>) {
   const s = useShell();
   const path = params.path;
@@ -42,6 +64,23 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
 
   const highlight = s.files.find((f) => f.path === path)?.highlight ?? null;
   const content = s.repo.files[path];
+  // Who changed this file, and when: Blame and History in the header (src/ide/localrun/git/FileGit.tsx).
+  const fileGit = useFileGit(path, content);
+  // A Markdown file shows as it reads, its source, or both (src/ide/mdView.ts). When Claude points at its
+  // lines while it is shown as it reads, the source opens beside it, until the user picks a view again.
+  const isMd = languageOf(path) === "markdown";
+  const mdView = useMdView();
+  const litNow = highlight ? `${highlight[0]}-${highlight[1]}` : "";
+  const [pickedAt, setPickedAt] = useState(litNow);
+  const view: MdView = mdView === "preview" && litNow && litNow !== pickedAt ? "split" : mdView;
+  const { openAt } = s;
+  const openLinked = useCallback(
+    (to: string) => {
+      if (s.repo.files[to] !== undefined) openAt(to);
+      else toast(`${to} isn’t a file in this project.`);
+    },
+    [s.repo.files, openAt],
+  );
   // The editor holds lines, not line endings: it is given the file with "\n"
   // endings, so a "\r\n" file is not "changed" by being opened (./lineEndings.ts).
   const text = useMemo(() => (content === undefined ? undefined : toLF(content)), [content]);
@@ -105,11 +144,24 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
     setDraft(null);
     toast(r.kind === "written" ? `Saved ${path.split("/").pop()}. Map it again to update the map.` : r.why);
   };
-  const lang = useMemo(() => s.map.files.find((f) => f.path === path)?.lang ?? "", [s.map, path]);
+  const onMap = useMemo(() => s.map.files.find((f) => f.path === path), [s.map, path]);
+  const lang = onMap?.lang ?? "";
+  // A file listed in Files but not read (an image, a binary, a big document): nothing to show as text.
+  const unread = content === "" && !onMap;
   // Every open file is a mounted panel: its editor is drawn again only when its own file, draft or lines change.
   const editor = useMemo(
     () =>
-      content !== undefined ? (
+      unread ? (
+        <div className="fill code-unread">
+          <FileIcon path={path} kind={fileKind(path)} size="big" />
+          <p className="note">
+            <b>{path.split("/").pop()}</b>
+            {fileKind(path) === "image"
+              ? " is an image. WalkMyCode shows text files: open it from the project's folder to see it."
+              : " isn’t shown here: it is a binary file, larger than WalkMyCode reads, or empty."}
+          </p>
+        </div>
+      ) : content !== undefined ? (
         <Ide
           path={path}
           value={shown}
@@ -125,6 +177,37 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
           askVia={askVia}
           profile={DEFAULT_PROFILE}
           layout="stacked"
+          headTools={
+            isMd ? (
+              <>
+                <span className="md-switch" role="group" aria-label="Show the Markdown">
+                  {MD_VIEWS.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      aria-pressed={view === v.id}
+                      title={v.tip}
+                      onClick={() => {
+                        setPickedAt(litNow);
+                        setMdView(v.id);
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+                        {v.icon}
+                      </svg>
+                      {v.label}
+                    </button>
+                  ))}
+                </span>
+                {fileGit.tools}
+              </>
+            ) : (
+              fileGit.tools
+            )
+          }
+          preview={isMd ? <MarkdownPreview text={shown} path={path} onOpen={openLinked} /> : undefined}
+          view={view}
+          blame={fileGit.blame}
           wrap
           // Config and .proto files (compose, Dockerfile, k8s) are shown as plain text.
           language={lang === "config" || lang === "proto" ? "text" : undefined}
@@ -142,7 +225,7 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
         </div>
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave reads the latest workspace when called
-    [path, content, text, shown, dirty, highlight, lang, sample],
+    [path, content, text, shown, dirty, highlight, lang, sample, unread, fileGit.tools, fileGit.blame, isMd, view, litNow, openLinked],
   );
 
   // Re-root CodeMirror in whichever window now holds the panel.

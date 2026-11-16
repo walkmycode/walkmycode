@@ -88,7 +88,16 @@ interface Props {
   /** Push-to-talk: what to hold. */
   holdHint?: string;
   testId?: string;
+  /** Raise your hand (a lecturer that can say "Go ahead"): where the hand is, and raising it. Absent: no button. */
+  hand?: HandState;
+  onHand?: () => void;
 }
+
+/** A raised hand: down, up and waiting for "Go ahead", or the floor is the student's. */
+export type HandState = "down" | "asking" | "floor";
+
+const HAND_SAID: Record<Exclude<HandState, "down">, string> = { asking: "Hand up: he's stopping…", floor: "Go ahead: he's listening" };
+const HAND_BUTTON: Record<HandState, string> = { down: "✋ Raise hand", asking: "✋ Hand up", floor: "✋ Your turn" };
 
 const STATE_CLASS: Record<string, string> = {
   Connecting: "connecting",
@@ -101,13 +110,24 @@ const STATE_CLASS: Record<string, string> = {
   "Hold to talk": "hold",
 };
 
-export default function TalkPill({ state, levelRef, recording, onMute, onEnd, holdHint, testId }: Props) {
+export default function TalkPill({ state, levelRef, recording, onMute, onEnd, holdHint, testId, hand = "down", onHand }: Props) {
   const label = pillLabel(state);
   if (!label) return null;
-  const said = label === "Hold to talk" && holdHint ? holdHint : label === "Still there?" ? "Still there? Say something, or tap to end" : label === "Hearing" ? "Hearing you…" : label;
   const hearing = state.phase === "hearing";
+  const raised = hand !== "down";
+  const said = raised
+    ? HAND_SAID[hand as Exclude<HandState, "down">]
+    : label === "Hold to talk" && holdHint
+      ? holdHint
+      : label === "Still there?"
+        ? "Still there? Say something, or tap to end"
+        : label === "Hearing"
+          ? "Hearing you…"
+          : label;
+  const tone = raised ? (hand === "floor" ? "listening" : "speaking") : STATE_CLASS[label];
+  const live = label !== "Connecting";
   return (
-    <div className={`talk-pill ${STATE_CLASS[label]}${hearing ? " hearing" : ""}`} data-testid={testId} data-state={STATE_CLASS[label]}>
+    <div className={`talk-pill ${tone}${hearing ? " hearing" : ""}${raised ? " hand-up" : ""}`} data-testid={testId} data-state={STATE_CLASS[label]} data-hand={hand}>
       <span className="talk-ring" ref={levelRef} aria-hidden>
         <i />
       </span>
@@ -120,6 +140,20 @@ export default function TalkPill({ state, levelRef, recording, onMute, onEnd, ho
       <span className="talk-state" role="status" aria-live="polite">
         {said}
       </span>
+      {onHand && live && (
+        <button
+          type="button"
+          className={`talk-btn hand-btn${hand !== "down" ? " on" : ""}`}
+          aria-pressed={hand !== "down"}
+          aria-keyshortcuts="H"
+          onClick={onHand}
+          disabled={hand !== "down"}
+          title={hand === "down" ? "Raise your hand (H): he stops, says “Go ahead”, then listens" : hand === "asking" ? "Your hand is up: he is stopping to let you speak" : "Your turn: say what you wanted to; he answers when you finish"}
+          data-testid="talk-hand"
+        >
+          {HAND_BUTTON[hand]}
+        </button>
+      )}
       {state.input === "hands-free" && (
         <button type="button" className={`talk-btn${state.muted ? " on" : ""}`} aria-pressed={state.muted} onClick={onMute} title={state.muted ? "Unmute: WalkMyCode listens again" : "Mute: WalkMyCode stops listening"}>
           {state.muted ? "Unmute" : "Mute"}

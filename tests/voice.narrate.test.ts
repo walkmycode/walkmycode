@@ -36,6 +36,15 @@ function memoryStore() {
 
 const entry = (n: number): CachedAudio => ({ bytes: new Uint8Array([n]), words: [], type: "audio/mpeg" });
 
+/** Wait until `ok()` holds (checked every few ms), up to 3 s: a CI machine under load is slower than a laptop. */
+async function until(ok: () => boolean, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > end) throw new Error(`timed out after ${ms} ms waiting for ${ok}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 describe("audio cache", () => {
   it("keys a narration by narrator, voice, speed and text", async () => {
     const a = await audioKey(["elevenlabs", "v1", 1, "Hello."]);
@@ -184,17 +193,22 @@ describe("server narrator", () => {
     const marks: (string | null)[] = [];
     let started = 0;
     const done = n.speak(TEXT, { onWord: (w) => marks.push(w ? TEXT.slice(w.from, w.to) : null), onStart: () => started++ });
-    await new Promise((r) => setTimeout(r, 20));
-    assert.equal(srv.calls[0].url, "/api/voice/speak?timestamps=1");
-    assert.equal(started, 1);
-    for (const t of [0.05, 0.4, 1.8]) {
-      audio.currentTime = t;
-      await new Promise((r) => setTimeout(r, 5));
+    // Waits for what it checks, not a fixed few ms (a busy CI machine is slower), and always stops the
+    // narrator: its word loop runs while the audio plays, and a failure here once left it running for good.
+    try {
+      await until(() => started === 1);
+      assert.equal(srv.calls[0].url, "/api/voice/speak?timestamps=1");
+      for (const [t, word] of [[0.05, "The"], [0.4, "cart"], [1.8, "Then"]] as const) {
+        audio.currentTime = t;
+        await until(() => marks.includes(word));
+      }
+      audio.end();
+      assert.equal(await done, "ended");
+      assert.deepEqual(marks.filter(Boolean), ["The", "cart", "Then"]);
+      assert.equal(marks.at(-1), null, "the mark is cleared at the end");
+    } finally {
+      n.stop();
     }
-    audio.end();
-    assert.equal(await done, "ended");
-    assert.deepEqual(marks.filter(Boolean), ["The", "cart", "Then"]);
-    assert.equal(marks.at(-1), null, "the mark is cleared at the end");
   });
 
   it("holds a reading paused before its audio arrives, and stop() settles it as stopped", async () => {

@@ -22,9 +22,11 @@ export interface OutputState {
   tip: string;
   /** What the output belongs to, for the popped-out panel's title. */
   label: string;
+  /** While a program on this computer runs (Run or Debug): where what the user types goes (its stdin). */
+  stdin: { send(text: string): void; end(): void } | null;
 }
 
-export const EMPTY_OUTPUT: OutputState = { parts: [], status: "", running: false, ran: false, hint: "", empty: "", tip: "", label: "" };
+export const EMPTY_OUTPUT: OutputState = { parts: [], status: "", running: false, ran: false, hint: "", empty: "", tip: "", label: "", stdin: null };
 
 /** Where the output lives. `popped` while an Output dock panel is open; `owner` is the Ide it shows. */
 export interface DockState {
@@ -32,6 +34,8 @@ export interface DockState {
   owner: string | null;
   /** A dock that can take the output (Explore); none in Learn, so no "Pop out". */
   canPop: boolean;
+  /** The Run panel's body: the owning IDE draws its run bar, debugger and output into it (a portal). */
+  slot: HTMLElement | null;
 }
 
 /** What the dock does when asked to pop the output out or dock it back. */
@@ -54,14 +58,14 @@ const same = (a: OutputState, b: OutputState) =>
 
 export function createOutputStore() {
   const entries = new Map<string, OutputState>();
-  let dock: DockState = { popped: false, owner: null, canPop: false };
+  let dock: DockState = { popped: false, owner: null, canPop: false, slot: null };
   let panels = 0;
   let host: OutputHost | null = null;
   const subs = new Set<() => void>();
   const emit = () => subs.forEach((f) => f());
   const setDock = (d: Partial<DockState>) => {
     const next = { ...dock, ...d };
-    if (next.popped === dock.popped && next.owner === dock.owner && next.canPop === dock.canPop) return;
+    if (next.popped === dock.popped && next.owner === dock.owner && next.canPop === dock.canPop && next.slot === dock.slot) return;
     dock = next;
     emit();
   };
@@ -92,6 +96,10 @@ export function createOutputStore() {
     },
 
     dock: () => dock,
+    /** The Run panel's body, where the owner draws its run section (null when the panel goes). */
+    setSlot(el: HTMLElement | null) {
+      setDock({ slot: el });
+    },
     /** The Ide the popped-out output shows (the last one run or touched). */
     setOwner(id: string | null) {
       setDock({ owner: id });

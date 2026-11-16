@@ -3,7 +3,8 @@
  * lesson written by an AI can never inject HTML into the page:
  *
  *   **bold**        yellow chalk, for key terms
- *   `a × x + b`     a formula or code, in a dashed box
+ *   `a × x + b`     a formula, in a dashed box; on a coding lesson's board, code drawn as an
+ *                   editor draws it (the `code` renderer: a line of only code is a block)
  *   [[boxed]]       a boxed phrase
  *   {pink:text}     coloured chalk: pink, blue or green
  *   $x^2 + 1$       maths, typeset (KaTeX); $$…$$ for a line of its own
@@ -22,8 +23,17 @@ function Maths({ tex, block }: { tex: string; block: boolean }) {
   return <span className={block ? "maths block" : "maths"} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-export function Chalk({ text }: { text: string }) {
+/** A formula, not code: maths signs, or nothing a program would have in it. */
+export function isFormula(src: string): boolean {
+  return /[×÷·√∑∏∫²³¹⁰±≤≥≠≈∞→←π]/.test(src) || !/[A-Za-z_"']/.test(src);
+}
+
+/** Draws code: `block` when the whole line is that code. */
+export type CodeRenderer = (src: string, block: boolean) => ReactNode;
+
+export function Chalk({ text, code }: { text: string; code?: CodeRenderer }) {
   const out: ReactNode[] = [];
+  const whole = text.trim();
   let last = 0;
   let key = 0;
   for (const m of text.matchAll(TOKEN)) {
@@ -32,7 +42,10 @@ export function Chalk({ text }: { text: string }) {
     if (m[1] !== undefined) out.push(<Maths key={key++} tex={m[1]} block />);
     else if (m[2] !== undefined) out.push(<Maths key={key++} tex={m[2]} block={false} />);
     else if (m[3] !== undefined) out.push(<b key={key++}>{m[3]}</b>);
-    else if (m[4] !== undefined) out.push(<span key={key++} className="eq">{m[4]}</span>);
+    else if (m[4] !== undefined) {
+      if (code && !isFormula(m[4])) out.push(<Fragment key={key++}>{code(m[4], m[0] === whole)}</Fragment>);
+      else out.push(<span key={key++} className="eq">{m[4]}</span>);
+    }
     else if (m[5] !== undefined) out.push(<span key={key++} className="boxed">{m[5]}</span>);
     else out.push(<span key={key++} className={m[6]}>{m[7]}</span>);
     last = at + m[0].length;

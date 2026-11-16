@@ -77,6 +77,8 @@ export interface FriendlyError {
 export type StreamEvent =
   | { type: "text"; text: string } // fullStream text-delta
   | { type: "tool"; name: string } // fullStream tool-input-start (early trace)
+  /** The Learn professor looked at the computer: a search or a document, started (done false) and finished. */
+  | { type: "look"; id: string; tool: "find" | "read"; what: string; note?: string; done: boolean }
   | {
       type: "message";
       message: AssistantModelMessage;

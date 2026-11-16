@@ -7,10 +7,15 @@
 // (the pill shrinks to "● AI" instead). WalkMyCode for Claude passes `gear`
 // instead: the gear alone, since the user's own Claude answers there.
 // Shared so the Learn room can use the same bar.
+// In the desktop app (docs/DESKTOP.md) the bar is also the window's title bar: its empty
+// space and plain text drag the window, and the window buttons close the row.
 import { useEffect, useRef, useState } from "react";
 import { RoomLink, useRoom } from "@/lib/adapters/nav";
 import AiPill, { GearIcon } from "./AiPill";
 import { MCP } from "@/lib/adapters/target";
+import { dragRegion, useDesktop } from "@/lib/desktop";
+import WindowControls from "./WindowControls";
+import UpdateModal, { UpdateChip } from "./UpdateModal";
 
 const ROOMS = [
   { href: "/map", label: "Explore", title: "Explore a codebase: the map, the code and the guide" },
@@ -58,6 +63,7 @@ interface Props {
 export default function TopBar({ title, detail, notice, status, children, ai, gear }: Props) {
   const [open, setOpen] = useState(false);
   const actions = useRef<HTMLDivElement>(null);
+  const drag = dragRegion(useDesktop());
 
   // Close the "⋯" menu on Escape or a click outside it.
   useEffect(() => {
@@ -75,8 +81,8 @@ export default function TopBar({ title, detail, notice, status, children, ai, ge
   }, [open]);
 
   return (
-    <header className="top">
-      <div className="top-left">
+    <header className="top" {...drag}>
+      <div className="top-left" {...drag}>
         <RoomLink href="/" className="brand" data-light="home" aria-label="WalkMyCode home">
           <span className="brand-full">WalkMyCode</span>
           <span className="brand-short" aria-hidden>
@@ -85,18 +91,30 @@ export default function TopBar({ title, detail, notice, status, children, ai, ge
         </RoomLink>
         <RoomSwitch />
       </div>
-      <div className="top-mid" title={detail ? `${typeof title === "string" ? `${title} · ` : ""}${detail}` : undefined}>
-        {title && <span className="top-title">{title}</span>}
-        {detail && <span className="top-detail">{detail}</span>}
+      <div className="top-mid" {...drag} title={detail ? `${typeof title === "string" ? `${title} · ` : ""}${detail}` : undefined}>
+        {title && (
+          <span className="top-title" {...drag}>
+            {title}
+          </span>
+        )}
+        {detail && (
+          <span className="top-detail" {...drag}>
+            {detail}
+          </span>
+        )}
         {notice && <span className="top-notice">{notice}</span>}
       </div>
-      {status && <div className="top-status">{status}</div>}
+      {status && (
+        <div className="top-status" {...drag}>
+          {status}
+        </div>
+      )}
       {children && (
-        <div className="top-right">
+        <div className="top-right" {...drag}>
           <button type="button" className="ctl compact top-more" aria-expanded={open} aria-controls="top-actions" aria-label="More" onClick={() => setOpen((v) => !v)}>
             ⋯
           </button>
-          <div id="top-actions" ref={actions} className={`top-actions${open ? " open" : ""}`}>
+          <div id="top-actions" ref={actions} className={`top-actions${open ? " open" : ""}`} {...drag}>
             {children}
           </div>
         </div>
@@ -109,6 +127,10 @@ export default function TopBar({ title, detail, notice, status, children, ai, ge
           </button>
         </div>
       )}
+      {/* Desktop only: the update chip after "Later", and the update modal (drawn into the app's root). */}
+      <UpdateChip />
+      <UpdateModal />
+      <WindowControls />
     </header>
   );
 }

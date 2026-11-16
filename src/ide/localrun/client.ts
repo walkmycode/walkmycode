@@ -6,7 +6,7 @@
 // on its own loopback port with this launch's token; in WalkMyCode for Claude
 // it is the page server's own path, behind the page's cookie.
 import { TARGET } from "@/lib/adapters/target";
-import { LOCALRUN_ROUTE, type ClientMsg, type LocalRunStatus, type GitAsk, type NewProjectAsk, type ServerMsg, type SetupService } from "@/lib/localrun/protocol";
+import { LOCALRUN_ROUTE, type AdapterOffer, type DebugCommand, type PausedView, type VarView, type ClientMsg, type LocalRunStatus, type GitAsk, type NewProjectAsk, type ServerMsg, type SetupService } from "@/lib/localrun/protocol";
 import type { OutPart } from "../python";
 import { UNREACHABLE } from "@/lib/unreachable";
 
@@ -155,6 +155,30 @@ export interface RunListener {
   done(): void;
 }
 
+/** What a program on this computer prints, handed on at most every 40 ms: a chatty one can't swamp the page. */
+function batcher(onPart: (p: OutPart) => void) {
+  let pending: { kind: "out" | "err"; text: string }[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    for (const p of pending) onPart(p);
+    pending = [];
+  };
+  const queue = (kind: "out" | "err", text: string) => {
+    const last = pending.at(-1);
+    if (last && last.kind === kind) last.text += text;
+    else pending.push({ kind, text });
+    timer ??= setTimeout(flush, 40);
+  };
+  return { queue, flush };
+}
+
+/** What the user typed for a run's or a debug's program (its stdin); `end` closes its input. */
+export function sendInput(id: string, text: string, end = false) {
+  send({ type: "input", id, text, ...(end ? { end: true } : {}) });
+}
+
 /** Run code on this computer; the output streams into the listener. Returns the run's id (for stop). */
 export function runLocal(o: { lang: string; code: string; path?: string | null; timeout_s?: number; test?: boolean }, l: RunListener): string {
   const id = newId("run");
@@ -212,6 +236,124 @@ export function runLocal(o: { lang: string; code: string; path?: string | null; 
 
 export function stopLocal(id: string | null) {
   if (id) send({ type: "stop", id });
+}
+
+// ── debugging on this computer (src/lib/localrun/debug/) ──
+
+export interface DebugListener {
+  /** Build and program output, and how it ended, as the run's Output shows them. */
+  onPart(p: OutPart): void;
+  onStatus(s: string): void;
+  /** The language's debugger isn't here yet: ask the user, then installDebugger and debug again. */
+  onNeed(offer: AdapterOffer): void;
+  /** It built and the debugger started: its name and version. */
+  onStart?(adapter: string): void;
+  onPaused(v: PausedView): void;
+  onRunning(): void;
+  done(): void;
+}
+
+export interface DebugSession {
+  id: string;
+  cmd(c: DebugCommand): void;
+  breakpoints(lines: number[]): void;
+  /** A variable's children. */
+  vars(ref: number): Promise<VarView[]>;
+  /** Another frame's variables. */
+  frame(index: number): Promise<VarView[]>;
+  stop(): void;
+}
+
+/** Build the file with debug info and run it under its debugger; stops at `breakpoints`. */
+export function debugLocal(o: { lang: string; code: string; path?: string | null; breakpoints: number[]; workspace?: string }, l: DebugListener): DebugSession {
+  const id = newId("debug");
+  let ended = false;
+  const asks = new Map<string, (v: VarView[]) => void>();
+  const printed = batcher((p) => l.onPart(p));
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    printed.flush();
+    listeners.delete(id);
+    for (const done of asks.values()) done([]);
+    asks.clear();
+    l.onStatus("");
+    l.done();
+  };
+  listeners.set(id, (m) => {
+    switch (m.type) {
+      case "debug-need":
+        l.onNeed(m.offer);
+        return end();
+      case "debug-start":
+        l.onStatus("");
+        l.onStart?.(m.adapter);
+        l.onPart({ kind: "meta", text: `Debugging with ${m.adapter}${m.version ? ` · ${m.version}` : ""} · in ${m.cwd}${m.temp ? " (a copy of the code in a temp folder)" : ""}
+` });
+        return;
+      case "debug-out":
+        return printed.queue(m.stream, m.text);
+      case "debug-paused":
+        printed.flush();
+        return l.onPaused(m.view);
+      case "debug-running":
+        return l.onRunning();
+      case "debug-vars":
+        asks.get(m.req)?.(m.vars);
+        asks.delete(m.req);
+        return;
+      case "debug-exit": {
+        printed.flush();
+        const secs = `${(m.ms / 1000).toFixed(m.ms < 10_000 ? 1 : 0)} s`;
+        l.onPart({ kind: "meta", text: `
+${m.stopped ? `Debugging stopped after ${secs}.` : `The program ended (code ${m.code ?? "?"}) after ${secs}.`}
+` });
+        return end();
+      }
+      case "debug-fail":
+      case "error":
+        l.onPart({ kind: "error", text: m.message });
+        return end();
+    }
+  });
+  l.onStatus("Building with debug info…");
+  connect().then(
+    () => send({ type: "debug-start", id, lang: o.lang, code: o.code, path: o.path ?? null, breakpoints: o.breakpoints, ...(o.workspace ? { workspace: o.workspace } : {}) }),
+    (e: Error) => {
+      l.onPart({ kind: "error", text: e.message });
+      end();
+    },
+  );
+  const ask = (extra: { ref?: number; frame?: number }) =>
+    new Promise<VarView[]>((done) => {
+      if (ended) return done([]);
+      const req = newId("vars");
+      asks.set(req, done);
+      send({ type: "debug-vars", id, req, ...extra });
+    });
+  return {
+    id,
+    cmd: (c) => send({ type: "debug-cmd", id, cmd: c }),
+    breakpoints: (lines) => send({ type: "debug-bps", id, lines }),
+    vars: (ref) => ask({ ref }),
+    frame: (index) => ask({ frame: index }),
+    stop: () => send({ type: "debug-stop", id }),
+  };
+}
+
+/** Fetch a language's debugger (the user said yes); progress as it downloads, checks and unpacks. */
+export async function installDebugger(adapter: string, progress: (p: { got: number; total: number; phase: string }) => void): Promise<void> {
+  await connect();
+  const id = newId("dbg-install");
+  return new Promise((done, fail) => {
+    listeners.set(id, (m) => {
+      if (m.type === "debug-install-progress") return progress(m);
+      listeners.delete(id);
+      if (m.type === "debug-install-done" && m.ok) done();
+      else fail(new Error("message" in m && m.message ? m.message : "The debugger couldn't be fetched."));
+    });
+    send({ type: "debug-install", id, adapter });
+  });
 }
 
 // ── set up this project (src/lib/localrun/setup.ts plans it, ./setup/ shows it) ──

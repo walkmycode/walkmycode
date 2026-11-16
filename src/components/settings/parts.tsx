@@ -157,6 +157,19 @@ export function KeyLine({ envVar, label, standing, prefix = "", url, hint, onCha
           </button>
         </form>
       )}
+      {has && standing?.note && !open && (
+        <p className="sv-key-note warn" role="note">
+          {standing.note}
+          {url && (
+            <>
+              {" "}
+              <a href={url} target="_blank" rel="noreferrer">
+                Make one ↗
+              </a>
+            </>
+          )}
+        </p>
+      )}
       {(open || msg) && (
         <p className="sv-key-note">
           {msg && <Status s={msg} />} {open && hint}

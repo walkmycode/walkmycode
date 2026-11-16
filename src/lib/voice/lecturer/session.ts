@@ -30,6 +30,8 @@ export type LecturerEvent =
   | { type: "functionCall"; id: string; name: string; args: Record<string, unknown> }
   /** Calls the service no longer wants (a speculative call overtaken by the user): drop them. */
   | { type: "cancelled"; ids: string[] }
+  /** A raised hand: waiting for his "Go ahead", the floor is the user's, or down again. */
+  | { type: "hand"; state: "asking" | "floor" | "down" }
   | { type: "warning"; message: string }
   | { type: "error"; error: FriendlyError; fatal: boolean }
   | { type: "close"; reason: CloseReason; seconds: number };
@@ -58,6 +60,8 @@ export interface LecturerSession {
   updateContext(note: string): boolean;
   /** Something for the lecturer to say while a slow function runs, if the service supports it. */
   inject(message: string): void;
+  /** Raise a hand: the lecturer stops, says "Go ahead", then listens (Deepgram's lecturer; absent elsewhere). */
+  raiseHand?(): void;
   on(listener: LecturerListener): () => void;
   close(reason?: CloseReason): void;
 }

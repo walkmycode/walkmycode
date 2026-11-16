@@ -359,7 +359,9 @@ try {
   // ── Files: a folder opened, a file opened in the code view ──
   where = "Files";
   await page.locator(".dv-tab", { hasText: "Files" }).first().click().catch(() => {});
-  await clickText("^\\W*lib/?$");
+  // The tree follows the open file, so lib/ may be open already: a click would fold it.
+  const libOpen = await page.evaluate(() => [...document.querySelectorAll(".tree button")].some((b) => /^\W*lib\/?$/.test(b.textContent.trim()) && b.getAttribute("aria-expanded") === "true"));
+  if (!libOpen) await clickText("^\\W*lib/?$");
   await page.waitForTimeout(400);
   if (await clickText("^\\W*auth\\.ts")) {
     await look("opening lib/auth.ts from Files");
@@ -501,8 +503,14 @@ try {
 
   // ── The terminal: one harmless command ──
   where = "terminal";
-  // The terminal button toggles: open it only when no terminal is showing.
-  if (!(await page.evaluate(() => [...document.querySelectorAll(".xterm")].some((e) => e.offsetParent)))) await page.locator(".term-btn").first().click().catch(() => {});
+  // The terminal button toggles: open it only when no terminal is showing. The sweep has clicked every control
+  // by now, Layout's "Terminal button" (which hides the icon) and "Pop out" (which moves the output into the Run
+  // panel) among them, so when the icon is gone this opens it as a person then would: Ctrl+`.
+  if (!(await page.evaluate(() => [...document.querySelectorAll(".xterm")].some((e) => e.offsetParent)))) {
+    const btn = page.locator(".term-btn:visible").first();
+    if (await btn.count()) await btn.click().catch(() => {});
+    else await page.keyboard.press("Control+Backquote");
+  }
   await page.waitForTimeout(1000);
   // Asked first when this computer isn't allowed yet (the throwaway home): allow it.
   const allowTerm = page.locator("dialog[open]").getByRole("button", { name: "Allow on this computer" }).first();
@@ -538,7 +546,6 @@ try {
   // ── A phone: nothing wider than the screen, in the bar and in every Settings tab ──
   where = "phone (390 px)";
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.waitForTimeout(800);
   // Only what is on screen: hidden panels keep their old size, and a scrolling box may hold wide content.
   const wide = () =>
     page.evaluate(() => {
@@ -546,7 +553,14 @@ try {
       const scrolls = (e) => { for (let p = e.parentElement; p; p = p.parentElement) { const o = getComputedStyle(p).overflowX; if (o === "auto" || o === "scroll") return true; } return false; };
       return [...document.querySelectorAll("body *")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.right > innerWidth + 1 && shown(e) && !scrolls(e) && !e.closest(".react-flow, .cm-editor, .xterm, [role=tablist], .dv-tabs-container"); }).slice(0, 3).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")} ends at ${Math.round(e.getBoundingClientRect().right)}px`);
     });
-  for (const w of await wide()) note(where, "the page", w);
+  // The dock lays its panels out again after the resize; a slow machine (our own Windows runner) can take
+  // longer than a fixed wait, so wait until nothing is wider, up to 5 s, and report what still is.
+  let tooWide = await wide();
+  for (let t = 0; tooWide.length && t < 25; t++) {
+    await page.waitForTimeout(200);
+    tooWide = await wide();
+  }
+  for (const w of tooWide) note(where, "the page", w);
   await page.locator('.top [aria-label="Settings"], .top [data-testid="claude-status"]').first().click().catch(() => {});
   for (const tabName of tabs.map((t) => t.trim()).filter(Boolean)) {
     await page.locator(".setv [role=tab]", { hasText: tabName }).first().click().catch(() => {});

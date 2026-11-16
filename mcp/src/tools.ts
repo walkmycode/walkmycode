@@ -18,6 +18,7 @@ import { formatCitation, parseCitation, type BridgeRequest, type Citation, type 
 import { mapSummary } from "../../src/lib/claude/prompts";
 import { describeEdge, findService, isSystem } from "../../src/lib/claude/system";
 import { runTool } from "../../src/lib/claude/tools";
+import { DRAWING_NAMES } from "../../src/lib/drawings/names";
 import { createLocalRun, type LocalRun } from "../../src/lib/localrun/hub";
 import { killAll } from "../../src/lib/localrun/processes";
 import { locateIn } from "../../src/lib/localrun/run";
@@ -352,7 +353,7 @@ function listGlob(ws: OpenedWorkspace, glob: string): string {
   if (!hits.length) return `No file matches ${glob}. Try list_files() for the top level.`;
   const rows = hits.slice(0, 200).map((p) => {
     const f = inMap.get(p);
-    return `${p}${!f ? "  (not in the map)" : f.skipped ? `  (skipped: ${f.skipped})` : f.configKind ? `  (config: ${f.configKind})` : ""}`;
+    return `${p}${!f ? (ws.files[p] ? "  (not in the map)" : "  (not in the map, not read: an image, a binary or a big file)") : f.skipped ? `  (skipped: ${f.skipped})` : f.configKind ? `  (config: ${f.configKind})` : ""}`;
   });
   return `${hits.length} file${hits.length === 1 ? "" : "s"} match ${glob}:\n${rows.join("\n")}${hits.length > 200 ? `\n…${hits.length - 200} more: narrow the glob` : ""}`;
 }
@@ -401,6 +402,75 @@ export function requestContent(r: BridgeRequest): CallToolResult {
 // ── the tools ──
 
 const pathArg = z.string().min(1).max(1000);
+const FENCE = "`".repeat(3);
+const both = (a: string, r: string) => z.object({ a: z.string().max(90).describe(a), r: z.string().max(90).describe(r) });
+const SHAPES = z
+  .array(z.record(z.string(), z.unknown()))
+  .max(14)
+  .optional()
+  .describe(
+    "Only when no everyday name fits: your own drawing of it, at most 12 plain shapes on a 64 by 64 square (0, 0 top left), back to front. Each is {s:'circle',x,y,r} | {s:'rect',x,y,w,h} | {s:'ellipse',x,y,rx,ry} | {s:'line',x1,y1,x2,y2} | {s:'poly',p:[x1,y1,x2,y2,...]}, with c: a colour name (t for its own tint, dark, light, white, grey, ink, yellow, pink, red, blue, green, purple, orange, brown, sky, cream, skin).",
+  );
+const held = z.object({ ia: z.string().max(24).optional().describe(`its drawing, when one of these fits: ${DRAWING_NAMES.join(", ")}`), draw: SHAPES, id: z.string().max(40).describe("a short lower-case id"), a: z.string().max(60).describe("its everyday name: something a ten-year-old knows (a child, a postman, a shop, a letter, a key)"), r: z.string().max(60).describe("its real name in the code") });
+/** An analogy to watch, as the answer tool takes it (the page reads it with src/lib/scene/model.ts). */
+const SCENE_INPUT = z
+  .object({
+    title: z.string().max(80).describe("the picture in a few words"),
+    place: z.string().max(60).optional().describe("where the picture is set"),
+    view: z.enum(["stage", "sequence"]).optional().describe("sequence when a sequence diagram was asked for"),
+    language: z.string().max(20).optional().describe("the code's language"),
+    actors: z.array(held).min(2).max(4).describe("who holds or acts: a function, a service, a variable, each with an everyday counterpart"),
+    things: z.array(held).min(1).max(3).describe("what is held or passed: a value, a request, a row"),
+    code: z.string().max(1200).describe("the real lines, one step per line, as you read them"),
+    steps: z
+      .array(
+        z.object({
+          line: z.number().int().min(1).optional().describe("the line of code this step is about (1 is the first)"),
+          holds: z.record(z.string(), z.string().nullable()).describe("for every thing's id, the id of the actor that has it now; null once it is gone"),
+          lent: z.record(z.string(), z.array(z.string())).optional().describe("for a thing on loan, the ids of the actors borrowing it"),
+          off: z.array(z.string()).optional().describe("ids of actors that can no longer act"),
+          a: z.string().max(300).describe("what happens in the picture, one sentence"),
+          r: z.string().max(300).describe("what happens for real, one sentence"),
+          verb: both("the everyday word for what this step does: gives away", "the real word: move").optional(),
+          word: z.number().int().min(0).optional().describe("the entry of map this step teaches (0 is the first)"),
+        }),
+      )
+      .min(2)
+      .max(8),
+    map: z.array(both("the picture's word", "what it stands for").extend({ why: z.string().max(110).optional().describe("what it means, in a few plain words") })).max(6).optional(),
+    rule: z.string().max(300).describe("the one thing to remember"),
+    breaks: z.string().max(300).optional().describe("where the picture stops being true"),
+  })
+  .describe("An analogy to watch. Both sides must agree at every step, and every real name must be true to the code you read.");
+
+/** A class, ER, state or flow diagram with its analogy drawn in, as the answer tool takes it (src/lib/scene/diagram.ts). */
+const PICTURE_INPUT = z
+  .object({
+    title: z.string().max(80).describe("what it shows"),
+    kind: z.enum(["class", "er", "state", "flow"]),
+    nodes: z
+      .array(held.extend({ rows: z.array(z.string().max(60)).max(6).optional().describe("what it holds, in real terms: fields, methods or columns") }))
+      .min(2)
+      .max(12)
+      .describe("each box: an everyday thing and the real class, table, state or step it stands for"),
+    links: z
+      .array(
+        z.object({
+          from: z.string().max(40),
+          to: z.string().max(40),
+          kind: z.enum(["then", "uses", "has", "is"]).optional().describe("then: the next step; uses; has: owns; is: from is a kind of to"),
+          a: z.string().max(40).optional().describe("the line in everyday words"),
+          r: z.string().max(40).optional().describe("the line in real words"),
+          ends: z.array(z.string().max(8)).length(2).optional().describe("how many at each end, for tables: ['1', 'many']"),
+        }),
+      )
+      .min(1)
+      .max(18),
+    rule: z.string().max(300).optional().describe("the one thing to remember"),
+    breaks: z.string().max(300).optional().describe("where the picture stops being true"),
+  })
+  .describe("A diagram for a beginner. Every real name must be true to the code you read.");
+
 const PAGE_TOOL = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const READ_TOOL = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
@@ -506,17 +576,22 @@ export function registerTools(mcp: McpServer, session: Session): void {
     {
       title: "Show an answer on the page",
       description:
-        "Show your answer in the page's Guide panel. id: the request's id from next_request (leave it out for a question asked in this chat). markdown: short, plain English for a beginner; a fenced ```mermaid block (sequenceDiagram, flowchart, classDiagram, erDiagram, stateDiagram-v2) is drawn as a diagram, so use one when asked for a diagram or UML: a title first (--- / title: what it shows / ---), short labels, no styling (the page colours each box by what it is on the map), a code box's file on a second line (LoginForm<br/>components/LoginForm.tsx), subgraph for what lives together. citations: every place you rely on, as 'path:line' or 'path:line-line'; they light up on the page.",
+        "Show your answer in the page's Guide panel. id: the request's id from next_request (leave it out for a question asked in this chat). markdown: short, plain English for a beginner; a fenced ```mermaid block (sequenceDiagram, flowchart, classDiagram, erDiagram, stateDiagram-v2) is drawn as a diagram, so use one when asked for a diagram or UML: a title first (--- / title: what it shows / ---), short labels, no styling (the page colours each box by what it is on the map), a code box's file on a second line (LoginForm<br/>components/LoginForm.tsx), subgraph for what lives together. scene: fill it in when the user asks for an analogy, to have it explained simply, or for a diagram a beginner can follow; the page draws it as a picture to watch (the everyday story above the real code, step by step) and as a sequence diagram. picture: fill it in instead when they want a class, ER, state or flow diagram explained that way; the page draws each box as an everyday thing over the real one. citations: every place you rely on, as 'path:line' or 'path:line-line'; they light up on the page.",
       inputSchema: {
         id: z.string().min(1).max(100).optional().describe("The request's id from next_request"),
         markdown: z.string().min(1).max(40_000),
         citations: z.array(z.string().min(1).max(1000)).max(60).optional().describe("'path:line' or 'path:line-line'"),
+        scene: SCENE_INPUT.optional(),
+        picture: PICTURE_INPUT.optional(),
       },
       annotations: { title: "Answer", ...PAGE_TOOL },
     },
-    async ({ id, markdown, citations }) => {
+    async ({ id, markdown: written, citations, scene, picture }) => {
       try {
         const ws = needWorkspace();
+        // A scene or a picture diagram rides in the answer as a fenced block; the page keeps only one it can draw (src/lib/scene).
+        const block = (lang: string, data: unknown) => (data ? `\n\n${FENCE}${lang}\n${JSON.stringify(data).replaceAll(FENCE, "~~~")}\n${FENCE}` : "");
+        const markdown = written + block("scene", scene) + block("picture", picture);
         const lit: Citation[] = [];
         const bad: string[] = [];
         for (const raw of citations ?? []) {

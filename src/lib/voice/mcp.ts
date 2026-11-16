@@ -8,13 +8,14 @@
 // itself (narrate.ts) loads with the first thing to say.
 import type { BridgeClient, Pending } from "@/lib/bridge/client";
 import { NarrationQueue, type QueueNarrator } from "./queue";
+import { exploreMuted } from "./mute";
 import { loadTalkMode } from "./talkMode";
 import { loadVoiceView, narratorInForce, unlockAudio } from "./view";
 
 async function narratorNow(): Promise<QueueNarrator> {
   const [{ getNarrator }, view] = await Promise.all([import("./narrate"), loadVoiceView()]);
   const { narrator } = narratorInForce(view);
-  return getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed });
+  return getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed, muted: exploreMuted() });
 }
 
 let speakable: ((t: string) => string) | null = null;

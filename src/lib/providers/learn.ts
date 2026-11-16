@@ -3,7 +3,9 @@
 // POST /api/claude: resolve() → readiness() → keyFor() → makeModel(), the
 // effort setting and output cap from textOptions(), and provider failures
 // through classify(). No tools and no map: every prompt carries everything it
-// needs. The events are the StreamEvent shapes in wire.ts, which the browser
+// needs, except a chat question (`pc`): then the professor may look at the computer, read only, with
+// src/lib/pcFiles.ts's two tools, run here, and each look goes to the page as a "look" event. The events are the
+// StreamEvent shapes in wire.ts, which the browser
 // side (src/learn/lib/tutor.ts) reads. A subscription provider (wire "cli": Claude Code, Codex)
 // answers through cli.ts's cliText instead, with no key. It lives here rather than in the route
 // file so tests can hand it a fake fetch (a route file may only export handlers).
@@ -15,7 +17,8 @@ import type { AgentId } from "./agents";
 import { classify, friendly } from "./errors";
 import { HttpError } from "./guard";
 import { keyFor } from "./keys";
-import { makeModel, normaliseUsage, streamText, textOptions, type FetchLike } from "./sdk";
+import { lookNote, PC_SYSTEM, pcRefusal, pcTools } from "@/lib/pcFiles";
+import { makeModel, normaliseUsage, serverSdkTools, stepCountIs, streamText, textOptions, type FetchLike } from "./sdk";
 import type { StreamEvent } from "./wire";
 
 const Turn = z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1).max(262_144) });
@@ -25,7 +28,12 @@ const Body = z.object({
   /** A cap on this answer (Learn's step-by-step lesson writer sends ~3000 a step), so a provider with a
    * small per-minute token limit isn't charged for room the answer won't use. Only ever lowers the cap. */
   max_output: z.number().int().min(256).max(32_000).optional(),
+  /** A chat question: the professor may look at the computer's files (read only) to answer it. */
+  pc: z.boolean().optional(),
 });
+
+/** The most steps of looking and answering in one chat answer (each read of a long PDF is one). */
+export const PC_STEPS = 16;
 
 /**
  * A lesson is one long reply (a dozen boards of JSON) on top of the model's own
@@ -50,7 +58,7 @@ export function learnHandler(deps: { fetch?: FetchLike } = {}) {
   return async (req: Request): Promise<Response> => {
     const parsed = Body.safeParse(await req.json());
     if (!parsed.success) throw new HttpError(400, parsed.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; "));
-    const { input, json, max_output } = parsed.data;
+    const { input, json, max_output, pc } = parsed.data;
     const { resolved } = resolve();
 
     const enc = new TextEncoder();
@@ -79,12 +87,15 @@ export function learnHandler(deps: { fetch?: FetchLike } = {}) {
           if (!key) return send({ type: "error", error: friendly("missing_key", { provider: resolved.provider }) });
 
           let failed: unknown;
+          // He may look at the computer for a chat question, on the student's own computer only.
+          const looks = pc && !json && !pcRefusal();
           const options = textOptions(resolved, "learn");
           if (json && ROOMY.has(resolved.provider)) options.maxOutputTokens = Math.max(options.maxOutputTokens, LESSON_MAX_OUTPUT);
           if (max_output) options.maxOutputTokens = Math.min(options.maxOutputTokens, max_output);
           const result = streamText({
             model: makeModel(resolved, key.value, deps.fetch),
-            ...(json ? { system: JSON_RULE } : {}),
+            ...(json ? { system: JSON_RULE } : looks ? { system: PC_SYSTEM } : {}),
+            ...(looks ? { tools: serverSdkTools(pcTools()), stopWhen: stepCountIs(PC_STEPS) } : {}),
             messages: typeof input === "string" ? [{ role: "user" as const, content: input }] : input,
             abortSignal: req.signal,
             onError: ({ error }) => {
@@ -94,7 +105,17 @@ export function learnHandler(deps: { fetch?: FetchLike } = {}) {
           });
           for await (const part of result.fullStream) {
             if (part.type === "text-delta") send({ type: "text", text: part.text });
-            else if (part.type === "abort") return;
+            else if (part.type === "tool-call") {
+              const input = (part.input ?? {}) as Record<string, unknown>;
+              const look = lookNote(part.toolName, input, undefined);
+              send({ type: "look", id: part.toolCallId, tool: look.tool, what: look.what, done: false });
+            } else if (part.type === "tool-result") {
+              const look = lookNote(part.toolName, (part.input ?? {}) as Record<string, unknown>, part.output);
+              send({ type: "look", id: part.toolCallId, ...look, done: true });
+            } else if (part.type === "tool-error") {
+              const look = lookNote(part.toolName, (part.input ?? {}) as Record<string, unknown>, undefined);
+              send({ type: "look", id: part.toolCallId, tool: look.tool, what: look.what, note: "could not be done", done: true });
+            } else if (part.type === "abort") return;
             else if (part.type === "error") {
               failed = part.error;
               break;

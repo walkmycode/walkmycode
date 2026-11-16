@@ -30,6 +30,7 @@ import { parseDeepLink, resolveDeepLink, withoutDeepLink } from "./deeplink";
 import { bindKeys, type Command, type ShellCommands } from "./keys";
 import { capabilities } from "./theme";
 import { claimTab, tourMayShowGuide, tourTabStep } from "./tourTabs";
+import { debugAt } from "@/ide/debugAt";
 import { cycleGroup, cycleTab, dockGroup, floatGroup, groupOf, maximiseGroup, popoutGroup, resizeGroup, type GroupTarget } from "./actions";
 
 export interface OpenFile {
@@ -363,6 +364,23 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
       openFile(path, start, end);
     },
     [openFile],
+  );
+  // The live debugger stopped in a file (src/ide/debugAt.ts): open it at that line. When a debug first stops,
+  // or stops in another file, the Files panel comes forward too and its tree points at the file (FileTree:
+  // the folders open, the rail draws, the row lights with the stopped line), as an IDE's project view does.
+  // Steps within the same file leave the panels where the user put them.
+  const debugFile = useRef<string | null>(null);
+  useEffect(
+    () =>
+      debugAt.subscribe(() => {
+        const at = debugAt.get();
+        if (!at) return;
+        const moved = debugFile.current !== at.path;
+        debugFile.current = at.path;
+        if (moved) revealPanel("files");
+        openAt(at.path, at.line, at.line);
+      }),
+    [openAt, revealPanel],
   );
   // The previous step's tab, when the tour opened it and nobody has taken it over (its file
   // has already left the open files; this closes its tab in the dock).

@@ -9,9 +9,10 @@
 //     text arrives when it stops.
 //  2. With APP_URL set (the full app, e.g. http://localhost:3200): the Learn
 //     professor's mic button writes the same recording into the question box.
-// Needs the speech model on this machine (iReliabee's copy or WalkMyCode's
-// own) and Google Chrome. Screenshots go to OUT_DIR (default: e2e-parakeet/
-// in the system's temp folder). Exits non-zero on the first failure.
+// Needs the speech model on this machine (another app's copy, from
+// WALKMYCODE_SHARED_MODELS_DIR, or WalkMyCode's own) and Google Chrome.
+// Screenshots go to OUT_DIR (default: e2e-parakeet/ in the system's temp
+// folder). Exits non-zero on the first failure.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -23,7 +24,7 @@ import { chromium } from "playwright";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = join(root, "mcp", "dist", "server.mjs");
 const NAME = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8";
-const modelDir = [process.env.WALKMYCODE_IRELIABEE_MODELS_DIR ?? join(homedir(), ".local", "share", "ireliabee", "models"), process.env.WALKMYCODE_MODELS_DIR ?? join(homedir(), ".walkmycode", "models")].map((d) => join(d, NAME)).find((d) => existsSync(join(d, "tokens.txt")));
+const modelDir = [process.env.WALKMYCODE_SHARED_MODELS_DIR ?? "", process.env.WALKMYCODE_MODELS_DIR ?? join(homedir(), ".walkmycode", "models")].filter(Boolean).map((d) => join(d, NAME)).find((d) => existsSync(join(d, "tokens.txt")));
 const wavs = modelDir ? join(modelDir, "test_wavs") : "";
 const wavName = wavs && existsSync(wavs) ? readdirSync(wavs).find((f) => f.endsWith(".wav")) : undefined;
 if (!modelDir || !wavName) {

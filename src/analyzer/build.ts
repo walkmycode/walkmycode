@@ -5,13 +5,14 @@ import { grammarFor, parse } from "./parser";
 import { extractJs } from "./extract/js";
 import { extractPy } from "./extract/py";
 import { extractDart, linkDart } from "./extract/dart";
+import { extractRust } from "./extract/rust";
 import { extractPhp, extractTwig, linkPhp, phpResolver } from "./extract/php";
 import { TECH_LABEL } from "./extract/channels";
 import { serviceForEnv, serviceForHost, sqlColumns, sqlInString } from "./extract/common";
 import { emptyFacts, type ChannelFact, type FileFacts, type HttpCallFact, type Method, type RouteFact } from "./facts";
 import { configKindOf, configLangOf, ENV_EXAMPLE_RE, extractConfig, redactConfigText } from "./config";
 import { CI_RE, type DeployAddress } from "./config/deploy";
-import { readableLanguage } from "./config/files";
+import { drawnLang, readableLanguage } from "./config/files";
 import { extractGateways, gatewayKindOf, matchGateway } from "./config/gateway";
 import { serviceId } from "./migrate";
 import { detectServices, normalisedName, orderServices, systemLinks } from "./services";
@@ -42,42 +43,14 @@ const SECRET_RE = /(^|\/)(\.env(\..*)?|.*\.(pem|key|p12|pfx|jks|keystore)|id_rsa
 // Protobuf output (users_pb2.py, users_pb.js, users_grpc_pb.js, users.pb.go) is generated: its name says which gRPC service it is, the .proto says the rest.
 // Dart's build_runner writes booking.g.dart, booking.freezed.dart and the like next to the source.
 const GENERATED_RE = /\.(min|bundle|chunk)\.[cm]?js$|\.d\.ts$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock)$|_pb2(_grpc)?\.pyi?$|_(grpc_)?pb\.[cm]?js$|\.pb\.go$|\.(g|freezed|gr|mocks|pb|pbenum|pbgrpc|pbjson|pbserver)\.dart$|(^|\/)generated_plugin_registrant\.dart$/;
+/** A path inside a hidden folder: the readers list such files (no text) for Files, never as the app's code. */
+const LISTED_HIDDEN = /(^|\/)\.[^/]+\//;
 /** Manifests the workspace reader needs (package.json workspaces, Cargo [workspace], go.mod). */
 const WORKSPACE_MANIFEST = /^(package\.json|Cargo\.toml|go\.mod)$/;
 const MANIFESTS = new Set(["package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod", "composer.json", "Gemfile", "pubspec.yaml"]);
 
-function langOf(path: string): Lang | null {
-  const m = /\.([a-z]+)$/i.exec(path);
-  const ext = m?.[1]?.toLowerCase();
-  switch (ext) {
-    case "ts":
-    case "mts":
-    case "cts":
-      return "ts";
-    case "tsx":
-      return "tsx";
-    case "js":
-    case "mjs":
-    case "cjs":
-      return "js";
-    case "jsx":
-      return "jsx";
-    case "py":
-      return "py";
-    case "sql":
-      return "sql";
-    case "prisma":
-      return "prisma";
-    case "dart":
-      return "dart";
-    case "php":
-      return "php";
-    case "twig":
-      return "twig";
-    default:
-      return null;
-  }
-}
+/** The language the map draws a file in, from the one list of them (config/files.ts DRAWN). */
+const langOf = drawnLang;
 
 function dirname(p: string): string {
   const i = p.lastIndexOf("/");
@@ -212,10 +185,12 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
   const files: FileEntry[] = [];
   const facts: Record<string, FileFacts> = {};
   const parseable: SourceFile[] = [];
-  // Code in languages the map doesn't draw (Rust, Go…): counted, so the map can say what it holds.
+  // Code in languages the map doesn't draw (Go, Java…): counted, so the map can say what it holds.
   const otherCode: Record<string, number> = {};
   for (const s of sources) {
     const code = langOf(s.path);
+    // Listed for Files only: code in a hidden folder (.github/scripts, .vscode, .husky) comes with no text and is not the app's.
+    if (code && s.content === "" && LISTED_HIDDEN.test(s.path)) continue;
     const lang = code ?? (isSecret(s.path) ? null : configLangOf(s.path, s.content));
     const entry: FileEntry = { path: s.path, lang: lang ?? ("ts" as Lang), lines: s.content.split("\n").length, area: areaOf(s.path) };
     if (isSecret(s.path)) {
@@ -277,7 +252,7 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
         const g = grammarFor(s.path);
         if (!g) continue;
         const root = await parse(g, s.content);
-        facts[s.path] = g === "python" ? extractPy(root, s.content) : g === "dart" ? extractDart(root, s.content) : g === "php" ? extractPhp(root, s.content, s.path) : extractJs(root, s.content);
+        facts[s.path] = g === "python" ? extractPy(root, s.content) : g === "dart" ? extractDart(root, s.content) : g === "php" ? extractPhp(root, s.content, s.path) : g === "rust" ? extractRust(root, s.content) : extractJs(root, s.content);
       }
     } catch (e) {
       warnings.push(`could not parse ${s.path}: ${(e as Error).message}`);
@@ -384,6 +359,84 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     const p = pkg ? (dartPackages.has(pkg[1]) ? joinPath(dartPackages.get(pkg[1])!, `lib/${pkg[2]}`) : null) : /^[a-z]+:/.test(spec) ? null : joinPath(dirname(from), spec);
     return p && parsedSet.has(p) ? p : null;
   };
+  // Rust: a module path walks the module tree. A crate's root is src/main.rs or src/lib.rs (a src/bin/x.rs is its
+  // own); `mod x;` in it is x.rs or x/mod.rs beside it, and in any other module m.rs it is m/x.rs. A path starts at
+  // `crate`, `self`, `super`, a child of this module (2018), or another crate of the Cargo workspace by its name.
+  const cargoCrates = new Map<string, string>();
+  const cargoDirs: string[] = [];
+  for (const s of sources) {
+    if (basename(s.path) !== "Cargo.toml" || SKIP_DIRS.test(s.path)) continue;
+    cargoDirs.push(dirname(s.path));
+    const name = /^\s*\[package\][^[]*?^\s*name\s*=\s*"([^"]+)"/m.exec(s.content)?.[1];
+    if (name && !cargoCrates.has(name.replace(/-/g, "_"))) cargoCrates.set(name.replace(/-/g, "_"), dirname(s.path));
+  }
+  const crateDirOf = (file: string): string => {
+    let best: string | null = null;
+    // The innermost Cargo package holding the file (a workspace's own Cargo.toml has no src/).
+    for (const d of cargoDirs) {
+      const holds = d === "" || file.startsWith(d + "/");
+      const isCrate = parsedSet.has(joinPath(d, "src/main.rs")) || parsedSet.has(joinPath(d, "src/lib.rs"));
+      if (holds && isCrate && (best === null || d.length > best.length)) best = d;
+    }
+    if (best !== null) return best;
+    const i = file.lastIndexOf("src/");
+    return i > 0 ? file.slice(0, i - 1) : "";
+  };
+  const rustRootOf = (file: string): string | null => {
+    if (/(^|\/)src\/(main|lib)\.rs$|(^|\/)src\/bin\/[^/]+\.rs$|(^|\/)src\/bin\/[^/]+\/main\.rs$/.test(file)) return file;
+    const d = crateDirOf(file);
+    const main = joinPath(d, "src/main.rs");
+    const lib = joinPath(d, "src/lib.rs");
+    const hasMain = parsedSet.has(main);
+    const hasLib = parsedSet.has(lib);
+    if (hasMain && hasLib) {
+      const top = file.slice(joinPath(d, "src").length + 1).split("/")[0].replace(/\.rs$/, "");
+      return facts[main].imports.some((im) => im.spec === `self::${top}`) ? main : lib;
+    }
+    return hasLib ? lib : hasMain ? main : null;
+  };
+  const rustModDir = (file: string) => (/(^|\/)(main|lib|mod)\.rs$/.test(file) ? dirname(file) : file.slice(0, -3));
+  const rustChild = (file: string, seg: string): string | null => {
+    for (const c of [joinPath(rustModDir(file), `${seg}.rs`), joinPath(rustModDir(file), `${seg}/mod.rs`)]) if (parsedSet.has(c)) return c;
+    return null;
+  };
+  const rustParent = (file: string): string | null => {
+    const root = rustRootOf(file);
+    if (!root || file === root) return null;
+    const sits = /(^|\/)mod\.rs$/.test(file) ? dirname(dirname(file)) : dirname(file);
+    if (sits === dirname(root)) return root;
+    for (const c of [`${sits}.rs`, `${sits}/mod.rs`]) if (parsedSet.has(c)) return c;
+    return null;
+  };
+  /** The file a Rust path lands in, and the item it names there (null: the module itself). */
+  const resolveRust = (from: string, spec: string): { file: string; item: string | null } | null => {
+    const segs = spec.split("::");
+    let i = 0;
+    let cur: string | null = from;
+    if (segs[0] === "crate") {
+      cur = rustRootOf(from);
+      i = 1;
+    } else if (segs[0] === "self") i = 1;
+    else if (segs[0] === "super") {
+      while (segs[i] === "super" && cur) {
+        cur = rustParent(cur);
+        i++;
+      }
+    } else if (!rustChild(from, segs[0])) {
+      const dir = cargoCrates.get(segs[0]);
+      cur = dir !== undefined && parsedSet.has(joinPath(dir, "src/lib.rs")) ? joinPath(dir, "src/lib.rs") : null;
+      i = 1;
+    }
+    if (!cur) return null;
+    for (; i < segs.length; i++) {
+      const next = rustChild(cur, segs[i]);
+      if (!next) break;
+      cur = next;
+    }
+    if (cur === from) return null;
+    const item = segs[i];
+    return { file: cur, item: item && item !== "*" ? item : null };
+  };
   // PHP: a class by the file that declares it, else composer.json's PSR-4 map; `view:x` (Blade's @extends) by resources/views,
   // a Twig template's (`{% extends 'base.html.twig' %}`) by templates/.
   const resolvePhp = phpResolver(
@@ -416,6 +469,11 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
           importEdges.push({ from: p, to: target, line: imp.line, names: name === "*" ? [] : [name] });
         }
         if (imp.names.length === 0 && r.file) importEdges.push({ from: p, to: r.file, line: imp.line, names: [] });
+      } else if (p.endsWith(".rs")) {
+        const r = resolveRust(p, imp.spec);
+        if (!r) continue;
+        for (const n of imp.names) if (n.local !== "*") b.set(n.local, { file: r.file, name: r.item ?? "*" });
+        importEdges.push({ from: p, to: r.file, line: imp.line, names: r.item ? [r.item] : [] });
       } else {
         const target = p.endsWith(".dart") ? resolveDart(p, imp.spec) : /\.(php|twig)$/.test(p) ? resolvePhp(p, imp.spec) : resolveJs(p, imp.spec);
         if (!target) continue;
@@ -524,6 +582,8 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     if (lang === "py") return /(^|\/)(migrations?|models|schema)\//.test(p) && f.sql.length ? "data" : "logic";
     // Dart: widgets are the screen; providers, models and API clients are logic.
     if (lang === "dart") return /(^|\/)(db|database|data|schema|migrations?)\//.test(p) && f.sql.length ? "data" : "logic";
+    // Rust: routers are the API (above); modules that hold the queries are the data; everything else is logic.
+    if (lang === "rust") return /(^|\/)(db|database|data|schema|models?|repo|repository|migrations?)(\.rs|\/)/.test(p) && f.sql.length ? "data" : "logic";
     // PHP: Blade views, Twig templates and Livewire components are the screen (hasJsx, above); Eloquent models,
     // migrations, Doctrine entities and repositories are the data; the rest (controllers, services, jobs) is logic,
     // even beside a Vue or React front end in the same package.
@@ -559,7 +619,9 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     // or when it holds a request/SQL/channel/rpc fact outside every route, so the fact has a home.
     const importedByOthers = importEdges.some((e) => e.to === p && e.from !== p);
     const looseFact = [...f.http, ...f.sql, ...f.channels, ...f.rpc].some((x) => !inRouteSpan(f, x.line));
-    if (!f.routes.length || importedByOthers || looseFact || f.fns.some((x) => x.exported && !f.routes.some((r) => r.handler === x.name))) {
+    // A Rust crate's root (src/main.rs, src/lib.rs) always has its card: it is where the module tree starts.
+    const crateRoot = /(^|\/)src\/(main|lib)\.rs$/.test(p);
+    if (!f.routes.length || importedByOthers || looseFact || crateRoot || f.fns.some((x) => x.exported && !f.routes.some((r) => r.handler === x.name))) {
       addNode({ id: fileNodeId(p), layer, kind: f.hasJsx ? "component" : "module", name: displayName(p), area: areaOf(p), file: p, line: 1, endLine: f.lines });
     }
     for (const r of f.routes) {

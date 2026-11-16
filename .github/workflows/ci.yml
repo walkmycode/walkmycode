@@ -6,6 +6,10 @@
 # until there is demand for a Mac version. Don't add macOS runners here.
 name: CI
 
+# Runners: GitHub's by default. Until 1 Dec 2026 the org's free Actions minutes are spent, so the repo
+# variables RUNS_ON_LINUX / RUNS_ON_WINDOWS (JSON label lists, e.g. ["self-hosted","wmc-linux"]) send
+# the jobs to our own runners (docs/DESKTOP.md, "Self-hosted runners"). Delete the variables to go back.
+
 on:
   pull_request:
     branches: [main]
@@ -24,9 +28,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+        include:
+          - os: ubuntu-latest
+            runner: ${{ vars.RUNS_ON_LINUX || '"ubuntu-latest"' }}
+          - os: windows-latest
+            runner: ${{ vars.RUNS_ON_WINDOWS || '"windows-latest"' }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    # Our own Windows runner (the owner's PC, RUNS_ON_WINDOWS) can take 20 minutes over the install alone, and
+    # 45 cut it off before the sweeps; GitHub's runners keep 45.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && vars.RUNS_ON_WINDOWS && 75 || 45 }}
     steps:
       # Files exactly as the repository stores them. Windows runners default to
       # core.autocrlf=true, which rewrites the test fixtures' line endings (a
@@ -39,10 +49,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          # Not on our own Windows runner: packing the npm cache there (tar, in the closing step) never
+          # finished, so the job passed every step and was then cut off at its time limit, with nothing saved
+          # for the next run either.
+          # (Written this way round because an empty result cannot be the middle of "a && b || c".)
+          cache: ${{ !(matrix.os == 'windows-latest' && vars.RUNS_ON_WINDOWS) && 'npm' || '' }}
 
+      # No audit: it fetched whole registry listings (next, katex) and took up to 9 minutes of a
+      # 20-minute install on our own Windows runner. Run `npm audit` on its own when wanted.
       - name: Install
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
       - name: Lint
         run: npm run lint

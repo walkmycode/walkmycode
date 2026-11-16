@@ -26,6 +26,7 @@ import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import type { CodeMap } from "../../src/analyzer/types";
 import { BRIDGE_PATH, type ServerMessage, type WorkspaceInfo } from "../../src/lib/bridge/protocol";
 import type { LocalRun } from "../../src/lib/localrun/hub";
+import { browserBlocks } from "../../src/lib/blockedPorts";
 import { LOCALRUN_SOCKET_PATH } from "../../src/lib/localrun/protocol";
 import type { Bridge, PageLink } from "./bridge";
 import { log } from "./log";
@@ -449,10 +450,15 @@ export async function startWeb(o: WebOptions): Promise<Web> {
     });
   // The last launch's port when it is free (the page's own storage is per port), else any free one.
   const preferred = o.preferPort && Number.isInteger(o.preferPort) && o.preferPort >= 1024 && o.preferPort <= 65535 ? o.preferPort : 0;
-  await listen(preferred).catch((e: unknown) => {
+  // Never a port a browser refuses (6566 and the like: src/lib/blockedPorts.ts): the page couldn't load at all.
+  await listen(browserBlocks(preferred) ? 0 : preferred).catch((e: unknown) => {
     if (!preferred) throw e;
     return listen(0);
   });
+  for (let i = 0; i < 20 && browserBlocks((server.address() as AddressInfo).port); i++) {
+    await new Promise<void>((done) => server.close(() => done()));
+    await listen(0);
+  }
   port = (server.address() as AddressInfo).port;
   const origin = `http://127.0.0.1:${port}`;
 

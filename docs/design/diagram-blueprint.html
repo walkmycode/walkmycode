@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&family=Lexend:wght@400;600&display=swap" rel="stylesheet">
 <style>
-/* Mockup only (docs/design): the Guide's diagrams in the Ahofe "how it works" style.
-   Palette and type from an earlier project's "how it works" page. */
+/* Mockup only (docs/design): the Guide's diagrams in a "how it works" explainer style.
+   Palette and type from a "how it works" explainer page. */
 :root {
   --bg: #0E0E0E; --bg-2: #171717; --bg-3: #1F1F1F;
   --ink: #F0F0F0; --ink-dim: #A0A0A0; --ink-faint: #636363;
@@ -64,7 +64,7 @@ h2 { font: 700 20px var(--display); color: var(--ink); margin: 48px 0 6px; }
 .legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
 .bp-foot .tip { color: var(--accent); }
 
-/* Flowing edges, as on Ahofe (off when the user asks for less motion). */
+/* Flowing edges, as on an explainer page (off when the user asks for less motion). */
 .flow { animation: flow 2.4s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -88; } }
 @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
@@ -74,7 +74,7 @@ h2 { font: 700 20px var(--display); color: var(--ink); margin: 48px 0 6px; }
 <body>
 <div class="page">
   <div class="kicker">Mockup · Guide diagrams</div>
-  <h1>Every diagram, drawn like <em>Ahofe's</em>.</h1>
+  <h1>Every diagram, drawn like <em>a blueprint</em>.</h1>
   <p class="note" style="color:var(--accent)">Decision, 14 Oct 2026: build it with the cards, colours and flowing links, but not the dark window. The diagram sits on the chalkboard itself, with a hairline frame, a faint chalk dot grid and cards a shade darker than the board (src/lib/diagramStyle.ts).</p>
   <p class="lede">What the Guide and the Professor draw would use the "how it works" blueprint. Each diagram sits in a dark studio window with a caption. Boxes are cards with a coloured edge, an icon, a name and a file. Links are labelled pills that flow, and groups get dashed outlines. A legend sits underneath. Colours follow the map: pages, API routes, logic, database, outside services. The zoom tools sit in the window bar. Drag to move, and ⤢ opens it full-window.</p>
 

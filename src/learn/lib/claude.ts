@@ -14,8 +14,15 @@ export type SampleError = {
   said?: string;
 };
 
+/** One look the professor took at the computer while answering: a search, or a document opened. */
+export type Look = { id: string; tool: "find" | "read"; what: string; note?: string; done: boolean };
+
 export type SampleOptions = {
   onText?: (u: { text: string; delta: string }) => void;
+  /** A chat question: the professor may look at the computer's files, read only (the app on the student's own computer only). */
+  pc?: boolean;
+  /** Each look as it starts and as it finishes. */
+  onLook?: (look: Look) => void;
   signal?: AbortSignal;
   modelTier?: "default" | "complex" | "quick";
   /** The most the reply may be, in tokens: a small step of a lesson asks for little, so a provider's per-minute limit is not spent on room it does not use. The app only. */

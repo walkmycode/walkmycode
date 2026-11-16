@@ -65,7 +65,11 @@ Loop:
 - `next_request(wait_s = 50)` — wait for the next thing the user did on the page: `{id, kind: explain | trace | tour |
   question | spoken | deep, payload, context}` (context = the file, lines, card or tour step on screen). Returns
   `{kind: "none"}` after `wait_s`, and Claude calls it again. **This is how page buttons and speech reach Claude.**
-- `answer(id, markdown, citations[])` — show the answer in the Guide panel; citations (`path:line-line`) light up.
+- `answer(id, markdown, citations[], scene?, picture?)` — show the answer in the Guide panel; citations (`path:line-line`) light up.
+  `scene` is an analogy to watch (docs/LEARNING.md, "Watch it happen"): the everyday story above the real code,
+  step by step, and as a sequence diagram. The server puts it in the answer as a fenced `scene` block; the page
+  keeps only one it can draw, and picks the drawings from the everyday names. `picture` is a class, ER, state or
+  flow diagram with its analogy drawn in, sent the same way as a `picture` block.
 - `narrate(text, id?)` — speak a short chunk now (the page queues chunks in order). Claude is told to narrate in
   sentences as it goes, so the first words play before the whole answer is written.
 

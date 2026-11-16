@@ -2,8 +2,10 @@
  * The transcript under the board: what the professor is saying, with the word
  * being spoken lit. A narrator that reports its words (ElevenLabs' timings,
  * the browser's word boundaries) says which word that is; for one that does
- * not, the word is reckoned from how long the line has been playing.
+ * not, the word is reckoned from how long the line has been playing, at the voice's own pace.
  */
+import { spokenWeight, voicePace, type Pace } from "@/lib/voice/measure";
+
 export type WordSpan = { from: number; to: number };
 
 /** Every word of a text, as offsets into it. */
@@ -11,22 +13,26 @@ export function wordSpans(text: string): WordSpan[] {
   return [...text.matchAll(/\S+/g)].map((m) => ({ from: m.index ?? 0, to: (m.index ?? 0) + m[0].length }));
 }
 
-/** Characters spoken a second at normal speed: a measured pace for the app's narrators reading lesson lines. */
-export const SPEAKING_RATE = 15;
-
 /**
- * The word being spoken after `ms` of a line, reckoned from its length: each word takes time by its
- * letters, and a full stop or comma adds a short pause. Null before the first word and after the last.
+ * The word being spoken after `ms` of a line, reckoned while its audio is not yet measured (the first moments of a
+ * streamed line): each word takes as long as it is to say (spokenWeight: syllables, a code name's dots said aloud),
+ * at the voice's real pace (voicePace: learned from the lines already measured, at this speed), with its pause after a
+ * comma or full stop and its silence before the first word. Null after the last word.
  */
-export function reckonedWord(text: string, ms: number, speed = 1): WordSpan | null {
+export function reckonedWord(text: string, ms: number, speed = 1, pace: Pace = voicePace(speed)): WordSpan | null {
   const words = wordSpans(text);
-  let at = 0;
-  const perChar = 1000 / (SPEAKING_RATE * (speed > 0 ? speed : 1));
+  if (!words.length) return null;
+  let at = pace.lead * 1000;
+  if (ms < at) return words[0];
   for (const w of words) {
     const word = text.slice(w.from, w.to);
-    const takes = (word.length + 1) * perChar + (/[.!?]$/.test(word) ? 320 : /[,;:]$/.test(word) ? 160 : 0) / (speed > 0 ? speed : 1);
-    if (ms < at + takes) return w;
-    at += takes;
+    at += spokenWeight(word) * pace.perUnit * 1000;
+    if (ms < at) return w;
+    if (/[.!?…,;:—–]["'”’)\]]*$/.test(word)) {
+      at += pace.pause * 1000;
+      // In the pause, the word just said stays lit.
+      if (ms < at) return w;
+    }
   }
   return null;
 }

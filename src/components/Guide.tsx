@@ -28,6 +28,8 @@ import { capName } from "@/lib/bridge/clientName";
 import { addLooked, lookedLabel, lookedLine, stripToolTalk } from "@/lib/claude/looked";
 import { useWorkspace } from "@/lib/store";
 import { segments, tableRuns } from "@/lib/chalkSegments";
+import { readPictureBlock } from "@/lib/scene/diagram";
+import { readAnySceneBlock } from "@/lib/scene/any";
 import { mapLanes, type Lane } from "@/lib/diagramStyle";
 import { madeNote, stackOf } from "@/lib/projectStack";
 import { buildItAsk, STARTER_GUIDE } from "@/lib/starterGuide";
@@ -48,6 +50,10 @@ import AddFolder, { CODE_MISSING } from "./AddFolder";
 const ClaudeStatus = MCP ? dynamic(() => import("./mcp/ClaudeStatus"), { ssr: false }) : () => null;
 // A diagram in an answer (a ```mermaid block) is drawn in chalk by the Learn room's Diagram; Mermaid loads only then.
 const Diagram = dynamic(() => import("@/learn/components/Diagram"), { ssr: false, loading: () => <p className="note">Drawing…</p> });
+// An analogy to watch in an answer (a ```scene block): the scene and its drawings load only then.
+const SceneBlock = dynamic(() => import("./scene/AnyScene"), { ssr: false, loading: () => <p className="note">Setting the scene…</p> });
+// A diagram with its analogy drawn in (a ```picture block).
+const PictureDiagram = dynamic(() => import("./scene/PictureDiagram"), { ssr: false, loading: () => <p className="note">Drawing the diagram…</p> });
 const ClaudeTalk = MCP ? dynamic(() => import("./mcp/ClaudeTalk"), { ssr: false }) : () => null;
 
 // The tour player, with the narrators behind it, loads once a tour is on screen.
@@ -117,7 +123,8 @@ interface Props {
 const CITE = /`?((?:[\w.-]+\/)*[\w.-]+\.(?:tsx?|jsx?|py|sql|prisma|mjs|cjs|mts|dart|php|twig))(?::(\d+)(?:\s*[-–]\s*(\d+))?)?`?/g;
 
 /** Chalk rendering: paragraphs, lists, **bold**, `code`, path:line citations as buttons,
- * and ```mermaid blocks drawn as diagrams (other fenced code as code).
+ * ```mermaid blocks drawn as diagrams, ```scene blocks as analogies to watch and
+ * ```picture blocks as diagrams with the analogy drawn in (other fenced code as code).
  * While the answer is still streaming (`writing`), its last block carries the chalk
  * tip; nothing else animates per token, the stream itself is the handwriting. */
 export function Chalk({ text, onCite, writing = false, laneOf }: { text: string; onCite: Props["onCite"]; writing?: boolean; laneOf?: (text: string) => Lane | null }) {
@@ -135,6 +142,16 @@ export function Chalk({ text, onCite, writing = false, laneOf }: { text: string;
               Drawing a diagram…
             </p>
           );
+        }
+        if (s.lang === "scene") {
+          if (!s.closed || last) return <p key={i} className="note scribing">Drawing the picture…</p>;
+          const scene = readAnySceneBlock(s.body);
+          if (scene) return <SceneBlock key={i} scene={scene} />;
+        }
+        if (s.lang === "picture") {
+          if (!s.closed || last) return <p key={i} className="note scribing">Drawing the diagram…</p>;
+          const picture = readPictureBlock(s.body);
+          if (picture) return <PictureDiagram key={i} picture={picture} />;
         }
         return (
           <pre key={i} className="chalk-code">

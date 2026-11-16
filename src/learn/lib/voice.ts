@@ -7,7 +7,8 @@
  * pace and each line still lights up in turn.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { speakAloud, stopSpeaking } from "@/lib/voice/speakAloud";
+import type { Scope } from "@/lib/voice/audioCache";
+import { prefetchAloud, speakAloud, stopSpeaking } from "@/lib/voice/speakAloud";
 import { narratorInForce, useVoiceView } from "@/lib/voice/view";
 import { NARRATORS } from "@/lib/voice/catalogue";
 import { reckonedWord, type WordSpan } from "./caption";
@@ -57,6 +58,10 @@ const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export type Saying = { text: string; word: WordSpan | null };
 
+/** The lesson on screen, whose lines' audio is kept under it (one lesson plays at a time). Read when a line is
+ * spoken or fetched, never while rendering. */
+let lessonScope: Scope | undefined;
+
 /**
  * Follows the line being spoken, word by word, and tells `show` (the transcript under the board). A narrator that
  * reports its words (ElevenLabs' timings, Deepgram's words measured from its audio, the browser's word boundaries) is
@@ -98,7 +103,17 @@ export function followWords(show: (s: Saying | null) => void, now: () => number 
   };
 }
 
-export function useVoice() {
+/**
+ * The professor's voice. `scope`: the lesson, so each line's audio is kept (a replay costs nothing) and the
+ * next line can be fetched while one is heard (prefetch), with no silence between them.
+ */
+export function useVoice(scope?: Scope) {
+  useEffect(() => {
+    lessonScope = scope;
+    return () => {
+      if (lessonScope === scope) lessonScope = undefined;
+    };
+  }, [scope]);
   const [muted, setMuted] = useState(false);
   const [note, setNote] = useState("");
   /** Being heard right now (never while "Read only" is on): the professor's face moves its mouth. */
@@ -115,7 +130,7 @@ export function useVoice() {
   }, [view?.speed]);
   // The line in the air, followed word by word; and the voice that reports to it.
   const [words] = useState(() => followWords(setSaying));
-  const [voice] = useState(() => createProfessorVoice({ speak: (t) => speakAloud(t, { onStart: () => words.started(t), onWord: (w) => words.heard(t, w) }), stop: stopSpeaking, wait, onError: setNote }));
+  const [voice] = useState(() => createProfessorVoice({ speak: (t) => speakAloud(t, { scope: lessonScope, onStart: () => words.started(t), onWord: (w) => words.heard(t, w) }), stop: stopSpeaking, wait, onError: setNote }));
   const mutedRef = useRef(muted);
   useEffect(() => {
     mutedRef.current = muted;
@@ -123,11 +138,24 @@ export function useVoice() {
   // Leaving the lesson silences it.
   useEffect(() => () => voice.stop(), [voice]);
 
+  /**
+   * A live talk is on: the professor already has a voice there, so this one is hushed (it stops now, and lines are
+   * read at reading pace without sound, like "Read only"), or two professors talk at once (a scene drawn in a talk).
+   */
+  const hushedRef = useRef(false);
+  const setHushed = useCallback(
+    (on: boolean) => {
+      hushedRef.current = on;
+      if (on) voice.stop();
+    },
+    [voice],
+  );
+
   const stop = useCallback(() => voice.stop(), [voice]);
   /** Speak, resolving when done (or when stopped). */
   const speak = useCallback(
     async (text: string) => {
-      if (mutedRef.current) return voice.speak(text, true);
+      if (mutedRef.current || hushedRef.current) return voice.speak(text, true);
       heard.current++;
       setSpeaking(true);
       const end = words.begin(text, speed.current);
@@ -141,5 +169,12 @@ export function useVoice() {
     [voice, words],
   );
 
-  return { available: true, label, note, muted, setMuted, speak, stop, speaking, saying };
+  /** Fetch a line's audio now, to be heard later without waiting (nothing while Read only is on). */
+  const prefetch = useCallback((text: string) => {
+    const s = lessonScope;
+    if (!s || mutedRef.current || hushedRef.current || !text.trim()) return;
+    void prefetchAloud(text, s).catch(() => {});
+  }, []);
+
+  return { available: true, label, note, muted, setMuted, speak, stop, speaking, saying, prefetch, setHushed };
 }

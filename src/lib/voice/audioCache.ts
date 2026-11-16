@@ -7,9 +7,11 @@ import type { SpokenWord } from "./speech";
 
 export interface CachedAudio {
   bytes: Uint8Array;
-  /** Word timings, when the narrator gave them (ElevenLabs). */
+  /** Word timings, when the narrator gave them (ElevenLabs), or as measured from the sound. */
   words: SpokenWord[];
   type: string;
+  /** Which measurement (MEASURE_VERSION) timed the words, when they were measured rather than given. */
+  measured?: number;
 }
 
 /** Which map a narration belongs to. */

@@ -12,6 +12,9 @@ import { cookieName, cookieToken, freshToken, hostOk, originOk, sameToken } from
 import { fakeKey, FakePage, FIXTURES, get, pageCookie, parsePageUrl, startLantern, type Started } from "./mcp.helpers";
 
 const pageUrl = (text: string) => /Page: (http:\/\/127\.0\.0\.1:\d+\/\?t=\S+)/.exec(text)?.[1] ?? "";
+// This launch's token with its last character changed: just as long, and never the token itself. (Always
+// ending it in "x" let 1 launch in 64, whose token already ends in "x", send the right token.)
+const wrongToken = (t: string) => `${t.slice(0, -1)}${t.endsWith("x") ? "y" : "x"}`;
 
 let home: string;
 const savedHome = process.env.WALKMYCODE_HOME;
@@ -83,7 +86,7 @@ describe("the page server (MCP.md §6)", () => {
   it("refuses a wrong token, no cookie, a wrong Host (DNS rebinding) and anything but GET", async () => {
     const host = `127.0.0.1:${port}`;
     const cookie = pageCookie(url);
-    assert.equal((await get(port, `/?t=${token.slice(0, -1)}x`, { Host: host })).status, 403);
+    assert.equal((await get(port, `/?t=${wrongToken(token)}`, { Host: host })).status, 403);
     // Without the key, a person sees a small WalkMyCode page that tells them to use
     // Claude's link: HTML, still locked down, and with no token in it.
     const noKey = await get(port, "/", { Host: host });
@@ -130,7 +133,7 @@ describe("the page server (MCP.md §6)", () => {
     await assert.rejects(FakePage.connect(url, { origin: `http://127.0.0.1:${port + 1}` }), /refused: 403/);
     await assert.rejects(FakePage.connect(url, { origin: "null" }), /refused: 403/);
     await assert.rejects(FakePage.connect(url, { cookie: null }), /refused: 403/);
-    await assert.rejects(FakePage.connect(url, { cookie: `${cookieName(port)}=${token.slice(0, -1)}x` }), /refused: 403/);
+    await assert.rejects(FakePage.connect(url, { cookie: `${cookieName(port)}=${wrongToken(token)}` }), /refused: 403/);
     await assert.rejects(FakePage.connect(url, { host: `evil.test:${port}` }), /refused: 403/);
     assert.equal(s.lantern.bridge.hasPage(), false);
     const page = await FakePage.connect(url, { origin: `http://localhost:${port}` });

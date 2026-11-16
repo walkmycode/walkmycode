@@ -43,15 +43,75 @@ and air lift. Analogy is how he crossed between fields.
   as the Rust course does (`lessonPrompt`, `folderLessonPrompt` in `src/learn/lib/professor.ts`).
 - When a lesson is taught from a folder, the author's own `> 💡` analogies are used word for word.
 - **Like I'm 10** asks the professor to explain the board again with a fresh analogy.
-- **Watch it happen** turns a board's analogy into a scene (`src/learn/lib/scene.ts`,
-  `AnalogyScene.tsx`, mockup `docs/design/learn-analogy.html`): the everyday picture and the real code
-  side by side, drawn from the same data so they cannot disagree, stepped through with Play, Step and
-  Replay. A thing glides to its new holder (a move), sits on loan with a borrower, or is tidied away (a
-  drop); a moved-from name is marked "cannot be used". Under it: what stands for what, the rule in one
-  line, and where the picture breaks. It takes the full width while it is open; **Side panels** brings
-  the outline and the professor back, and that choice is remembered. With motion off it does not move
-  and is just as clear. The professor writes the scene the first time it is asked for; it is then kept
-  with the lesson.
+- **Watch it happen** turns a board's analogy into a scene to watch (mockup
+  `docs/design/learn-analogy-visual.html`). A scene is data (`src/lib/scene/model.ts`): a few holders, a
+  few things they hold, and at each step who holds what. The same data draws the everyday picture and the
+  real thing, so they cannot disagree, and it is drawn two ways (`src/components/scene/SceneBlock.tsx`):
+  - **the picture**: the everyday row directly above the real row, column for column, so what stands for
+    what is a straight line down (Emily over `s1`). Holders and things are drawings. A thing glides to its
+    new holder; what the step did is an arrow that draws itself, with a dot riding it, and then keeps
+    flowing the way the thing went (a move, a drop into the toy box), or a dashed thread (a loan, with a
+    copy marked "on loan"). Someone who checks the rules (the teacher, the compiler) watches, and stops
+    the step that breaks one, beside the real error.
+  - **a sequence diagram**: each holder a lifeline, each hand-over a message carrying the thing, every
+    label in both languages ("gives away · `move`"). Derived from the same steps (`sceneEvents`).
+
+  Beside it: the code a line at a time, and **the words**: every technical term the scene uses, with its
+  drawing and a few plain words, stamped on the stage as it happens ("giving away is a move"); a word
+  jumps to the step that teaches it. Under it: the rule in one line, and where the picture breaks. Play
+  reads each step aloud. It takes the full width while it is open; **Side panels** brings the outline and
+  the professor back. With motion off nothing moves and it is just as clear. The professor writes the
+  scene the first time it is asked for (`scenePrompt` in `src/learn/lib/scene.ts`); it is then kept with
+  the lesson. **My own picture** has it drawn again in a picture the student names ("a football team").
+- **The drawings** (`src/lib/drawings`; every one on a page, `docs/design/drawings-gallery.html`, written by
+  `npx tsx scripts/drawings-gallery.ts`): about 330 small flat pictures, so a lesson in any subject finds
+  its things drawn: everyday things, people and the work they do (police, nurse, judge, developer,
+  astronaut…), places, nature, the body and health, science and maths, history, government and the
+  world, business, the home, the arts and sport, devices, software engineering (a terminal, a function,
+  a linked list, a hash map, a git branch, a pull request, a CI pipeline…) and system design (a load
+  balancer, an API gateway, a cache, a CDN, a message broker, a container, a cluster, DNS, a firewall, a
+  VPN, a data centre…). Each is plain SVG shapes of under 1.5 KB, with no images, gradients or filters.
+  They ship with the app and load the first time a scene is shown. Explore's Files panel wears them too
+  (`src/lib/fileIcon.ts`, mockup `docs/design/files-icons.html`): each file the drawing for what it is (the
+  Dockerfile the container, a workflow the CI conveyor, a test the checklist, a lock file the chain, `.env`
+  the padlock), code in its language's colour, and a folder with a job that job's drawing. The tree shows
+  each file's kind as before until the drawings have loaded, then swaps them in. The professor picks one by name; when it gives none, or a name the set
+  does not have, the everyday label finds one (`findDrawing`: "the postman" is the van). One drawing
+  serves many uses: a colour and a label make one box a toy box or a lunch box, and each person in a
+  scene gets a different look, with a glad and a sad face. A model only ever names a drawing or a colour:
+  nothing it writes is put on the page as markup.
+- **A drawing of the professor's own.** For something the set has no drawing of (a kite, a windmill), the
+  professor may draw it: `draw`, at most 14 plain shapes (circle, rect, ellipse, line, poly) on the same
+  64 × 64 square, each with a colour by name. It is offered only as a last resort, after the drawings by
+  name. `cleanShapes` keeps only numbers inside the square and known names, and the page makes one SVG
+  element from each, so this too is never markup. A name the set has still wins over it.
+- **A scene in any answer.** A fenced ```` ```scene ```` block of JSON in an answer is drawn the same way
+  (`readSceneBlock`), in the professor's conversation, the Explore guide, and an AI app's answers through
+  the MCP server (its `answer` tool takes a `scene`). Every model is told how to write one (`SCENE_BLOCK`),
+  for when someone asks for an analogy, to have it explained simply, or for a sequence diagram a beginner
+  can follow. A block that is not a valid scene is shown as it was written. Every such model is also given
+  the drawings' names (`src/lib/drawings/names.ts`, the names alone, kept the same as the set by a test),
+  so it picks each drawing itself; a label is only read for one when it names none, and then for the thing
+  itself ("a child at the door" is a child, not a door). In an answer a scene is narrow: **Larger** draws
+  it in the app's root so it fills the window, wherever the answer sits (`useFull.ts`); Esc puts it back.
+- **A picture diagram**: a class, ER, state or flow diagram with its analogy drawn in
+  (`src/lib/scene/diagram.ts`, `PictureDiagram.tsx`), from a fenced ```` ```picture ```` block (or the MCP
+  `answer` tool's `picture`). Every box is an everyday thing, its drawing and everyday name over the real
+  name it stands for, with what it holds (fields, methods, columns); every line says what it means in both
+  languages, and is the next step, a use, owning (a diamond at the owner) or "is a kind of" (a hollow
+  arrow, the general thing above). Boxes sit in rows worked out from the lines (`rowsOf`; a line that
+  closes a loop is drawn but moves nothing). Pointing at a box lights its lines; Play walks the lines one
+  by one, the two boxes lit and a dot riding the line, with the step said in the picture and for real.
+  A line shows its everyday words; the real ones join them while it is the line being shown or pointed
+  at, and lines that leave one box together say their words where they have parted, so a busy diagram
+  stays readable. Lines pass behind the boxes; their words are written over them.
+  A scene shows what happens over time; a picture diagram shows how things are joined. Every model is told
+  how to write one (`PICTURE_BLOCK`), for a beginner who asks for such a diagram with an analogy.
+- **A diagram's picture key.** A Mermaid diagram that backs an analogy names each box twice (the real name,
+  then the analogy's word: `DIAGRAM_RULES`). Under any such diagram (class, state, flow, ER, sequence) the
+  key shows each of those words with its drawing beside the real name (`src/lib/scene/key.ts`,
+  `PictureKey.tsx`).
+- `npm run e2e:scene` runs all of this in the real app in headless Chrome, with a stand-in professor.
 - Every analogy is held to the same rules (`ANALOGY_RULES`): things a ten-year-old has touched, one
   idea, what stands for what, true to the code, honest about where it stops.
 - A diagram backs the analogy where the concept has structure, flow or ownership (`DIAGRAM_RULES`):
@@ -171,7 +231,17 @@ marked by the professor against the course's solution.
 Lessons an earlier version kept in the browser are copied to `.walkmycode/learn/` the first time the
 Learn room opens; the browser's copy is left alone. The lesson open now is in the address
 (`/learn?lesson=<id>`), so a reload comes back to the same lesson, board, code and conversation, and
-the library's **Carry on where you stopped** card shows the last thing said.
+the Learn home's **Carry on** card shows the last thing said.
+
+## The Learn home
+
+One front door: **What do you want to learn today?** Type any subject and press Enter, and the professor
+starts writing the lesson at once, in the course, level and length chosen under the box (a new course is
+named after the subject). The ideas under it are the next step in the courses worked on last, and two fresh
+subjects. **Carry on** sits beside it, then the numbers (courses, boards seen, explain-back marks, recall
+due), every course as a card with a cover drawing from the drawings set, its progress and its **Next
+lesson**, and a side column with what the professor knows about you and the week's recall
+(`src/learn/components/Library.tsx`, mockup `docs/design/learn-home.html`).
 
 ## How the professor is told
 

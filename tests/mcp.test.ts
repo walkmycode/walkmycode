@@ -1,6 +1,8 @@
 // WalkMyCode for Claude end to end (docs/MCP.md §3, §8 A): a real MCP client on the
 // SDK's in-memory transport calls the tools, and a fake page on a real WebSocket
 // sends requests and acknowledges commands. Maps go to a temporary WALKMYCODE_HOME.
+import { readPictureBlock } from "../src/lib/scene/diagram";
+import { readSceneBlock } from "../src/lib/scene/model";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -148,6 +150,28 @@ describe("WalkMyCode for Claude over MCP", () => {
     const answer = page.commands("answer").at(-1)!.command;
     assert.deepEqual(answer, { name: "answer", requestId: "r3", markdown: "Sign-in starts at the **Sign in** button.", citations: [{ path: "app/page.tsx", from: 8, to: 11 }, { path: "lib/auth.ts", from: 7, to: 7 }] });
     assert.ok(!s.lantern.bridge.isWorking("r3"));
+
+    // An analogy to watch rides in the answer as a ```scene block, which the page draws.
+    const scene = {
+      title: "Posting a letter", actors: [{ id: "you", a: "you", r: "the page" }, { id: "shop", a: "the shop", r: "the server" }], things: [{ id: "letter", a: "the letter", r: "the request ```x" }],
+      code: "fetch('/api/login')\nreturn ok", steps: [{ line: 1, holds: { letter: "you" }, a: "You write it.", r: "The page builds it." }, { line: 2, holds: { letter: "shop" }, a: "The shop gets it.", r: "The server reads it." }], rule: "One asks, one answers.",
+    };
+    await s.call("answer", { markdown: "As a picture.", scene });
+    const drawn = page.commands("answer").at(-1)!.command;
+    const block = /^As a picture\.\n\n```scene\n([^]*)\n```$/.exec(drawn.name === "answer" ? drawn.markdown : "");
+    assert.ok(block, "the scene is one fenced block after the answer");
+    assert.doesNotMatch(block[1], /```/, "nothing inside it can close the block early");
+    assert.deepEqual(readSceneBlock(block[1])?.actors.map((a) => a.r), ["the page", "the server"]);
+
+    // So does a class, ER, state or flow diagram with its analogy drawn in, as a ```picture block.
+    const picture = { title: "The zoo", kind: "class", nodes: [{ id: "animal", a: "any animal", r: "Animal", rows: ["eat()"] }, { id: "dog", a: "a dog", r: "Dog", draw: [{ s: "circle", x: 32, y: 32, r: 12, c: "brown" }] }], links: [{ from: "dog", to: "animal", kind: "is" }] };
+    await s.call("answer", { markdown: "How they are joined.", picture });
+    const sent = page.commands("answer").at(-1)!.command;
+    const fenced = /^How they are joined\.\n\n```picture\n([^]*)\n```$/.exec(sent.name === "answer" ? sent.markdown : "");
+    assert.ok(fenced, "the picture is one fenced block after the answer");
+    const read = readPictureBlock(fenced[1]);
+    assert.deepEqual(read?.links, [{ from: "dog", to: "animal", kind: "is" }]);
+    assert.deepEqual(read?.nodes[1].draw, [{ s: "circle", x: 32, y: 32, r: 12, c: "brown" }], "a drawing of the app's own making comes through");
 
     const n = await s.call("narrate", { text: "Let's look at the sign-in button.", id: "r4" });
     assert.equal(n.text, "Queued to be spoken.");

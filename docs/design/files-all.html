@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Files: every file, searchable (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  The Files panel, every file (owner, 13 Nov: "whatever file found in the project should be shown in the
+  file structure and searchable with beautiful animations"). Today the tree lists only what the map reads:
+  code, config and other languages. README.md, LICENSE, .gitignore, images, fonts, lock files, notes… are
+  missing. Here every file of the project is in the tree (still never node_modules, .git, build output or a
+  real .env), with an icon for its kind. The files the map didn't draw read a shade quieter; opening one
+  shows its text (or, for an image, the image; anything binary says so).
+
+  Search sits at the top (Ctrl+P / "/" anywhere in the panel): fuzzy, as you type, over every path. Matches
+  rise in staggered, the matched letters lit, best first; ↑ ↓ move, Enter opens, Esc clears and the tree
+  comes back, the open file in view. Filter chips narrow it: All, Code, Docs, Config, Images.
+  Motion is opacity and transform only; with motion off it all simply appears.
+-->
+<style>
+:root{
+  --wall:#1e1f22; --wall-2:#232428; --board:#1b1c1f; --board-2:#26282c;
+  --ui:#2b2d30; --ui-2:#35373c; --ui-line:#43454a; --ui-raise:#3c3f44;
+  --ui-text:#dfe1e5; --ui-dim:#9da0a8; --ui-faint:#6f737a; --out:#17181a;
+  --hair:rgba(255,255,255,.06); --hair-2:rgba(255,255,255,.11); --hair-3:rgba(255,255,255,.2);
+  --yellow:#f3d77a; --yellow-dim:rgba(243,215,122,.55); --yellow-wash:rgba(243,215,122,.10);
+  --green:#a8e0a0; --blue:#9fd3f0; --pink:#f2a7a0; --purple:#c9a8e0; --orange:#e9b27a;
+  --text:13px; --row:22px;
+  --sans:Inter,"Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  --m:1; --t-tap:calc(120ms*var(--m)); --t-dim:calc(250ms*var(--m)); --t-move:calc(320ms*var(--m));
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-settle:cubic-bezier(.22,1,.36,1); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+:root.still{--m:0}
+*{box-sizing:border-box;border-radius:0}
+html,body{margin:0;background:#111214;color:var(--ui-text);font:var(--text)/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+body{padding:24px 16px 48px}
+button,input{font:inherit;color:inherit}
+h1{font:700 15px/1.3 var(--sans);color:var(--yellow);margin:0}
+.lead{color:var(--ui-dim);margin:6px 0 0;max-width:86ch}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:18px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{height:28px;padding:0 11px;border:1px solid var(--ui-line);background:var(--ui);cursor:pointer}
+.btn:hover{border-color:var(--hair-3)}
+.controls label{display:inline-flex;gap:6px;align-items:center;color:var(--ui-dim);margin-left:6px}
+
+.app{display:grid;grid-template-columns:320px minmax(0,1fr);height:640px;border:1px solid var(--hair-3);box-shadow:0 18px 60px rgba(0,0,0,.55);background:var(--wall)}
+.pane{display:flex;flex-direction:column;min-height:0;background:var(--board);border-right:1px solid var(--ui-line)}
+.pane>header{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;background:var(--ui);border-bottom:1px solid var(--hair-2);font-weight:600;flex:none}
+.pane>header .count{margin-left:auto;font:500 12px var(--mono);color:var(--ui-faint)}
+
+/* search */
+.search{position:relative;padding:8px 8px 6px;border-bottom:1px solid var(--hair);flex:none}
+.field{position:relative;display:flex;align-items:center;height:30px;border:1px solid var(--ui-line);background:var(--out);transition:border-color var(--t-tap),box-shadow var(--t-dim)}
+.field:focus-within{border-color:var(--yellow-dim);box-shadow:0 0 0 3px var(--yellow-wash)}
+.field svg{flex:none;margin:0 6px 0 8px;color:var(--ui-faint);transition:color var(--t-tap)}
+.field:focus-within svg{color:var(--yellow)}
+.field input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;font:var(--text) var(--mono)}
+.field input::placeholder{color:var(--ui-faint);font-family:var(--sans)}
+.field kbd{margin-right:6px;font:500 11px/1 var(--mono);padding:3px 5px;border:1px solid var(--ui-line);color:var(--ui-faint)}
+.field .clear{display:none;width:24px;height:24px;margin-right:3px;border:0;background:none;color:var(--ui-dim);cursor:pointer}
+.searching .field .clear{display:grid;place-items:center} .searching .field kbd{display:none}
+.chips{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.chip{height:22px;padding:0 8px;border:1px solid var(--hair-2);background:none;color:var(--ui-dim);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:color var(--t-tap),border-color var(--t-tap),background var(--t-tap)}
+.chip b{font:500 11px var(--mono);color:var(--ui-faint);font-weight:500}
+.chip[aria-pressed="true"]{color:var(--yellow);border-color:var(--yellow-dim);background:var(--yellow-wash)}
+.chip[aria-pressed="true"] b{color:var(--yellow-dim)}
+
+.list{position:relative;flex:1;overflow:auto;padding:4px 0;font:var(--text) var(--mono)}
+.row{position:relative;display:flex;align-items:center;gap:6px;width:100%;height:var(--row);padding:0 10px 0 calc(8px + var(--d,0) * 14px);border:0;background:none;color:var(--ui-dim);text-align:left;white-space:nowrap;cursor:pointer}
+.row:hover{background:var(--hair);color:var(--ui-text)}
+.row .glyph{width:1ch;color:var(--ui-faint);display:inline-block;transition:transform var(--t-tap) var(--ease-spring)}
+.row.dir{color:var(--ui-text);font-weight:600}
+.row.dir.open .glyph{transform:rotate(90deg)}
+.row .ic{width:14px;height:14px;flex:none;display:grid;place-items:center}
+.row .ic i{width:9px;height:11px;border:1.5px solid currentColor;position:relative}
+.row .ic i::after{content:"";position:absolute;right:-1.5px;top:-1.5px;width:4px;height:4px;background:var(--board);border-left:1.5px solid currentColor;border-bottom:1.5px solid currentColor}
+.k-code .ic{color:var(--blue)} .k-doc .ic{color:var(--green)} .k-config .ic{color:var(--orange)} .k-image .ic{color:var(--purple)} .k-lock .ic,.k-other .ic{color:var(--ui-faint)} .k-dir .ic{color:var(--yellow-dim)}
+.row .name{overflow:hidden;text-overflow:ellipsis}
+.row.quiet .name{color:var(--ui-faint)}
+.row.quiet:hover .name{color:var(--ui-dim)}
+.row .tag{margin-left:auto;font:500 10.5px/16px var(--sans);letter-spacing:.04em;text-transform:uppercase;color:var(--ui-faint);opacity:0;transition:opacity var(--t-tap)}
+.row.quiet:hover .tag{opacity:1}
+.row.on{background:var(--yellow-wash);color:var(--ui-text)}
+.row.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--yellow)}
+.row.enter{animation:rise var(--t-dim) var(--ease-settle) both;animation-delay:calc(var(--k) * 14ms * var(--m))}
+@keyframes rise{from{opacity:0;transform:translateY(-4px)}}
+
+/* results */
+.res{display:grid;grid-template-columns:14px 1fr;gap:2px 8px;width:100%;padding:6px 10px;border:0;background:none;text-align:left;cursor:pointer;color:var(--ui-text);font:var(--text) var(--mono);position:relative;
+  animation:res-in var(--t-move) var(--ease-settle) both;animation-delay:calc(var(--k) * 22ms * var(--m))}
+@keyframes res-in{from{opacity:0;transform:translateY(6px) scale(.99)}}
+.res .ic{grid-row:span 2;margin-top:3px}
+.res .file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res .dir{color:var(--ui-faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res mark{background:none;color:var(--yellow);font-weight:600;text-decoration:underline;text-decoration-color:var(--yellow-dim);text-underline-offset:3px}
+.res:hover{background:var(--hair)}
+.res.sel{background:var(--yellow-wash)}
+.res.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--yellow);animation:bar var(--t-tap) var(--ease-out)}
+@keyframes bar{from{transform:scaleY(0)}}
+.res .ic{display:grid;place-items:center}
+.empty{padding:28px 16px;text-align:center;color:var(--ui-faint);animation:res-in var(--t-move) var(--ease-settle) both}
+.empty b{display:block;color:var(--ui-dim);margin-bottom:4px;font-family:var(--sans)}
+.foot{flex:none;display:flex;gap:10px;padding:6px 10px;border-top:1px solid var(--hair);color:var(--ui-faint);font-size:12px}
+.foot kbd{font:500 11px var(--mono);padding:1px 4px;border:1px solid var(--ui-line)}
+
+/* the opened file */
+.code{display:flex;flex-direction:column;min-width:0;background:var(--wall)}
+.code>header{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;background:var(--ui);border-bottom:1px solid var(--hair-2);font:var(--text) var(--mono);color:var(--ui-dim)}
+.code>header b{color:var(--ui-text);font-weight:500}
+.note{margin-left:auto;font:500 11px var(--sans);letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--hair-2);color:var(--ui-faint)}
+.body{flex:1;overflow:auto;padding:12px 0;font:var(--text)/1.6 var(--mono);color:var(--ui-dim);animation:fade .25s ease-out}
+@keyframes fade{from{opacity:0}}
+.body .ln{display:flex;gap:14px;padding:0 14px}
+.body .ln span:first-child{color:var(--ui-faint);width:2ch;text-align:right;flex:none}
+.body .h{color:var(--yellow)} .body .s{color:var(--green)}
+.img{display:grid;place-items:center;height:100%;background:repeating-conic-gradient(#26282c 0 25%,#1f2023 0 50%) 0 0/16px 16px}
+.img div{width:180px;height:120px;background:linear-gradient(135deg,#f3d77a,#e9b27a 40%,#9fd3f0);box-shadow:0 10px 40px rgba(0,0,0,.5)}
+
+.spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.spec div{padding:12px 14px;border:1px solid var(--hair-2);background:var(--wall-2);color:var(--ui-dim)}
+.spec b{display:block;color:var(--ui-text);margin-bottom:4px}
+@media (max-width:720px){.app{grid-template-columns:1fr;height:auto}.code{min-height:260px}.list{max-height:420px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Files: every file, searchable</h1>
+    <p class="lead">Every file in the project is in the tree: README.md, LICENSE, .gitignore, images and lock files too. Files the map doesn't draw are a shade quieter. Type to search every path, fuzzy and instant, then open with Enter. Try typing <code>rme</code>, <code>bor</code> or <code>png</code>, or click a chip.</p>
+  </div>
+  <div class="controls">
+    <button class="btn" data-q="bor">Type “bor”</button>
+    <button class="btn" data-q="rme">Type “rme”</button>
+    <button class="btn" data-q="png">Type “png”</button>
+    <button class="btn" data-q="">Clear</button>
+    <label><input type="checkbox" id="still"> Motion off</label>
+  </div>
+
+  <div class="app" id="app">
+    <section class="pane">
+      <header>Files <span class="count" id="count"></span></header>
+      <div class="search">
+        <div class="field">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
+          <input id="q" placeholder="Search files" aria-label="Search files" autocomplete="off" spellcheck="false">
+          <button class="clear" id="clear" aria-label="Clear the search">✕</button>
+          <kbd>Ctrl P</kbd>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="Show"></div>
+      </div>
+      <div class="list" id="list" role="tree" aria-label="Files"></div>
+      <div class="foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> clear</span></div>
+    </section>
+    <section class="code">
+      <header><b id="path">src/main.rs</b><span class="note" id="note">On the map</span></header>
+      <div class="body" id="body"></div>
+    </section>
+  </div>
+
+  <div class="spec">
+    <div><b>Every file</b>The folder readers list every file's path, not only the code they read. Never node_modules, .git, build output (target, dist, .next…) or a real .env, same as now. Paths only: a file's text is read when it's opened.</div>
+    <div><b>Kinds</b>An icon per kind: code (blue), docs (green: .md, .txt, LICENSE), config (orange), images (purple), lock and other files (grey). Files the map didn't draw are quieter, and hovering says “not on the map”.</div>
+    <div><b>Search</b>Ctrl P, or / in the panel. Fuzzy over the whole path, ranked: consecutive letters, the file name over the folders, shorter paths first. Up to 200 results drawn; the count says how many matched.</div>
+    <div><b>Motion</b>Results rise in, 22 ms apart; the selection bar slides; folders open with the rows rising in as today. Opacity and transform only, so 12,000 files stay smooth, and with motion off it just appears.</div>
+  </div>
+</div>
+<script>
+const FILES=`Cargo.toml
+Cargo.lock
+README.md
+LICENSE
+.gitignore
+rustfmt.toml
+docs/architecture.md
+docs/images/flow.png
+docs/images/logo.svg
+src/main.rs
+src/lib.rs
+src/routes/mod.rs
+src/routes/payments.rs
+src/routes/webhooks.rs
+src/db/mod.rs
+src/db/schema.sql
+migrations/0001_init.sql
+migrations/0002_payments.sql
+01_foundations/06_ownership/README.md
+01_foundations/06_ownership/examples/borrowing_rules.rs
+01_foundations/06_ownership/examples/move_semantics.rs
+01_foundations/06_ownership/examples/references.rs
+assets/fonts/Inter.woff2
+assets/screenshot.png
+.github/workflows/ci.yml
+docker-compose.yml
+.env.example
+notes.txt`.split("\n");
+const MAPPED=new Set(["Cargo.toml","src/main.rs","src/lib.rs","src/routes/mod.rs","src/routes/payments.rs","src/routes/webhooks.rs","src/db/mod.rs","src/db/schema.sql","migrations/0001_init.sql","migrations/0002_payments.sql","01_foundations/06_ownership/examples/borrowing_rules.rs","01_foundations/06_ownership/examples/move_semantics.rs","01_foundations/06_ownership/examples/references.rs",".github/workflows/ci.yml","docker-compose.yml",".env.example"]);
+const kindOf=p=>/\.(rs|ts|tsx|js|py|sql|go)$/.test(p)?"code":/\.(md|txt)$|LICENSE$/.test(p)?"doc":/\.(png|svg|jpe?g|gif|webp)$/.test(p)?"image":/\.lock$/.test(p)?"lock":/\.(toml|ya?ml|json)$|^\.|\/\.|example$/.test(p)?"config":"other";
+const CHIPS=[["all","All"],["code","Code"],["doc","Docs"],["config","Config"],["image","Images"]];
+let chip="all",q="",open=new Set(["src","src/routes","01_foundations","01_foundations/06_ownership","01_foundations/06_ownership/examples"]),cur="01_foundations/06_ownership/examples/borrowing_rules.rs",sel=0,results=[];
+const $=id=>document.getElementById(id);
+
+function chips(){const c=$("chips");c.innerHTML="";for(const[k,l]of CHIPS){const n=k==="all"?FILES.length:FILES.filter(f=>kindOf(f)===k).length;const b=document.createElement("button");b.className="chip";b.setAttribute("aria-pressed",chip===k);b.innerHTML=`${l} <b>${n}</b>`;b.onclick=()=>{chip=k;chips();render(true)};c.append(b)}}
+function ic(k){return `<span class="ic"><i></i></span>`}
+function tree(){
+  const root={dirs:{},files:[]};
+  for(const f of FILES){if(chip!=="all"&&kindOf(f)!==chip)continue;const p=f.split("/");let d=root;for(let i=0;i<p.length-1;i++){d=d.dirs[p[i]]??=({dirs:{},files:[],path:p.slice(0,i+1).join("/")})}d.files.push(f)}
+  const rows=[];const walk=(d,depth)=>{for(const n of Object.keys(d.dirs).sort()){const x=d.dirs[n];rows.push({dir:true,name:n,path:x.path,depth});if(open.has(x.path)||chip!=="all")walk(x,depth+1)}for(const f of d.files.sort())rows.push({dir:false,name:f.split("/").pop(),path:f,depth})};walk(root,0);return rows}
+function fuzzy(path,query){ // greedy, prefers the file name
+  const name=path.split("/").pop().toLowerCase(),lp=path.toLowerCase(),qq=query.toLowerCase();let at=[],j=0,score=0,last=-2;const off=path.length-name.length;
+  for(let i=0;i<lp.length&&j<qq.length;i++)if(lp[i]===qq[j]){at.push(i);score+=(i===last+1?6:1)+(i>=off?4:0)+(i===0||"/._-".includes(lp[i-1])?3:0);last=i;j++}
+  return j===qq.length?{score:score-path.length*.05,at}:null}
+function hl(s,at,from){let o="";for(let i=0;i<s.length;i++)o+=at.includes(i+from)?`<mark>${s[i]}</mark>`:s[i];return o}
+function render(animate){
+  const L=$("list");L.innerHTML="";document.getElementById("app").classList.toggle("searching",!!q);document.querySelector(".search").classList.toggle("searching",!!q);
+  const pool=FILES.filter(f=>chip==="all"||kindOf(f)===chip);
+  if(q){results=pool.map(p=>({p,m:fuzzy(p,q)})).filter(x=>x.m).sort((a,b)=>b.m.score-a.m.score);sel=Math.min(sel,Math.max(0,results.length-1));
+    $("count").textContent=`${results.length} of ${FILES.length}`;
+    if(!results.length){L.innerHTML=`<div class="empty"><b>No file matches “${q}”</b>Try fewer letters, or All.</div>`;return}
+    results.forEach((r,k)=>{const name=r.p.split("/").pop(),dir=r.p.slice(0,r.p.length-name.length);const b=document.createElement("button");b.className=`res k-${kindOf(r.p)}${k===sel?" sel":""}`;b.style.setProperty("--k",Math.min(k,12));b.innerHTML=`${ic()}<span class="file">${hl(name,r.m.at,dir.length)}</span><span class="dir">${dir?hl(dir.replace(/\/$/,""),r.m.at,0):"project root"}</span>`;b.onclick=()=>openFile(r.p);L.append(b)});return}
+  $("count").textContent=`${FILES.length} files · ${MAPPED.size} on the map`;
+  tree().forEach((r,k)=>{const b=document.createElement("button");const kind=r.dir?"dir":kindOf(r.path);b.className=`row k-${kind}${r.dir?" dir":""}${r.dir&&(open.has(r.path)||chip!=="all")?" open":""}${!r.dir&&!MAPPED.has(r.path)?" quiet":""}${r.path===cur?" on":""}${animate?" enter":""}`;b.style.setProperty("--d",r.depth);b.style.setProperty("--k",k);
+    b.innerHTML=r.dir?`<span class="glyph">▸</span><span class="ic"><svg width="14" height="12" viewBox="0 0 14 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 2.5h4l1.2 1.5H13v7H1z"/></svg></span><span class="name">${r.name}</span>`:`<span class="glyph"></span>${ic()}<span class="name">${r.name}</span><span class="tag">not on the map</span>`;
+    b.onclick=()=>{if(r.dir){open.has(r.path)?open.delete(r.path):open.add(r.path);render(true)}else openFile(r.path)};L.append(b)})}
+function openFile(p){cur=p;$("path").textContent=p;$("note").textContent=MAPPED.has(p)?"On the map":kindOf(p)==="image"?"Image":"Not on the map";const B=$("body");B.style.animation="none";B.offsetHeight;B.style.animation="";
+  if(kindOf(p)==="image"){B.innerHTML=`<div class="img"><div></div></div>`}else{const lines=p.endsWith(".md")?["<span class='h'># Ownership</span>","","Every value has one owner. When the owner goes,","the value is dropped.","","<span class='h'>## Run the examples</span>","","    cargo run --example borrowing_rules"]:p.endsWith(".rs")?["<span class='h'>fn</span> main() {","    <span class='h'>let mut</span> v = vec![1, 2, 3];","    <span class='h'>let</span> first = &v[0];","    println!(<span class='s'>\"{first}\"</span>);","}"]:["# "+p,"…"];B.innerHTML=lines.map((l,i)=>`<div class="ln"><span>${i+1}</span><span>${l}</span></div>`).join("")}
+  if(q){q="";$("q").value="";}const parts=p.split("/");for(let i=1;i<parts.length;i++)open.add(parts.slice(0,i).join("/"));render(true)}
+$("q").oninput=e=>{q=e.target.value.trim();sel=0;render(true)};
+$("q").onkeydown=e=>{if(!q)return;if(e.key==="ArrowDown"){sel=Math.min(sel+1,results.length-1);e.preventDefault();mark()}if(e.key==="ArrowUp"){sel=Math.max(sel-1,0);e.preventDefault();mark()}if(e.key==="Enter"&&results[sel])openFile(results[sel].p);if(e.key==="Escape"){q="";e.target.value="";render(true)}};
+function mark(){[...document.querySelectorAll(".res")].forEach((b,i)=>{b.classList.toggle("sel",i===sel);if(i===sel)b.scrollIntoView({block:"nearest"})})}
+$("clear").onclick=()=>{q="";$("q").value="";render(true);$("q").focus()};
+document.querySelectorAll("[data-q]").forEach(b=>b.onclick=async()=>{q="";$("q").value="";const t=b.dataset.q;if(!t){render(true);return}$("q").focus();for(const ch of t){$("q").value+=ch;q=$("q").value;sel=0;render(true);await new Promise(r=>setTimeout(r,140))}});
+document.addEventListener("keydown",e=>{if((e.ctrlKey&&e.key.toLowerCase()==="p")||(e.key==="/"&&document.activeElement!==$("q"))){e.preventDefault();$("q").focus();$("q").select()}});
+$("still").onchange=e=>document.documentElement.classList.toggle("still",e.target.checked);
+chips();openFile(cur);
+</script>
+</body>
+</html>

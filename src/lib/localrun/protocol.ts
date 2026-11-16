@@ -43,12 +43,21 @@ export interface LocalRunStatus {
   socket: { url: string; token: string | null } | null;
 }
 
-import type { GitBranch, GitCommit, GitStatus } from "./git";
+import type { GitBlameHunk, GitBranch, GitCommit, GitFileCommit, GitStatus } from "./git";
+import type { AdapterOffer } from "./debug/adapters";
+import type { DebugCommand, PausedView, VarView } from "./debug/session";
+export type { AdapterOffer, DebugCommand, PausedView, VarView };
+export type { FrameView } from "./debug/session";
+
+/** Languages with a live debugger on this computer (./debug/adapters.ts): the page offers Debug for them. */
+export const NATIVE_DEBUG_LANGS: readonly string[] = ["rust"];
 
 export type ClientMsg =
   /** `test`: run the file's own tests instead of its main (Rust: rustc --test). */
   | { type: "run"; id: string; lang: string; code: string; path?: string | null; timeout_s?: number; test?: boolean }
   | { type: "stop"; id: string }
+  /** What the user typed for a run's or a debug's program (its stdin); `end` closes its input. */
+  | { type: "input"; id: string; text: string; end?: boolean }
   | { type: "term-open"; id: string; shell?: string; cols: number; rows: number }
   | { type: "term-in"; id: string; data: string }
   | { type: "term-resize"; id: string; cols: number; rows: number }
@@ -64,9 +73,20 @@ export type ClientMsg =
   /** The full app: where this workspace is on this computer, so its folders can be checked and set up. */
   | { type: "setup-root"; id: string; workspace: string; path: string }
   /** Source Control (./git.ts): one op on the workspace's repo (see GitAsk for which fields each takes). */
-  | ({ type: "git"; id: string } & GitAsk);
+  | ({ type: "git"; id: string } & GitAsk)
+  /** Debug (./debug/session.ts): build the file with debug info and run it under its language's debugger. */
+  /** `workspace` names it where the server has no folder for it (the full app): its saved folder, as Source Control uses, so frames in the project's other files map back to their paths. */
+  | { type: "debug-start"; id: string; lang: string; code: string; path?: string | null; breakpoints: number[]; workspace?: string }
+  | { type: "debug-cmd"; id: string; cmd: DebugCommand }
+  | { type: "debug-stop"; id: string }
+  | { type: "debug-bps"; id: string; lines: number[] }
+  /** A variable's children (`ref`), or another frame's variables (`frame`); answered by debug-vars with the same `req`. */
+  | { type: "debug-vars"; id: string; req: string; ref?: number; frame?: number }
+  /** Fetch a language's debugger, after the user said yes to debug-need's offer. */
+  | { type: "debug-install"; id: string; adapter: string };
 
 export type ServerMsg =
+  | DebugServerMsg
   | { type: "hello"; terminal: "pty" | "line" }
   | { type: "run-start"; id: string; shown: string; cwd: string; version: string | null; program: string; temp: boolean }
   | { type: "run-out"; id: string; stream: "out" | "err"; text: string }
@@ -82,9 +102,37 @@ export type ServerMsg =
   | { type: "new-plan"; id: string; steps: SetupStep[]; root: string; made: boolean; starters: StarterView[]; parent: string; error?: string }
   | { type: "new-opened"; id: string; ok: boolean; workspace?: string; message?: string }
   /** A git op's answer: the repo's status after it (null when the workspace isn't in a repo, `located` false when its folder isn't known), and what git said. */
-  | { type: "git-result"; id: string; op: GitOp; ok: boolean; located: boolean; status: GitStatus | null; output?: string; branches?: GitBranch[]; log?: GitCommit[] };
+  | {
+      type: "git-result";
+      id: string;
+      op: GitOp;
+      ok: boolean;
+      located: boolean;
+      status: GitStatus | null;
+      output?: string;
+      branches?: GitBranch[];
+      log?: GitCommit[];
+      /** "blame": who last changed each block of lines, and the user's own git email (to say "You"). */
+      blame?: GitBlameHunk[];
+      me?: string;
+      /** "file-log": the file's own commits. */
+      history?: GitFileCommit[];
+    };
 
-export type GitOp = "status" | "diff" | "draft" | "commit" | "discard" | "push" | "pull" | "branches" | "switch" | "log" | "resolve" | "finish";
+export type DebugServerMsg =
+  /** The language's debugger isn't on this computer yet: what fetching it means. */
+  | { type: "debug-need"; id: string; offer: AdapterOffer }
+  | { type: "debug-start"; id: string; shown: string; cwd: string; version: string | null; adapter: string; temp: boolean }
+  | { type: "debug-out"; id: string; stream: "out" | "err"; text: string }
+  | { type: "debug-paused"; id: string; view: PausedView }
+  | { type: "debug-running"; id: string }
+  | { type: "debug-vars"; id: string; req: string; vars: VarView[] }
+  | { type: "debug-exit"; id: string; code: number | null; ms: number; stopped: boolean }
+  | { type: "debug-fail"; id: string; message: string }
+  | { type: "debug-install-progress"; id: string; got: number; total: number; phase: "download" | "check" | "unpack" }
+  | { type: "debug-install-done"; id: string; ok: boolean; message?: string };
+
+export type GitOp = "status" | "diff" | "draft" | "commit" | "discard" | "push" | "pull" | "branches" | "switch" | "log" | "resolve" | "finish" | "blame" | "file-log";
 
 export interface GitAsk {
   op: GitOp;

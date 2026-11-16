@@ -25,6 +25,7 @@ import { preloadParakeet } from "@/lib/voice/parakeet/client";
 import { dictate } from "@/lib/voice/parakeet/hear";
 import { useVoiceView } from "@/lib/voice/view";
 import { openSettings } from "@/lib/settingsNav";
+import ChatResize from "./ChatResize";
 import Markdown from "./Markdown";
 import Notebook from "./Notebook";
 import Recall from "./Recall";
@@ -52,6 +53,8 @@ type Props = {
   cardsOpen: boolean;
   onReview: (card: Card, knew: boolean) => void;
   speak: (text: string) => Promise<void>;
+  /** Stop the professor's voice (the student pressed the mic to speak). */
+  stopVoice: () => void;
   onOpenCode: (code: string, lang: string) => void;
   onGoBoard: (i: number) => void;
 };
@@ -73,6 +76,7 @@ export default function Professor(p: Props) {
   const due = dueCards(p.cardsOpen ? p.cards : [], now, lesson.id).length;
   return (
     <aside className="prof" aria-label="The professor">
+      <ChatResize />
       <div className="prof-tabs" role="tablist" aria-label="Beside the lesson">
         {(
           [
@@ -107,7 +111,7 @@ export default function Professor(p: Props) {
   );
 }
 
-function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, speak, onOpenCode, onGoBoard, onListening }: Props) {
+function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, speak, stopVoice, onOpenCode, onGoBoard, onListening }: Props) {
   const { chat, busy } = api;
   const [text, setText] = useState(chat.draft ?? "");
   const [confirmClear, setConfirmClear] = useState(false);
@@ -133,11 +137,23 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
     if (onDevice) preloadParakeet();
   };
   const hear = () => {
-    if (ear.current) return ear.current.stop();
+    // The second press answers at once: the button lets go now, and the last words land in the box when they come.
+    if (ear.current) {
+      const was = ear.current;
+      ear.current = null;
+      setMic({ on: false, err: "", note: "" });
+      onListening(false);
+      return was.stop();
+    }
     warm();
+    // He stops talking when the student starts, so the microphone hears the student and not him.
+    stopVoice();
     const before = text.trim();
     const join = (said: string) => [before, said].filter(Boolean).join(" ");
+    let mine: Listening | null = null;
     const end = (err = "") => {
+      // A listening already let go (or replaced by a new one) leaves the button as it is.
+      if (ear.current !== mine) return;
       ear.current = null;
       setMic({ on: false, err, note: "" });
       onListening(false);
@@ -150,9 +166,13 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
         end();
         box.current?.focus();
       },
-      onError: (why: string) => end(why),
+      onError: (why: string) => {
+        if (ear.current === mine) end(why);
+        else setMic((m) => ({ ...m, err: why }));
+      },
     };
-    ear.current = onDevice ? dictate({ ...events, onNotice: (note) => setMic((m) => ({ ...m, note })) }) : listen(events);
+    mine = onDevice ? dictate({ ...events, onNotice: (note) => setMic((m) => (ear.current === mine ? { ...m, note } : m)) }) : listen(events);
+    ear.current = mine;
     if (!ear.current) return setMic({ on: false, err: "This browser cannot listen.", note: "" });
     setMic({ on: true, err: "", note: onDevice ? "" : (fellBack ?? "") });
     onListening(true);
@@ -216,6 +236,16 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
     }
   };
 
+  /** Scrolled up to read earlier messages: a button offers the way back to the newest. */
+  const [away, setAway] = useState(false);
+  const toLatest = () => {
+    const el = thread.current;
+    if (!el) return;
+    stick.current = true;
+    setAway(false);
+    el.scrollTop = el.scrollHeight;
+  };
+
   const now = useNow();
   const lastId = chat.msgs.at(-1)?.id;
   const saved = (m: ChatMsg) => notes.some((n) => n.from === "prof" && n.lessonId === lesson.id && n.text === splitWonder(m.text).body);
@@ -228,7 +258,11 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+          setAway(!stick.current);
         }}
+        tabIndex={0}
+        role="log"
+        aria-label="Your conversation with the professor"
       >
         {!api.ready ? (
           <p className="note">Opening your conversation…</p>
@@ -253,6 +287,7 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
                   {pause && <p className="pause"><span>{pause} · you carried on here</span></p>}
                   <p className="who">
                     You
+                    {m.voice && <span className="spoken" title="Said out loud, in a live talk">🎙 spoken</span>}
                     {m.board !== boardIndex && lesson.boards[m.board] && (
                       <button type="button" className="at" onClick={() => onGoBoard(m.board)} title={`Go to board ${m.board + 1}: ${plain(lesson.boards[m.board].title)}`}>
                         board {m.board + 1}
@@ -267,7 +302,18 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
             const { body, wonder } = splitWonder(m.text);
             return (
               <div key={m.id} className={`msg prof${arriving ? " arriving" : ""}`}>
-                <p className="who"><b>Professor</b></p>
+                <p className="who"><b>Professor</b>{m.voice && <span className="spoken" title="Said out loud, in a live talk">🎙 spoken</span>}</p>
+                {!!m.looked?.length && (
+                  <ul className="looked" aria-label="What the professor looked at on this computer">
+                    {m.looked.map((l, i) => (
+                      <li key={i} className={`${l.tool}${l.note ? "" : arriving ? " busy" : ""}`} title={l.tool === "read" ? "Opened on this computer, read only" : "Searched this computer's file names, read only"}>
+                        <span aria-hidden="true">{l.tool === "read" ? "📄" : "🔎"}</span>
+                        {l.tool === "read" ? <>Read <code>{l.what}</code></> : <>Searched your PC for “{l.what}”</>}
+                        {l.note ? <span className="n"> · {l.note}</span> : arriving ? <span className="n"> …</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {body ? <Markdown text={body} onOpenCode={onOpenCode} /> : arriving ? <p className="thinking" role="status"><i /><i /><i /><span className="sr">The professor is thinking</span></p> : null}
                 {m.stopped && <p className="note">Stopped.</p>}
                 {m.err && (
@@ -297,6 +343,11 @@ function Conversation({ api, board, boardIndex, lesson, canAsk, onNote, notes, s
               </div>
             );
           })
+        )}
+        {away && (
+          <button type="button" className="to-latest" onClick={toLatest} title="Go to the newest message">
+            ↓ Latest
+          </button>
         )}
       </div>
 

@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Learn: Watch it happen, drawn (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  /* Mockup: "Watch it happen" as a drawn scene. The picture sits directly above the real thing, column
+     for column, so what stands for what is a straight line down. Things are drawn, not written; what a
+     step did is an arrow; the technical word for it is stamped as it happens. One text size (13px),
+     square corners, dark graphite. Only transform and opacity move, × --m, so motion off is as clear. */
+  :root { --bg:#1e1f22; --ui:#2b2d30; --ui-2:#35373c; --line:#43454a; --text:#dfe1e5; --dim:#9da0a8; --faint:#6f737a; --out:#17181a;
+          --yellow:#f3d77a; --green:#a8e0a0; --pink:#f2a7a0; --blue:#9fd3f0; --m:1; }
+  @media (prefers-reduced-motion: reduce) { :root { --m:0; } }
+  :root[data-motion="off"] { --m:0; }
+  * { box-sizing:border-box; border-radius:0; font-size:13px; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.5 Inter, system-ui, sans-serif; padding:clamp(8px, 1.4vw, 20px); }
+  code, pre, kbd, .mono { font-family:"JetBrains Mono", Consolas, monospace; }
+  p { margin:0; }
+  .eyebrow { font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+  .btn { font:600 13px Inter; color:var(--text); background:var(--ui-2); border:1px solid var(--line); padding:5px 10px; cursor:pointer; }
+  .btn.primary { background:var(--yellow); color:#22201a; border-color:transparent; }
+  .btn[aria-pressed=true] { border-color:var(--yellow); color:var(--yellow); }
+  .btn:disabled { opacity:.45; cursor:default; }
+  kbd { border:1px solid var(--line); padding:0 4px; color:var(--dim); }
+  .cell > svg.art { width:64px; height:64px; }
+
+  .scene { border:1px solid var(--line); background:var(--ui); max-width:1680px; margin:0 auto; }
+  .scene > header { display:flex; align-items:center; gap:12px; padding:9px 14px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .scene > header b { color:var(--yellow); font-weight:650; } .scene > header .where { color:var(--dim); } .scene > header .sp { flex:1; }
+
+  .stage { display:grid; grid-template-columns:minmax(0, 1.75fr) minmax(280px, 1fr); }
+  .board { --side:.7fr; position:relative; padding:14px 16px 6px; min-width:0; }
+  .side { border-left:1px solid var(--line); display:flex; flex-direction:column; min-width:0; }
+
+  /* One grid for both rows and the ties between them: that is what lines a child up with its variable. */
+  .row, .ties { display:grid; grid-template-columns:var(--cols); gap:10px; }
+  .rowhead { display:flex; justify-content:space-between; gap:14px; margin-bottom:8px; } .rowhead span + span { text-align:right; }
+  .cell { background:var(--ui-2); border:1.5px solid var(--line); padding:10px 8px 40px; display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0; text-align:center;
+          transition:opacity calc(.3s * var(--m)), border-color calc(.2s * var(--m)); }
+  .cell .name { font-weight:650; overflow-wrap:anywhere; } .row.r .cell .name { font-family:"JetBrains Mono", Consolas, monospace; color:var(--blue); }
+  .cell .note { color:var(--faint); min-height:1.5em; }
+  .cell.off { border-style:dashed; } .cell.off > svg, .cell.off .name { opacity:.45; } .cell.off .note { color:var(--pink); font-weight:600; }
+  .cell.aside { background:transparent; border-color:transparent; color:var(--dim); }
+  .cell.aside.stop { color:var(--pink); border-color:var(--pink); background:rgba(242,167,160,.07); }
+  .cell.aside.stop .note { color:var(--pink); font-weight:650; }
+  .cell.bin { border-style:dashed; background:transparent; color:var(--dim); }
+  .cell.reach { border-color:var(--pink); }
+  .slot { min-height:66px; display:flex; align-items:flex-start; justify-content:center; gap:6px; flex-wrap:wrap; }
+  .thing { display:flex; flex-direction:column; align-items:center; gap:2px; padding:5px 9px; border:1.5px solid var(--yellow); color:var(--yellow); background:rgba(243,215,122,.09);
+           font-weight:650; white-space:nowrap; will-change:transform; }
+  .thing svg.art { width:44px; height:44px; } .thing.ghost svg.art { opacity:.6; } .thing.was svg.art { filter:grayscale(1); opacity:.45; }
+  .thing.ghost { border-style:dashed; border-color:var(--blue); color:var(--blue); background:rgba(159,211,240,.07); }
+  .thing small { font-weight:500; color:var(--dim); }
+  .thing.was { border-color:var(--line); color:var(--faint); background:none; text-decoration:line-through; }
+  .thing[hidden] { display:none; }
+  [data-id].lit { border-color:var(--yellow); box-shadow:0 0 0 1px var(--yellow); }
+
+  .ties { height:46px; position:relative; }
+  .ties i { justify-self:center; width:0; border-left:1.5px dotted var(--faint); position:relative; }
+  .ties i::after { content:"="; position:absolute; top:50%; left:0; transform:translate(-50%, -50%); background:var(--ui); color:var(--faint); padding:0 5px; font-style:normal; font-weight:650; }
+  .ties i.lit { border-color:var(--yellow); } .ties i.lit::after { color:var(--yellow); }
+  .ties i.none { border:0; } .ties i.none::after { content:none; }
+  .stamp { position:absolute; left:50%; top:50%; translate:-50% -50%; display:flex; gap:8px; align-items:center; padding:5px 12px; background:var(--out); border:1.5px solid var(--yellow);
+           white-space:nowrap; z-index:2; }
+  .stamp b { color:var(--yellow); font-weight:650; } .stamp code { color:var(--blue); font-weight:600; } .stamp[hidden] { display:none; }
+
+  svg.links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+  svg.links > path { fill:none; stroke-width:2; }
+  svg.links text { font:600 12px Inter, sans-serif; text-anchor:middle; paint-order:stroke; stroke:var(--ui); stroke-width:5px; }
+
+  /* The same scene as a UML sequence diagram: each holder is a lifeline, each hand-over a message. It is
+     laid out by the same column grid, so no measuring: an arrow spans the columns it joins. */
+  .board.as-seq > :not(.seq) { display:none; }
+  .seq { --cols:repeat(var(--n), minmax(0, 1fr)); padding-left:28px; } .seq[hidden] { display:none; }
+  .shead, .ev, .lifes { display:grid; grid-template-columns:var(--cols); gap:10px; }
+  .shead > div { background:var(--ui-2); border:1.5px solid var(--line); padding:8px 6px; display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center; min-width:0; }
+  .shead .pair { display:flex; align-items:center; gap:8px; color:var(--faint); font-weight:650; } .shead svg.art { width:48px; height:48px; } .shead svg.art + i + svg.art { width:34px; height:34px; }
+  .shead .pair i { font-style:normal; } .shead b { font-weight:650; } .shead code { color:var(--blue); font-weight:600; }
+  .srow { position:relative; padding:5px 0; cursor:pointer; transition:opacity calc(.25s * var(--m)), background-color calc(.2s * var(--m)); }
+  .srow.later { opacity:.16; } .srow.now { background:rgba(243,215,122,.07); }
+  .srow > .num { position:absolute; left:-24px; top:50%; translate:0 -50%; color:var(--faint); font-family:"JetBrains Mono", Consolas, monospace; } .srow.now > .num { color:var(--yellow); font-weight:600; }
+  .lifes { position:absolute; inset:0; } .lifes i { justify-self:center; border-left:1.5px dashed var(--line); }
+  .ev { position:relative; }
+  .msg { position:relative; height:58px; --half:calc((100% - (var(--span) - 1) * 10px) / var(--span) / 2); color:var(--yellow); }
+  .msg .lab { position:absolute; left:0; right:0; top:0; text-align:center; white-space:nowrap; }
+  .lab b { font-weight:650; } .lab code { color:var(--blue); font-weight:600; } .msg .lab span { background:var(--ui); padding:0 6px; }
+  .srow.now .msg .lab span { background:#33322d; }
+  .wire { position:absolute; left:var(--half); right:var(--half); top:40px; border-top:2px solid currentColor; transform-origin:left; }
+  .wire::after { content:""; position:absolute; right:-1px; top:-6px; border:5px solid transparent; border-left:9px solid currentColor; border-right:0; }
+  .msg.rtl .wire { transform-origin:right; } .msg.rtl .wire::after { right:auto; left:-1px; border-left:0; border-right:9px solid currentColor; }
+  .msg.loan { color:var(--blue); } .msg.loan .wire { border-top-style:dashed; }
+  .rider { position:absolute; top:24px; right:calc(var(--half) + 14px); } .msg.rtl .rider { right:auto; left:calc(var(--half) + 14px); } .rider svg.art { width:30px; height:30px; }
+  .ev .note { justify-self:center; display:flex; align-items:center; gap:6px; background:var(--out); border:1.5px solid var(--line); padding:3px 9px; margin:4px 0; white-space:nowrap; max-width:100%; overflow:hidden; color:var(--text); min-height:0; }
+  .ev .note svg.art { width:26px; height:26px; } .ev .note b { font-weight:650; color:var(--yellow); } .ev .note code { color:var(--blue); font-weight:600; }
+  .ev .note.end, .ev .note.stop { border-color:var(--pink); } .ev .note.end b, .ev .note.stop b { color:var(--pink); }
+
+  pre { margin:0; background:var(--out); padding:10px 0; line-height:1.8; overflow:auto; border-bottom:1px solid var(--line); }
+  pre .ln { display:block; padding:0 14px; border-left:3px solid transparent; color:var(--dim); white-space:pre; }
+  pre .ln.now { border-left-color:var(--yellow); background:rgba(243,215,122,.09); color:var(--text); }
+  pre .ln.now.bad { border-left-color:var(--pink); background:rgba(242,167,160,.1); }
+  .side .eyebrow { padding:10px 14px 6px; }
+  .words { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); border-top:1px solid var(--line); flex:1; align-content:start; }
+  .word { background:var(--ui); border:0; border-bottom:1px solid var(--line); border-right:1px solid var(--line); color:var(--text); text-align:left; padding:8px 12px; cursor:pointer; display:grid; grid-template-columns:32px 1fr; gap:2px 10px; align-items:center; font:inherit;
+          transition:background-color calc(.2s * var(--m)); }
+  .word svg.art { width:30px; height:30px; grid-row:span 2; }
+  .word .pair b { color:var(--yellow); font-weight:650; } .word .pair code { color:var(--blue); font-weight:600; }
+  .word .why { color:var(--dim); }
+  .word.now { background:rgba(243,215,122,.1); }
+  .word.seen .pair::after { content:" ✓"; color:var(--green); }
+  .word:hover { background:var(--ui-2); }
+
+  .say { padding:11px 16px; border-top:1px solid var(--line); display:grid; grid-template-columns:1fr 1fr; gap:28px; min-height:62px; }
+  .foot { display:grid; grid-template-columns:auto 1fr 1fr; gap:18px; align-items:start; padding:11px 16px; border-top:1px solid var(--line); }
+  .stepper { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .dots { display:flex; gap:4px; margin:0 6px; } .dots i { width:18px; height:4px; background:var(--line); cursor:pointer; } .dots i.on { background:var(--yellow); }
+  .rule { border-left:3px solid var(--yellow); padding-left:10px; } .rule b { font-weight:650; }
+  .breaks { border-left:3px solid var(--pink); padding-left:10px; color:var(--dim); }
+  .keys { color:var(--faint); }
+
+  @media (max-width: 980px) {
+    .stage { grid-template-columns:1fr; } .side { border-left:0; border-top:1px solid var(--line); }
+    .foot, .say { grid-template-columns:1fr; gap:10px; }
+  }
+  @media (max-width: 620px) {
+    .row, .ties { gap:5px; } .cell { padding:8px 3px 38px; } .cell > svg.art { width:42px; height:42px; } .thing { padding:3px 5px; } .thing svg.art { width:30px; height:30px; }
+    .cell.aside .note, .keys, .rowhead span + span, .shead svg.art + i, .shead svg.art + i + svg.art { display:none; }
+    .ev .note { white-space:normal; flex-direction:column; gap:0; padding:2px 4px; text-align:center; } .seq { padding-left:18px; } .srow > .num { left:-16px; } .msg .lab { white-space:normal; }
+    .board { --side:1fr; padding-inline:8px; } .cell.aside, .cell.bin { padding-inline:0; }
+  }
+</style>
+</head>
+<body>
+<section class="scene" id="scene" aria-label="Analogy">
+  <header>
+    <span aria-hidden="true">💡</span><b id="title"></b><span class="where" id="where"></span><span class="sp"></span>
+    <button class="btn" id="view" type="button" aria-pressed="false" title="The same scene drawn as a UML sequence diagram">Sequence diagram</button>
+    <button class="btn" id="swap" type="button" title="Mockup only: the same view on a subject without code">Try another subject</button>
+    <button class="btn" id="motion" type="button" aria-pressed="true" title="Mockup only: Settings → Motion">Motion</button>
+    <button class="btn" type="button">Side panels</button><button class="btn" type="button">Close</button>
+  </header>
+  <div class="stage">
+    <div class="board" id="board">
+      <p class="eyebrow rowhead"><span>The picture</span><span id="place"></span></p>
+      <div class="row a" id="rowA"></div>
+      <div class="ties" id="ties"><div class="stamp" id="stamp" hidden></div></div>
+      <p class="eyebrow rowhead"><span id="realHead"></span><span>the same thing, for real</span></p>
+      <div class="row r" id="rowR"></div>
+      <svg class="links" id="links" aria-hidden="true"></svg>
+      <div class="seq" id="seq" hidden><div class="shead" id="shead"></div><div id="srows"></div></div>
+    </div>
+    <div class="side">
+      <p class="eyebrow" id="codeHead"></p>
+      <pre tabindex="0"><code id="code"></code></pre>
+      <p class="eyebrow">The words, in the same picture</p>
+      <div class="words" id="words"></div>
+    </div>
+  </div>
+  <div class="say" aria-live="polite">
+    <div><p class="eyebrow">In the picture</p><p id="sayA"></p></div>
+    <div><p class="eyebrow" id="sayRHead"></p><p id="sayR"></p></div>
+  </div>
+  <div class="foot">
+    <div class="stepper">
+      <button class="btn" id="back" type="button" aria-label="Step back">◀</button>
+      <button class="btn primary" id="play" type="button">▶ Play</button>
+      <button class="btn" id="next" type="button">Step ▶</button>
+      <span class="dots" id="dots"></span>
+      <span class="keys"><kbd>←</kbd> <kbd>→</kbd> step · <kbd>Space</kbd> play</span>
+    </div>
+    <p class="rule"><span class="eyebrow">The rule</span><br><b id="rule"></b></p>
+    <p class="breaks"><span class="eyebrow">Where the picture breaks</span><br><span id="breaks"></span></p>
+  </div>
+</section>
+
+<script>
+/* Mockup: the drawings for "Watch it happen" (sample sheet: learn-drawings.html; in use: learn-analogy-visual.html).
+   Flat, softly shaded, in the manner of the professor's face. Each is a 64 × 64 SVG of plain shapes: no
+   gradients, filters or images, so one is about 1 KB and costs the page almost nothing to draw or move.
+   A drawing takes its main colour from --t (so one box is a toy box, a lunch box or a parcel), a person
+   takes skin from --sk and hair from --hr, and a face or a checker has two states drawn in: .sad, .stop. */
+const person = (shirt) => `<path class="d-t" d="M10 64v-7c0-10 9-17 22-17s22 7 22 17v7z"/>${shirt}`;
+const eyes = (r) => `<ellipse class="d-ink" cx="26.5" cy="26" rx="${r}" ry="${r * 1.3}"/><ellipse class="d-ink" cx="37.5" cy="26" rx="${r}" ry="${r * 1.3}"/>`;
+const cap = '<path class="d-hr" d="M18 25c-1-10 5-16 14-16s15 6 14 16c-2-5-6-8-14-8s-12 3-14 8z"/>';
+
+const DRAWINGS = {
+  child: { also: ["a pupil", "a friend", "you", "a player"], tint: "#f3d77a", svg:
+    person('<rect class="d-sk2" x="28" y="33" width="8" height="10" rx="3"/><path class="d-t2" d="M24.5 41.5l7.5 7 7.5-7-3.500-1.500h-8z"/>') +
+    '<g class="h-b"><circle class="d-hr" cx="15.5" cy="27" r="6"/><circle class="d-hr" cx="48.5" cy="27" r="6"/></g>' +
+    '<circle class="d-sk" cx="32" cy="25" r="14"/>' +
+    `<g class="h-a">${cap}</g><path class="d-hr h-b" d="M18 27c-2-12 5-18 14-18s16 6 14 18c-2-7-6-9-10-9-3 3-11 3-18 9z"/>` +
+    '<g class="h-c d-hr"><circle cx="21.5" cy="15.500" r="6"/><circle cx="32" cy="12" r="7"/><circle cx="42.5" cy="15.500" r="6"/><circle cx="18" cy="22" r="4"/><circle cx="46" cy="22" r="4"/></g>' +
+    eyes(1.8) + '<circle class="d-blush" cx="22.5" cy="31" r="2.600"/><circle class="d-blush" cx="41.5" cy="31" r="2.600"/>' +
+    '<path class="d-line smile" d="M27 31.500q5 5 10 0"/><path class="d-line frown" d="M27.5 35q4.500-4 9 0"/>' },
+  teacher: { also: ["a referee", "a judge", "a guard", "a librarian"], tint: "#7b7fb5", hair: "#9a9ca6", svg:
+    person('<path class="d-w" d="M25 40h14l-7 13z"/><rect class="d-sk2" x="28" y="33" width="8" height="9" rx="3"/><path class="d-t2" d="M25.500 39.500l-5.500 3.500 10 14zM38.500 39.500l5.500 3.500-10 14z"/><circle class="d-y" cx="32" cy="46" r="2.200"/>') +
+    '<circle class="d-hr" cx="32" cy="7.500" r="5.500"/><circle class="d-sk" cx="32" cy="25" r="14"/>' + cap + eyes(1.4) +
+    '<g class="d-glass"><circle cx="26.5" cy="26" r="5"/><circle cx="37.5" cy="26" r="5"/><path d="M31.500 26h1"/></g>' +
+    '<path class="d-line ok" d="M28 33.500q4 2 8 0"/><ellipse class="d-ink no" cx="32" cy="34.500" rx="2.600" ry="3"/><path class="d-line no" d="M20.500 17.500l7.500 3M43.500 17.500l-7.500 3"/>' },
+  teddy: { also: ["a toy", "a favourite thing"], tint: "#c58d57", svg:
+    '<circle class="d-t" cx="19" cy="13" r="6.500"/><circle class="d-t" cx="45" cy="13" r="6.500"/><circle class="d-t3" cx="19" cy="13" r="3.200"/><circle class="d-t3" cx="45" cy="13" r="3.200"/>' +
+    '<ellipse class="d-t2" cx="16.500" cy="43" rx="5.500" ry="8.500" transform="rotate(24 16.500 43)"/><ellipse class="d-t2" cx="47.500" cy="43" rx="5.500" ry="8.500" transform="rotate(-24 47.500 43)"/>' +
+    '<circle class="d-t2" cx="22" cy="57" r="6"/><circle class="d-t2" cx="42" cy="57" r="6"/><circle class="d-t3" cx="22" cy="57.500" r="3"/><circle class="d-t3" cx="42" cy="57.500" r="3"/>' +
+    '<ellipse class="d-t" cx="32" cy="46" rx="13.500" ry="13"/><ellipse class="d-t3" cx="32" cy="48" rx="8" ry="8.500"/>' +
+    '<circle class="d-t" cx="32" cy="24" r="13.500"/><ellipse class="d-t3" cx="32" cy="29.500" rx="6.500" ry="5.200"/>' +
+    '<circle class="d-ink" cx="26.500" cy="21.500" r="1.700"/><circle class="d-ink" cx="37.500" cy="21.500" r="1.700"/><ellipse class="d-ink" cx="32" cy="27.500" rx="2.300" ry="1.700"/><path class="d-line thin" d="M32 29v2m-3 .2q3 2.600 6 0"/>' },
+  box: { also: ["a toy box", "a chest", "a lunch box", "a bin", "a cupboard"], tint: "#c9935b", svg:
+    '<path class="d-t2" d="M11 30l4-17h34l4 17z"/><circle class="d-pk" cx="22" cy="26" r="8"/><path class="d-w" d="M14.500 24q7.500-4 15 0v3q-7.500-4-15 0z"/>' +
+    '<rect class="d-bl" x="33" y="17" width="13" height="13" rx="1.500" transform="rotate(12 39.500 23.500)"/><path class="d-y" d="M30 13l1.800 3.800 4.200.5-3.100 2.900.8 4.100-3.700-2-3.700 2 .8-4.100-3.100-2.900 4.200-.5z"/>' +
+    '<rect class="d-t" x="8" y="30" width="48" height="27" rx="2.500"/><rect class="d-t2" x="8" y="40" width="48" height="4.500"/><rect class="d-y" x="28.500" y="36" width="7" height="11" rx="1.500"/><circle class="d-ink" cx="32" cy="42.500" r="1.300"/>' },
+  drawer: { also: ["a variable", "a named box", "a pigeonhole", "a locker"], tint: "#5f86b3", svg:
+    '<rect class="d-t2" x="7" y="8" width="50" height="50" rx="4"/><rect class="d-t" x="11" y="24" width="42" height="30" rx="2.500"/><rect class="d-t3" x="11" y="24" width="42" height="5" rx="2.500"/>' +
+    '<rect class="d-w" x="18" y="12" width="28" height="8.500" rx="1.500"/><rect class="d-w2" x="21.500" y="15" width="13" height="2.500" rx="1.200"/><rect class="d-y" x="25" y="37" width="14" height="5" rx="2.500"/>' },
+  memory: { also: ["a value", "data on the heap", "a row of cells"], tint: "#63c2a2", svg:
+    '<rect class="d-w2" x="3" y="43" width="58" height="7" rx="2.500"/><path class="d-w2" d="M11 50v6M24 50v6M40 50v6M53 50v6" style="stroke:#c9cbd1;stroke-width:2.500;stroke-linecap:round"/>' +
+    '<rect class="d-t" x="5" y="18" width="12.500" height="24" rx="2.500"/><rect class="d-t2" x="19" y="18" width="12.500" height="24" rx="2.500"/><rect class="d-t" x="33" y="18" width="12.500" height="24" rx="2.500"/><rect class="d-t2" x="47" y="18" width="12.500" height="24" rx="2.500"/>' +
+    '<path class="d-t3" d="M7.500 21.500h7.500v3h-7.500zM21.500 21.500h7.500v3h-7.500zM35.500 21.500h7.500v3h-7.500zM49.500 21.500h7.500v3h-7.500z"/>' },
+  checker: { also: ["the compiler", "a checklist", "an inspector", "the rules"], tint: "#9a7652", svg:
+    '<rect class="d-t" x="11" y="8" width="42" height="51" rx="4.500"/><rect class="d-w" x="15.500" y="14" width="33" height="41" rx="2"/><rect class="d-w2" x="24" y="4.500" width="16" height="9" rx="2.500"/>' +
+    '<rect class="d-w2" x="20" y="21" width="22" height="3" rx="1.500"/><rect class="d-w2" x="20" y="28" width="15" height="3" rx="1.500"/>' +
+    '<g class="ok"><circle class="d-gr" cx="37" cy="43" r="9.500"/><path class="d-line white" d="M32.500 43l3.300 3.300 6-6.300"/></g><g class="no"><circle class="d-pk" cx="37" cy="43" r="9.500"/><path class="d-line white" d="M33.500 39.500l7 7M40.500 39.500l-7 7"/></g>' },
+  van: { also: ["the postman", "a courier", "a delivery", "the network"], tint: "#f0a94b", svg:
+    '<ellipse class="d-sh" cx="32" cy="55" rx="27" ry="2.500"/><rect class="d-t" x="3" y="18" width="36" height="30" rx="3.500"/><path class="d-t2" d="M39 26h11l10 10v12h-21z"/><path class="d-sky" d="M43 29.500h5.500l6.500 6.500h-12z"/>' +
+    '<rect class="d-w" x="11" y="26" width="19" height="13" rx="1.500"/><path class="d-line thin2" d="M11.500 27l9.500 7 9.500-7"/><rect class="d-t2" x="3" y="43" width="57" height="5" rx="1.500"/>' +
+    '<circle class="d-ink" cx="15" cy="49" r="6.500"/><circle class="d-ink" cx="47" cy="49" r="6.500"/><circle class="d-w2" cx="15" cy="49" r="2.600"/><circle class="d-w2" cx="47" cy="49" r="2.600"/>' },
+  shop: { also: ["a shop", "a kitchen", "a library", "a server"], tint: "#e07f73", svg:
+    '<rect class="d-cream" x="9" y="27" width="46" height="31" rx="1.500"/><rect class="d-y" x="20" y="4.500" width="24" height="8.500" rx="1.500"/><path class="d-t" d="M5 28l5.500-15h43l5.500 15z"/>' +
+    '<path class="d-w" d="M16.800 13h7.200l-1.600 15h-9.200zM31.600 13h.800l3.600 15h-7.200zM40 13h7.200l3.600 15h-9.200z" opacity=".92"/><path class="d-t2" d="M5 28h54v3.500h-54z"/>' +
+    '<rect class="d-sky" x="14" y="36.500" width="17" height="13" rx="1"/><path class="d-w" d="M14 36.500l6 0-6 6z" opacity=".5"/><rect class="d-wood" x="36.500" y="36.500" width="12" height="21.500" rx="1"/><circle class="d-y" cx="45.500" cy="47.500" r="1.400"/>' },
+  letter: { also: ["an order", "a message", "a request", "a note"], tint: "#f4f5f7", svg:
+    '<ellipse class="d-sh" cx="32" cy="55" rx="23" ry="2.200"/><rect class="d-w" x="6" y="15" width="52" height="37" rx="3.500"/><path class="d-w3" d="M6.500 49.500l19-16.500h13l19 16.500q-1 2.500-3.500 2.500h-44q-2.500 0-3.500-2.500z"/><path class="d-w2" d="M6.500 17.500q1-2.500 3.500-2.500h44q2.500 0 3.500 2.500l-25.500 20z"/><circle class="d-pk" cx="32" cy="35" r="4.500"/>' },
+  parcel: { also: ["a parcel", "an answer", "a response", "a present"], tint: "#c9935b", svg:
+    '<ellipse class="d-sh" cx="32" cy="57" rx="22" ry="2.500"/><path class="d-t3" d="M32 6l25 12-25 12-25-12z"/><path class="d-t" d="M7 18l25 12v27l-25-12z"/><path class="d-t2" d="M57 18l-25 12v27l25-12z"/>' +
+    '<path class="d-y" d="M17.500 12.900l25 12 4.500-2.200-25-12z"/><path class="d-y2" d="M42.500 24.900l4.500-2.200v10l-4.500 2.200z"/><rect class="d-w" x="13" y="33" width="11" height="8" rx="1" transform="skewY(25.500)" style="transform-origin:13px 33px"/>' },
+  laptop: { also: ["the browser", "a computer", "a screen"], tint: "#4b4f58", svg:
+    '<rect class="d-t" x="10" y="9" width="44" height="33" rx="3.500"/><rect class="d-sky" x="13.500" y="12.500" width="37" height="26" rx="1.500"/><rect class="d-w" x="13.500" y="12.500" width="37" height="6" rx="1.500"/>' +
+    '<circle class="d-pk" cx="17" cy="15.500" r="1.300"/><circle class="d-y" cx="21" cy="15.500" r="1.300"/><circle class="d-gr" cx="25" cy="15.500" r="1.300"/><rect class="d-w" x="18" y="23" width="16" height="3" rx="1.500"/><rect class="d-w" x="18" y="29.500" width="26" height="3" rx="1.500" opacity=".7"/>' +
+    '<path class="d-w2" d="M4 45h56l-3.500 8q-.8 2-3 2h-43q-2.200 0-3-2z"/><rect class="d-w3" x="25" y="45" width="14" height="3" rx="1.500"/>' },
+  cloud: { also: ["the internet", "the weather", "somewhere far away"], tint: "#eef3fa", svg:
+    '<path class="d-t2c" d="M17 50a12 12 0 0 1 .5-24 15.500 15.500 0 0 1 30 3.500 10.500 10.500 0 0 1-.5 20.500z"/><path class="d-t" d="M17 46a12 12 0 0 1 .5-22 15.500 15.500 0 0 1 30 3.500 10.500 10.500 0 0 1 .5 18.500z"/>' +
+    '<path class="d-line net" d="M22 37l10-7 10 7M32 30v-0"/><circle class="d-bl" cx="22" cy="37" r="3"/><circle class="d-bl" cx="32" cy="30" r="3"/><circle class="d-bl" cx="42" cy="37" r="3"/>' },
+  server: { also: ["the server", "a machine that answers", "a database"], tint: "#555a66", svg:
+    [8, 25, 42].map((y) => `<rect class="d-t" x="10" y="${y}" width="44" height="14" rx="3"/><rect class="d-t2" x="32" y="${y + 5.500}" width="17" height="3" rx="1.500"/><circle class="d-gr" cx="17" cy="${y + 7}" r="2"/><circle class="${y === 25 ? "d-y" : "d-gr"}" cx="24" cy="${y + 7}" r="2"/>`).join("") + '<ellipse class="d-sh" cx="32" cy="59.500" rx="22" ry="2"/>' },
+  page: { also: ["a web page", "a request", "a form", "a report"], tint: "#7fbfe6", svg:
+    '<ellipse class="d-sh" cx="32" cy="58" rx="19" ry="2"/><path class="d-w" d="M13 6h27l11 11v36q0 3-3 3h-35q-3 0-3-3v-44q0-3 3-3z"/><path class="d-w2" d="M40 6l11 11h-8q-3 0-3-3z"/>' +
+    '<rect class="d-t" x="17" y="14" width="18" height="6" rx="1.500"/><rect class="d-w2" x="17" y="26" width="29" height="3" rx="1.500"/><rect class="d-w2" x="17" y="33" width="29" height="3" rx="1.500"/><rect class="d-w2" x="17" y="40" width="19" height="3" rx="1.500"/>' },
+  tray: { also: ["an in-tray", "done", "a filing tray"], tint: "#8e929c", svg:
+    '<path class="d-t3" d="M12 30l5-15h30l5 15z"/><rect class="d-w" x="19" y="19" width="26" height="14" rx="1"/><rect class="d-w2" x="23" y="23" width="14" height="2.500" rx="1.200"/>' +
+    '<path class="d-t" d="M6 30h16l2.500 6h15l2.500-6h16v20q0 4-4 4h-44q-4 0-4-4z"/><rect class="d-t2" x="6" y="48" width="52" height="6" rx="3"/>' },
+  gone: { also: ["freed memory", "an empty space", "nothing"], tint: "#8e929c", svg:
+    [5, 19, 33, 47].map((x) => `<rect class="d-dash" x="${x}" y="18" width="12.500" height="24" rx="2.500"/>`).join("") + '<rect class="d-dash" x="3" y="44" width="58" height="6" rx="2.500"/>' },
+};
+
+const DRAWING_CSS = `
+svg.art { --t:#8e929c; --sk:#f1c9a5; --hr:#4a3728; flex:none; display:block; overflow:visible; }
+.art .d-t { fill:var(--t); } .art .d-t2 { fill:color-mix(in srgb, var(--t) 74%, #000); } .art .d-t3 { fill:color-mix(in srgb, var(--t) 62%, #fff); } .art .d-t2c { fill:color-mix(in srgb, var(--t) 78%, #5f86b3); }
+.art .d-sk { fill:var(--sk); } .art .d-sk2 { fill:color-mix(in srgb, var(--sk) 80%, #6b3f24); } .art .d-hr { fill:var(--hr); }
+.art .d-ink { fill:#17181b; } .art .d-w { fill:#f4f5f7; } .art .d-w2 { fill:#c9cbd1; } .art .d-w3 { fill:#e3e5e9; } .art .d-cream { fill:#efe3cc; } .art .d-wood { fill:#8a6a4a; }
+.art .d-y { fill:#f3d77a; } .art .d-y2 { fill:#d4b65a; } .art .d-pk { fill:#ee8f86; } .art .d-bl { fill:#7fbfe6; } .art .d-gr { fill:#7fd08a; } .art .d-sky { fill:#bfe3f5; }
+.art .d-blush { fill:#ee8f86; opacity:.45; } .art .d-sh { fill:#000; opacity:.22; }
+.art .d-line { fill:none; stroke:#17181b; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; } .art .d-line.thin { stroke-width:1.300; } .art .d-line.thin2 { stroke:#c9cbd1; stroke-width:1.500; }
+.art .d-line.white { stroke:#fff; stroke-width:2.600; } .art .d-line.net { stroke:#7fbfe6; stroke-width:1.800; }
+.art .d-glass { fill:rgba(255,255,255,.28); stroke:#17181b; stroke-width:1.500; }
+.art .d-dash { fill:none; stroke:var(--t); stroke-width:1.800; stroke-dasharray:3 3.500; }
+.art .h-b, .art .h-c, .art.v-b .h-a, .art.v-c .h-a { display:none; } .art.v-b .h-b, .art.v-c .h-c { display:inline; }
+.art .frown, .art .no, .art.sad .smile, .art.stop .ok { display:none; } .art.sad .frown, .art.stop .no { display:inline; }
+`;
+
+/** One drawing as SVG text. `o`: tint, skin, hair, v (a variant: "b", "c"), and a state class ("sad", "stop"). */
+function drawing(name, o = {}) {
+  const d = DRAWINGS[name];
+  if (!d) return `<svg class="art" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="20" class="d-t"/></svg>`;
+  const style = `--t:${o.tint ?? d.tint}${o.skin ? `;--sk:${o.skin}` : ""}${o.hair ?? d.hair ? `;--hr:${o.hair ?? d.hair}` : ""}`;
+  return `<svg class="art${o.v ? ` v-${o.v}` : ""}${o.state ? ` ${o.state}` : ""}" viewBox="0 0 64 64" aria-hidden="true" style="${style}">${d.svg}</svg>`;
+}
+document.head.insertAdjacentHTML("beforeend", `<style>${DRAWING_CSS}</style>`);
+</script>
+<script>
+// The drawings come from learn-drawings.js: a fixed set shipped with the app. The professor picks one by
+// name for each side of a holder and a thing, with a colour; a name it does not know draws a plain token.
+const ic = (name, o) => drawing(name, o);
+
+// A scene is data, as today (src/learn/lib/scene.ts), plus: an icon for each side of a holder and a thing,
+// an optional watcher (who checks the rules), the verb of a step, and the word a step teaches.
+const SCENES = [{
+  title: "Emily's teddy in the playroom", where: "What we learn today, and why · board 1 of 18", place: "a school playroom, with a strict teacher watching",
+  realHead: "In the code", codeHead: "The code", plain: false,
+  watcher: { a: "the teacher", r: "the compiler", ia: "teacher", ir: "checker", calmA: "watching", calmR: "checking" },
+  bin: { a: "the toy box", r: "freed memory", ia: "box", ir: "gone" },
+  loan: { a: "lends", r: "&s1" },
+  actors: [{ id: "emily", a: "Emily", r: "s1", ia: "child", oa: { v: "b", tint: "#f3d77a" }, ir: "drawer" }, { id: "olivia", a: "Olivia", r: "r", ia: "child", oa: { v: "c", tint: "#9fd3f0", skin: "#b9805a", hair: "#2a1d16" }, ir: "drawer" }, { id: "jack", a: "Jack", r: "s2", ia: "child", oa: { tint: "#a8e0a0", skin: "#e8b990", hair: "#b0562c" }, ir: "drawer" }],
+  things: [{ id: "teddy", a: "the teddy", r: '"teddy"', ia: "teddy", ir: "memory" }],
+  code: ['let s1 = String::from("teddy");', "let r = &s1;", 'println!("{}", r);', "let s2 = s1;", 'println!("{}", s1);  // error: s1 was moved', "drop(s2);"],
+  words: [
+    { a: "the teddy", r: "a value", why: 'the text "teddy", kept on the heap', icon: "teddy" },
+    { a: "a child", r: "a variable", why: "the one owner of the value", icon: "child", o: { v: "b" } },
+    { a: "lending", r: "a borrow, &", why: "a look at it; the owner keeps it", icon: "child", o: { v: "c", tint: "#9fd3f0", skin: "#b9805a", hair: "#2a1d16" } },
+    { a: "giving away", r: "a move", why: "ownership passes; the old name is empty", icon: "child", o: { tint: "#a8e0a0", skin: "#e8b990", hair: "#b0562c" } },
+    { a: "the teacher", r: "the compiler", why: "checks every rule before the program runs", icon: "teacher" },
+    { a: "tidying away", r: "drop", why: "the owner is done, so the memory is freed", icon: "box" },
+  ],
+  steps: [
+    { line: 1, holds: { teddy: "emily" }, lent: {}, off: [], word: 1, made: { a: "brings", r: "String::from" }, a: "Emily brings her teddy to the playroom. It is hers alone.", r: 's1 owns the text "teddy" on the heap.' },
+    { line: 2, holds: { teddy: "emily" }, lent: { teddy: ["olivia"] }, off: [], word: 2, a: "Emily lends the teddy to Olivia for a look. It is still Emily's.", r: "r borrows the value with &s1. s1 is still the owner." },
+    { line: 3, holds: { teddy: "emily" }, lent: { teddy: ["olivia"] }, off: [], note: { who: "olivia", a: "shows it round", r: "println! reads r" }, a: "Olivia shows everyone the teddy, then the loan is over.", r: "r is read to print the text. After this line the borrow ends." },
+    { line: 4, holds: { teddy: "jack" }, lent: {}, off: ["emily"], word: 3, verb: { a: "gives away", r: "move" }, a: "Emily gives the teddy to Jack for good. Emily is now empty-handed.", r: "The value moves from s1 to s2. s1 can no longer be used." },
+    { line: 5, holds: { teddy: "jack" }, lent: {}, off: ["emily"], word: 4, stop: { who: "emily", a: "Stop! Emily has no teddy.", r: "error[E0382]" }, a: "Emily reaches for the teddy she gave away. The teacher stops the game before it starts.", r: "s1 was moved, so the compiler refuses: the program does not compile." },
+    { line: 6, holds: { teddy: null }, lent: {}, off: ["emily", "olivia", "jack"], word: 5, verb: { a: "tidied away", r: "drop" }, a: "With that fixed, Jack goes home and his teddy is tidied away.", r: 's2 is dropped and the memory for "teddy" is freed at once.' },
+  ],
+  rule: "Every value has exactly one owner at a time, and when the owner goes away the value is cleaned up.",
+  breaks: "Real children could quietly sneak the teddy back; Rust checks every rule before the program runs, so a broken rule means it never runs at all.",
+}, {
+  title: "Ordering shoes by post", where: "How a web page arrives · board 2 of 9", place: "your house, the post, and a shoe shop",
+  realHead: "For real", codeHead: "The real steps", plain: true,
+  bin: { a: "the shop's tray", r: "handled", ia: "tray", ir: "gone" },
+  loan: { a: "shows", r: "reads" },
+  actors: [{ id: "you", a: "You", r: "the browser", ia: "child", oa: { tint: "#c3a6f0" }, ir: "laptop" }, { id: "post", a: "The postman", r: "the internet", ia: "van", ir: "cloud" }, { id: "shop", a: "The shoe shop", r: "the server", ia: "shop", ir: "server" }],
+  things: [{ id: "letter", a: "the order", r: "the request", ia: "letter", ir: "page" }, { id: "parcel", a: "the parcel", r: "the response", ia: "parcel", ir: "page", or: { tint: "#7fd08a" } }],
+  code: ["The browser writes a request: GET /shoes", "The request travels across the internet", "The server reads the request", "The server builds a response: 200 OK, with the page", "The response travels back", "The browser shows the page"],
+  words: [
+    { a: "the order letter", r: "a request", why: "what you want, and the address to send it to", icon: "letter" },
+    { a: "the postman", r: "the internet", why: "carries it there and back; does not open it", icon: "van" },
+    { a: "the shoe shop", r: "a server", why: "waits for orders and answers each one", icon: "shop" },
+    { a: "the parcel", r: "a response", why: "the answer: a status, and the page itself", icon: "parcel" },
+  ],
+  steps: [
+    { line: 1, holds: { letter: "you", parcel: undefined }, lent: {}, off: [], word: 0, made: { a: "writes", r: "builds" }, a: "You write an order for a pair of shoes and address it to the shop.", r: "The browser writes a request for the page /shoes." },
+    { line: 2, holds: { letter: "post" }, lent: {}, off: [], word: 1, verb: { a: "posts it", r: "sends" }, a: "The postman carries your letter. He does not open it.", r: "The request travels across the internet to the server." },
+    { line: 3, holds: { letter: "shop" }, lent: {}, off: [], word: 2, verb: { a: "delivers", r: "arrives" }, a: "The shop opens the letter and reads what you asked for.", r: "The server reads the request." },
+    { line: 4, holds: { letter: null, parcel: "shop" }, lent: {}, off: [], word: 3, verb: { a: "filed", r: "handled" }, made: { a: "packs", r: "builds" }, a: "The shop files your letter and packs a parcel with the shoes.", r: "The server builds a response: 200 OK, with the page inside." },
+    { line: 5, holds: { letter: null, parcel: "post" }, lent: {}, off: [], verb: { a: "posts it", r: "sends" }, a: "The postman carries the parcel back to your house.", r: "The response travels back across the internet." },
+    { line: 6, holds: { letter: null, parcel: "you" }, lent: {}, off: [], verb: { a: "delivers", r: "arrives" }, a: "You open the parcel. The shoes are here.", r: "The browser shows the page." },
+  ],
+  rule: "The browser asks and the server answers: one request out, one response back.",
+  breaks: "The post takes days; a request takes a blink. And the shop never writes to you first: a server only answers.",
+}];
+
+const $ = (id) => document.getElementById(id);
+const m = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--m")) || 0;
+let S, i, timer = 0, drawT = 0, things = {};
+
+function build(scene) {
+  S = scene; i = 0; things = {};
+  const cols = `${S.watcher ? "minmax(60px, var(--side)) " : ""}repeat(${S.actors.length}, minmax(0, 1fr)) minmax(60px, var(--side))`;
+  $("board").style.setProperty("--cols", cols);
+  $("title").textContent = S.title; $("where").textContent = S.where; $("place").textContent = S.place;
+  $("realHead").textContent = S.realHead; $("sayRHead").textContent = S.realHead; $("codeHead").textContent = S.codeHead;
+  $("rule").textContent = S.rule; $("breaks").textContent = S.breaks;
+  for (const side of ["a", "r"]) {
+    const I = "i" + side;
+    $(side === "a" ? "rowA" : "rowR").innerHTML =
+      (S.watcher ? `<div class="cell aside" data-watch="${side}">${ic(S.watcher[I])}<p class="name">${S.watcher[side]}</p><p class="note"></p></div>` : "") +
+      S.actors.map((x) => `<div class="cell" data-id="${x.id}" data-side="${side}" tabindex="0">${ic(x[I], x["o" + side])}<p class="name">${x[side]}</p><p class="note"></p><div class="slot"></div></div>`).join("") +
+      `<div class="cell bin" data-bin="${side}">${ic(S.bin[I])}<p class="name">${S.bin[side]}</p><div class="slot"></div></div>`;
+    for (const t of S.things) {
+      const el = document.createElement("span");
+      el.className = "thing"; el.dataset.id = t.id; el.tabIndex = 0; el.hidden = true;
+      el.innerHTML = `${ic(t[I], t["o" + side])}<span class="${side === "r" && !S.plain ? "mono" : ""}">${t[side]}</span>`;
+      things[side + ":" + t.id] = el;
+    }
+  }
+  $("ties").querySelectorAll("i").forEach((n) => n.remove());
+  $("ties").insertAdjacentHTML("afterbegin", (S.watcher ? '<i class="none"></i>' : "") + S.actors.map((x) => `<i data-tie="${x.id}"></i>`).join("") + '<i class="none"></i>');
+  $("code").innerHTML = S.code.map((l) => `<span class="ln">${l.replace(/&/g, "&amp;").replace(/</g, "&lt;")}\n</span>`).join("");
+  $("words").innerHTML = S.words.map((w, n) => `<button class="word" type="button" data-word="${n}" title="Show me where this happens">${ic(w.icon, w.o)}<span class="pair"><b>${w.a}</b> = <code>${w.r}</code></span><span class="why">${w.why}</span></button>`).join("");
+  buildSeq();
+  $("dots").innerHTML = S.steps.map((_, n) => `<i data-step="${n}"></i>`).join("");
+  render(false);
+}
+
+/** What a step did, as a sequence diagram sees it: a message between two lifelines, or a note on one. */
+function events(n) {
+  const step = S.steps[n], prev = S.steps[n - 1], out = [];
+  for (const t of S.things) {
+    const now = holder(n, t.id), before = n ? holder(n - 1, t.id) : undefined;
+    if (now && now !== "bin" && !before) out.push({ kind: "note", who: now, thing: t, ...(step.made ?? { a: "has", r: "has" }) });
+    else if (now === "bin" && before && before !== "bin") out.push({ kind: "end", who: before, thing: t, ...(step.verb ?? { a: "gone", r: "gone" }) });
+    else if (now && before && now !== before && now !== "bin") out.push({ kind: "msg", from: before, to: now, thing: t, ...(step.verb ?? { a: "passes", r: "passes" }) });
+    for (const b of step.lent[t.id] ?? []) if (!(prev?.lent[t.id] ?? []).includes(b)) out.push({ kind: "msg", loan: true, from: now, to: b, thing: t, ...S.loan });
+  }
+  if (step.note) out.push({ kind: "note", ...step.note });
+  if (step.stop) out.push({ kind: "stop", who: step.stop.who, a: step.stop.a, r: step.stop.r });
+  return out;
+}
+function buildSeq() {
+  const col = (id) => S.actors.findIndex((x) => x.id === id) + 1;
+  $("seq").style.setProperty("--n", S.actors.length);
+  $("shead").innerHTML = S.actors.map((x) => `<div data-id="${x.id}"><span class="pair">${ic(x.ia, x.oa)}<i>=</i>${ic(x.ir, x.or)}</span><b>${x.a}</b><code>${x.r}</code></div>`).join("");
+  $("srows").innerHTML = S.steps.map((_, n) => `<div class="srow" data-srow="${n}"><span class="num">${n + 1}</span><div class="lifes">${S.actors.map(() => "<i></i>").join("")}</div>` + events(n).map((e) => {
+    const lab = `<b>${e.a}</b> · <code>${e.r}</code>`;
+    if (e.kind === "msg") {
+      const a = col(e.from), b = col(e.to), lo = Math.min(a, b), hi = Math.max(a, b);
+      return `<div class="ev"><div class="msg${a > b ? " rtl" : ""}${e.loan ? " loan" : ""}" style="grid-column:${lo} / ${hi + 1}; --span:${hi - lo + 1}"><span class="lab"><span>${lab}</span></span><span class="wire"></span><span class="rider">${ic(e.thing.ia, e.thing.oa)}</span></div></div>`;
+    }
+    return `<div class="ev"><div class="note ${e.kind}" style="grid-column:${col(e.who)}">${e.thing ? ic(e.thing.ia, e.thing.oa) : ""}<span>${e.kind === "end" ? "✕ " : ""}${lab}</span></div></div>`;
+  }).join("") + "</div>").join("");
+}
+
+/** Who holds a thing at a step: a holder's id, "bin" once it is gone, or nothing before it exists. */
+function holder(n, id) {
+  for (let k = n; k >= 0; k--) { const h = S.steps[k].holds[id]; if (h !== undefined) return h === null ? "bin" : h; }
+}
+const slotOf = (side, who) => (who === "bin" ? document.querySelector(`[data-bin="${side}"] .slot`) : document.querySelector(`.cell[data-id="${who}"][data-side="${side}"] .slot`));
+
+function render(animate = true) {
+  const step = S.steps[i], scale = animate ? m() : 0;
+  clearTimeout(drawT); $("links").innerHTML = "";
+  // First, last, invert, play: a thing that changed hands glides there along a small arc.
+  const from = new Map(Object.entries(things).map(([k, el]) => [k, el.isConnected && !el.hidden ? el.getBoundingClientRect() : null]));
+  document.querySelectorAll(".ghost").forEach((g) => g.remove());
+  for (const side of ["a", "r"]) {
+    for (const t of S.things) {
+      const el = things[side + ":" + t.id], who = holder(i, t.id);
+      el.hidden = !who; el.classList.toggle("was", who === "bin");
+      if (who) slotOf(side, who).append(el);
+      for (const b of step.lent[t.id] ?? []) {
+        const g = el.cloneNode(true);
+        g.classList.add("ghost"); g.dataset.loan = side + ":" + t.id; g.insertAdjacentHTML("beforeend", "<small>on loan</small>");
+        slotOf(side, b).append(g);
+        if (scale) g.animate([{ opacity: 0, transform: "scale(.8)" }, { opacity: 1, transform: "none" }], { duration: 260 * scale, easing: "cubic-bezier(.22,1,.36,1)" });
+      }
+    }
+    document.querySelectorAll(`.cell[data-side="${side}"]`).forEach((c) => {
+      const off = step.off.includes(c.dataset.id);
+      c.classList.toggle("off", off); c.querySelector("svg").classList.toggle("sad", off); c.classList.toggle("reach", step.stop?.who === c.dataset.id);
+      c.querySelector(".note").textContent = off ? (side === "a" ? "empty-handed" : "cannot be used") : "";
+    });
+    const w = document.querySelector(`[data-watch="${side}"]`);
+    if (w) { w.classList.toggle("stop", !!step.stop); w.querySelector("svg").classList.toggle("stop", !!step.stop); w.querySelector(".note").textContent = step.stop ? step.stop[side] : S.watcher[side === "a" ? "calmA" : "calmR"]; }
+  }
+  for (const [k, el] of Object.entries(things)) {
+    const a = from.get(k); if (!a || el.hidden || !scale) continue;
+    const b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: `translate(${dx / 2}px, ${dy / 2 - 22}px)`, offset: 0.5 }, { transform: "none" }], { duration: 520 * scale, easing: "cubic-bezier(.3,.7,.3,1)" });
+  }
+  if (step.stop && scale) document.querySelectorAll(".cell.reach").forEach((c) => c.animate([{ transform: "none" }, { transform: "translateX(-5px)" }, { transform: "translateX(5px)" }, { transform: "translateX(-3px)" }, { transform: "none" }], { duration: 360 * scale }));
+
+  $("code").querySelectorAll(".ln").forEach((l, n) => { l.classList.toggle("now", n + 1 === step.line); l.classList.toggle("bad", !!step.stop); });
+  $("sayA").textContent = step.a; $("sayR").textContent = step.r;
+  const seen = new Set(S.steps.slice(0, i + 1).map((s) => s.word).filter((w) => w !== undefined));
+  $("words").querySelectorAll(".word").forEach((w, n) => { w.classList.toggle("now", n === step.word); w.classList.toggle("seen", seen.has(n) && n !== step.word); });
+  const stamp = $("stamp"), word = S.words[step.word];
+  stamp.hidden = !word;
+  if (word) {
+    stamp.innerHTML = `<b>${word.a}</b> is <code>${word.r}</code>`;
+    if (scale) stamp.animate([{ opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1 }], { duration: 300 * scale, delay: 380 * scale, fill: "backwards", easing: "cubic-bezier(.34,1.56,.64,1)" });
+  }
+  $("srows").querySelectorAll(".srow").forEach((r, n) => {
+    r.classList.toggle("later", n > i); r.classList.toggle("now", n === i);
+    if (n !== i || !scale || $("seq").hidden) return;
+    r.querySelectorAll(".msg").forEach((msg) => {
+      const wire = msg.querySelector(".wire"), far = (wire.getBoundingClientRect().width - 44) * (msg.classList.contains("rtl") ? 1 : -1);
+      wire.animate([{ transform: "scaleX(0)" }, { transform: "none" }], { duration: 340 * scale, easing: "cubic-bezier(.2,.8,.2,1)" });
+      msg.querySelector(".rider").animate([{ transform: `translateX(${far}px)` }, { transform: "none" }], { duration: 620 * scale, easing: "cubic-bezier(.3,.7,.3,1)" });
+    });
+    r.querySelectorAll(".note").forEach((x) => x.animate([{ opacity: 0, transform: "scale(.85)" }, { opacity: 1, transform: "none" }], { duration: 260 * scale, easing: "cubic-bezier(.34,1.56,.64,1)" }));
+  });
+  $("dots").querySelectorAll("i").forEach((d, n) => d.classList.toggle("on", n <= i));
+  $("back").disabled = i === 0; $("next").disabled = i === S.steps.length - 1;
+  $("play").textContent = timer ? "❚❚ Pause" : i === S.steps.length - 1 ? "↺ Replay" : "▶ Play";
+  drawT = setTimeout(() => links(scale), 540 * scale);
+}
+
+/** What this step did, drawn once the things have landed: a move or a drop as an arrow, a loan as a thread. */
+function links(scale) {
+  const svg = $("links"), box = $("board").getBoundingClientRect(), step = S.steps[i];
+  const at = (el) => { const r = el.getBoundingClientRect(); return { x: r.left - box.left + r.width / 2, top: r.top - box.top, bottom: r.bottom - box.top, left: r.left - box.left, right: r.right - box.left, y: r.top - box.top + r.height / 2 }; };
+  const marker = (c) => `<marker id="h-${c}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--${c})" stroke="none"/></marker>`;
+  let out = `<defs>${marker("yellow")}${marker("pink")}${marker("blue")}</defs>`;
+  for (const side of ["a", "r"]) {
+    for (const t of S.things) {
+      const now = holder(i, t.id), before = i ? holder(i - 1, t.id) : undefined;
+      if (now && before && now !== before) {
+        const a = at(slotOf(side, before)), b = at(slotOf(side, now)), y = Math.max(a.bottom, b.bottom) + 4, c = now === "bin" ? "pink" : "yellow";
+        out += `<path class="draw" d="M${a.x} ${y}Q${(a.x + b.x) / 2} ${y + 34} ${b.x} ${y}" stroke="var(--${c})" marker-end="url(#h-${c})"/>`;
+        if (step.verb) out += `<text x="${(a.x + b.x) / 2}" y="${y + 30}" fill="var(--${c})">${step.verb[side]}</text>`;
+      }
+      document.querySelectorAll(`.ghost[data-loan="${side}:${t.id}"]`).forEach((g) => {
+        const a = at(things[side + ":" + t.id]), b = at(g), ltr = a.x < b.x;
+        out += `<path class="fade" d="M${ltr ? a.right + 2 : a.left - 2} ${a.y}L${ltr ? b.left - 4 : b.right + 4} ${a.y}" stroke="var(--blue)" stroke-dasharray="5 4" marker-end="url(#h-blue)"/>`;
+        out += `<text class="fade" x="${((ltr ? a.right + b.left : a.left + b.right)) / 2}" y="${a.y - 7}" fill="var(--blue)">${S.loan[side]}</text>`;
+      });
+    }
+  }
+  svg.innerHTML = out;
+  if (!scale) return;
+  svg.querySelectorAll(".draw").forEach((p) => { const n = p.getTotalLength(); p.style.strokeDasharray = n; p.animate([{ strokeDashoffset: n }, { strokeDashoffset: 0 }], { duration: 320 * scale, easing: "ease-out" }); });
+  svg.querySelectorAll(".fade, text").forEach((p) => p.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 * scale }));
+}
+
+function stop() { clearInterval(timer); timer = 0; }
+function go(n) { stop(); i = Math.max(0, Math.min(S.steps.length - 1, n)); render(); }
+function toggle() {
+  if (timer) { stop(); return render(false); }
+  if (i === S.steps.length - 1) i = -1;
+  const tick = () => { if (i >= S.steps.length - 1) { stop(); return render(false); } i++; render(); };
+  timer = setInterval(tick, 2600); tick();
+}
+$("back").onclick = () => go(i - 1); $("next").onclick = () => go(i + 1); $("play").onclick = toggle;
+$("dots").onclick = (e) => e.target.dataset.step && go(+e.target.dataset.step);
+$("words").onclick = (e) => { const w = e.target.closest(".word"); if (!w) return; const n = S.steps.findIndex((s) => s.word === +w.dataset.word); if (n >= 0) go(n); };
+let which = 0;
+$("swap").onclick = () => { stop(); build(SCENES[(which = 1 - which)]); };
+$("view").onclick = (e) => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", on); $("seq").hidden = !on; $("board").classList.toggle("as-seq", on); render(false);
+};
+$("srows").onclick = (e) => { const r = e.target.closest(".srow"); if (r) go(+r.dataset.srow); };
+$("motion").onclick = (e) => { const on = e.currentTarget.getAttribute("aria-pressed") !== "true"; e.currentTarget.setAttribute("aria-pressed", on); document.documentElement.dataset.motion = on ? "on" : "off"; };
+addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight") go(i + 1); else if (e.key === "ArrowLeft") go(i - 1); else if (e.key === " " && !e.target.closest("button")) { e.preventDefault(); toggle(); }
+});
+// Pointing at a holder or a thing lights its counterpart in the other row, and the line between them.
+const light = (e, on) => { const el = e.target.closest?.("[data-id]"); if (!el) return; document.querySelectorAll(`[data-id="${el.dataset.id}"], [data-tie="${el.dataset.id}"]`).forEach((x) => x.classList.toggle("lit", on)); };
+for (const [ev, on] of [["mouseover", true], ["mouseout", false], ["focusin", true], ["focusout", false]]) $("board").addEventListener(ev, (e) => light(e, on));
+new ResizeObserver(() => { clearTimeout(drawT); drawT = setTimeout(() => links(0), 60); }).observe($("board"));
+build(SCENES[0]);
+</script>
+</body>
+</html>

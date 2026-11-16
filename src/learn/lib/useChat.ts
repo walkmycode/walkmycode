@@ -7,9 +7,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { chatTurns, emptyChat, fromHands, KEEP, type ActionId, type AskContext, type Chat, type ChatMsg } from "./chat";
-import { sampleMessage, type Sample } from "./claude";
+import { sampleMessage, type Look, type Sample } from "./claude";
 import { newId, type Store } from "./store";
 import type { Lesson, Profile } from "./types";
+import type { Used } from "./worlds";
 
 export type ChatApi = {
   chat: Chat;
@@ -20,6 +21,8 @@ export type ChatApi = {
   send: (text: string, action?: ActionId) => boolean;
   /** Add something the professor shows without being asked (the course's solution). */
   say: (text: string, asked: string) => void;
+  /** A turn of a live talk with the professor, heard: kept with the typed ones, marked as spoken. */
+  heard: (role: "you" | "prof", text: string) => void;
   stop: () => void;
   /** Ask the last question again (after an error, or for another answer). */
   retry: () => void;
@@ -36,9 +39,11 @@ type Options = {
   context: () => AskContext;
   /** A finished answer, to be read aloud. */
   onAnswer?: (text: string) => void;
+  /** What the course's other lessons pictured, so a new picture is a fresh one. */
+  used?: Used;
 };
 
-export function useChat({ lesson, profile, sample, store, context, onAnswer }: Options): ChatApi {
+export function useChat({ lesson, profile, sample, store, context, onAnswer, used }: Options): ChatApi {
   const [chat, setChat] = useState<Chat>(() => emptyChat(lesson.id));
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -46,9 +51,9 @@ export function useChat({ lesson, profile, sample, store, context, onAnswer }: O
   const ctl = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
-  const latest = useRef({ lesson, profile, sample, store, context, onAnswer });
+  const latest = useRef({ lesson, profile, sample, store, context, onAnswer, used });
   useEffect(() => {
-    latest.current = { lesson, profile, sample, store, context, onAnswer };
+    latest.current = { lesson, profile, sample, store, context, onAnswer, used };
   });
 
   const flush = useCallback(() => {
@@ -109,9 +114,9 @@ export function useChat({ lesson, profile, sample, store, context, onAnswer }: O
 
   const answer = useCallback(
     async (answerId: string) => {
-      const { lesson: l, profile: p, sample: ai, context: ctx, onAnswer: done } = latest.current;
+      const { lesson: l, profile: p, sample: ai, context: ctx, onAnswer: done, used: u } = latest.current;
       if (!ai) return;
-      const turns = chatTurns(l, p, live.current.msgs.filter((m) => m.id !== answerId), ctx());
+      const turns = chatTurns(l, p, live.current.msgs.filter((m) => m.id !== answerId), ctx(), u);
       const patch = (edit: Partial<ChatMsg>, save: "soon" | "now" | "no") =>
         update((c) => ({ ...c, updatedAt: Date.now(), msgs: c.msgs.map((m) => (m.id === answerId ? { ...m, ...edit } : m)) }), save);
       if (!turns.length) return patch({ err: "There is no question to answer." }, "now");
@@ -119,7 +124,13 @@ export function useChat({ lesson, profile, sample, store, context, onAnswer }: O
       ctl.current = abort;
       setBusy(true);
       try {
-        const { text } = await ai(turns, { signal: abort.signal, cache: false, onText: ({ text: soFar }) => patch({ text: soFar }, "no") });
+        // He may look at the computer to answer (read only); each look shows above the answer as it happens.
+        const looks = new Map<string, NonNullable<ChatMsg["looked"]>[number]>();
+        const onLook = (l: Look) => {
+          looks.set(l.id, { tool: l.tool, what: l.what, ...(l.note ? { note: l.note } : {}) });
+          patch({ looked: [...looks.values()] }, l.done ? "soon" : "no");
+        };
+        const { text } = await ai(turns, { signal: abort.signal, cache: false, pc: true, onLook, onText: ({ text: soFar }) => patch({ text: soFar }, "no") });
         patch({ text }, "now");
         done?.(text);
       } catch (e) {
@@ -166,6 +177,18 @@ export function useChat({ lesson, profile, sample, store, context, onAnswer }: O
     [update],
   );
 
+  /** A turn of a live talk, heard: kept with the typed ones, marked as spoken. */
+  const heard = useCallback(
+    (role: "you" | "prof", text: string) => {
+      const t = text.trim();
+      if (!t) return;
+      const at = Date.now();
+      const board = latest.current.context().board;
+      update((c) => ({ ...c, updatedAt: at, msgs: [...c.msgs, { id: newId(), role, text: t, at, board, voice: true }].slice(-KEEP) }), "now");
+    },
+    [update],
+  );
+
   const stop = useCallback(() => ctl.current?.abort(), []);
 
   const retry = useCallback(() => {
@@ -185,5 +208,5 @@ export function useChat({ lesson, profile, sample, store, context, onAnswer }: O
 
   const setDraft = useCallback((text: string) => update((c) => ({ ...c, draft: text })), [update]);
 
-  return { chat, ready, busy, send, say, stop, retry, clear, setDraft };
+  return { chat, ready, busy, send, say, heard, stop, retry, clear, setDraft };
 }

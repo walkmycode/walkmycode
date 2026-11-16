@@ -35,7 +35,7 @@ const gridGroups = (api: DockviewApi) => api.groups.filter((g) => g.api.location
  * and one in the middle (the code, usually) goes to its first panel's usual side, all its icons together. A hidden group's icons stay where
  * they were last seen (`memory`). */
 export function stripItems(api: DockviewApi, box: { left: number; right: number }, memory: SideMemory = new Map()): StripItem[] {
-  return STRIP_IDS.filter((id) => PANELS[id]?.available && (id !== "output" || !!api.getPanel(id))).map((id) => {
+  return STRIP_IDS.filter((id) => PANELS[id]?.available).map((id) => {
     const p = api.getPanel(id);
     if (!p) return { id, side: memory.get(id) ?? HOME_SIDE[id], present: false, on: false };
     const g = p.group;

@@ -43,6 +43,10 @@ export interface DeepgramDeps {
   url?: string;
   /** The connected seconds, once, when the session closes (for the cost meter). */
   onClosed?: (seconds: number) => void;
+  /** Where the Settings come from (the Learn room's professor: "/api/voice/settings?room=learn"). */
+  settingsPath?: string;
+  /** What the page adds to them, instead of the map's summary (withContext): the professor's lesson (withLesson). */
+  prepare?: (s: AgentSettings) => AgentSettings;
 }
 
 const OPEN = 1;
@@ -98,7 +102,7 @@ export class DeepgramLecturer implements LecturerSession {
       // The microphone prompt, the grant and the Settings, all at once.
       const [, token, settings] = await Promise.all([this.startAudio(), this.token(), this.agentSettings()]);
       if (this.state.phase === "closed") return this.cleanup();
-      this.settings = withContext(settings, this.deps.context());
+      this.settings = this.deps.prepare ? this.deps.prepare(settings) : withContext(settings, this.deps.context());
       const ws = new this.deps.WebSocket(this.deps.url ?? AGENT_URL, ["bearer", token]);
       ws.binaryType = "arraybuffer";
       this.ws = ws;
@@ -140,7 +144,7 @@ export class DeepgramLecturer implements LecturerSession {
   private async agentSettings(): Promise<AgentSettings> {
     let res: Response;
     try {
-      res = await this.deps.fetch("/api/voice/settings");
+      res = await this.deps.fetch(this.deps.settingsPath ?? "/api/voice/settings");
     } catch {
       throw new VoiceError(UNREACHABLE);
     }
@@ -298,6 +302,10 @@ export class DeepgramLecturer implements LecturerSession {
 
   inject(message: string): void {
     this.apply({ type: "inject", message, at: this.now() });
+  }
+
+  raiseHand(): void {
+    this.apply({ type: "hand", at: this.now() });
   }
 
   close(reason: CloseReason = "ended"): void {

@@ -1,6 +1,6 @@
 # docs/PERFORMANCE.md: how fast the map is, and how to measure it
 
-The owner's complaint was that WalkMyCode felt very slow. On the iReliabee demo (626 cards and 1,024 arrows on the full map), `next dev` took 11.8 s to "show everything" and 6.0 s to answer a click on a card. This page records what the map costs on a **production build**, before and after the speed work, and how to measure it again.
+The owner's complaint was that WalkMyCode felt very slow. On a large real project's map (626 cards and 1,024 arrows on the full map), `next dev` took 11.8 s to "show everything" and 6.0 s to answer a click on a card. This page records what the map costs on a **production build**, before and after the speed work, and how to measure it again.
 
 A note on `next dev`: it runs React's development build, with StrictMode rendering everything twice, and without minification. It is 5 to 20 times slower than production for this app, so judge speed with `next build && next start`, never in dev.
 
@@ -39,12 +39,12 @@ Both builds are measured by the same script, one after the other on the same mac
 ```
 npm run build
 npx next start -p 3100
-node scripts/perf.mjs --runs 5                       # the table's 1x column
-node scripts/perf.mjs --runs 3 --cpu 4               # a laptop four times slower
-node scripts/perf.mjs --base http://localhost:3101   # another build
+node scripts/perf.mjs --demo <name> --runs 5                       # the table's 1x column
+node scripts/perf.mjs --demo <name> --runs 3 --cpu 4               # a laptop four times slower
+node scripts/perf.mjs --demo <name> --base http://localhost:3101   # another build
 ```
 
-`scripts/perf.mjs` drives the Chrome installed on the machine through Playwright (`channel: "chrome"`, headless; it falls back to Playwright's Chromium, installed with `npx playwright install chromium`). It needs the demo's `.walkmycode/ireliabee.map.json` and `.walkmycode/ireliabee.files.json` (copy them from the main checkout; they are not in git). Each run uses a fresh browser profile at 1600×1000 and:
+`scripts/perf.mjs` drives the Chrome installed on the machine through Playwright (`channel: "chrome"`, headless; it falls back to Playwright's Chromium, installed with `npx playwright install chromium`). It needs `--demo <name>` (or `WALKMYCODE_PERF_DEMO`) and that demo's `.walkmycode/<name>.map.json` and `.walkmycode/<name>.files.json` (copy them from the main checkout; they are not in git). `--cards` and `--other` name the cards to click by node id, else it clicks the first file cards on the page; the fly-through runs only when `--fly` is given. Each run uses a fresh browser profile at 1600×1000 and:
 
 1. Paints the connect screen (first contentful paint).
 2. Clicks "add to workspace" on the demo and then "Map it": the demo's 286 files are mapped as if they were a picked folder. It records the total time and the longest the page froze (the longest main-thread task).
@@ -61,7 +61,7 @@ Pan and zoom report frames per second over the whole gesture and the longest fra
 
 The machine these numbers come from is shared with other work (its CPU sat around 60 % busy), so single runs vary by up to half; the medians, and before against after taken back to back, are what to compare. `--cpu 4` uses Chrome's CPU throttling.
 
-`scripts/perf-profile.mjs everything|click|trace|pan|zoom` records a Chrome trace and a CPU profile of one of these interactions and prints where the main thread's time went (script, style, layout, layerize, paint, hit testing) and the hottest functions. `--eval "<js>"` runs something in the page first, and `perf.mjs --css "<rules>"` adds styles, for trying a change without a rebuild.
+`scripts/perf-profile.mjs everything|click|trace|pan|zoom --demo <name>` records a Chrome trace and a CPU profile of one of these interactions and prints where the main thread's time went (script, style, layout, layerize, paint, hit testing) and the hottest functions. `--eval "<js>"` runs something in the page first, and `perf.mjs --css "<rules>"` adds styles, for trying a change without a rebuild.
 
 ## What was slow, and what changed
 
@@ -71,7 +71,7 @@ In order of how much each one mattered.
 2. **1,024 arrows, each its own React Flow edge.** Each was its own `<svg>`, its own store subscription (its position worked out again on every pan and zoom step) and its own markers. On the lanes, all the arrows are now one `<svg>` inside React Flow's edge layer, paths worked out once when the cards are measured, arrowheads defined once per colour. Lit and neighbouring arrows move to a layer on top, as their raised z-index did before. The system view's few dozen labelled arrows stay React Flow edges.
 3. **Panning repainted the whole map every frame.** While the map is dragged, its viewport is a GPU layer of its own (`will-change: transform` only during the drag, so it is painted sharp again after). Zooming out past half size drops the cards' drop shadows (a pixel or two wide there, and costly to redraw on every zoom step); a lit card keeps its glow. The cards' invisible React Flow handles are gone (the lane arrows do not need them), which is 1,250 fewer positioned elements to lay out and hit-test.
 4. **Every panel redrew on every click.** All the room's state is one context, so a click redrew the guide, the file tree, every open editor and the details. The panels now return memoised content keyed on what they show, and `askFree` no longer changes identity with the selection. Opening the clicked card's code (a new CodeMirror editor) is a transition, so the ring on the map is painted first and the editor follows a frame later.
-5. **Linear scans.** `nodeById`, `edgesOf`, `neighbourhood` and `trace` scanned the whole map (`trace` scanned every edge at every step of its walk). `src/lib/mapIndex.ts` builds, once per map object, nodes and edges by id and each node's edges in and out, in map order, so the walks give exactly the same answers (the trace's depth limit depends on walk order); `tests/mapIndex.test.ts` checks them against the old scans on the fixtures, random maps and, when it is present, the iReliabee map.
+5. **Linear scans.** `nodeById`, `edgesOf`, `neighbourhood` and `trace` scanned the whole map (`trace` scanned every edge at every step of its walk). `src/lib/mapIndex.ts` builds, once per map object, nodes and edges by id and each node's edges in and out, in map order, so the walks give exactly the same answers (the trace's depth limit depends on walk order); `tests/mapIndex.test.ts` checks them against the old scans on the fixtures, random maps and, when it is present, a large real map (`.walkmycode/reference.map.json`).
 6. **Mapping a folder froze the page.** The analyzer ran on the page's thread. It now runs in a Web Worker (`src/analyzer/build.worker.ts`, started by `buildInWorker.ts`, which falls back to the page's thread if a worker cannot start); the progress bar keeps moving and the page answers while it maps.
 
 Also fixed on the way: a map tab behind another tab in the same group showed through it (React Flow marks each measured card `visibility: visible`, which beat the hidden tab's `visibility: hidden`), and was painted while hidden.

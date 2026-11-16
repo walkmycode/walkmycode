@@ -1,7 +1,7 @@
 // Which config files WalkMyCode reads, and how their secrets are hidden. No
 // dependencies (deploy.ts is plain too), so both folder readers (browser and
 // CLI) can share it. See docs/SERVICES.md §3.
-import type { FileEntry } from "../types";
+import type { FileEntry, Lang } from "../types";
 import { CI_RE, deployKindOf, isDeployPath } from "./deploy";
 
 export type ConfigKind = NonNullable<FileEntry["configKind"]>;
@@ -76,20 +76,44 @@ export function isConfigPath(path: string): boolean {
   return configKindOfPath(path) !== null;
 }
 
-/** Source in a language the map doesn't draw yet (Rust, Go, Java, C#, Ruby…). The folder readers keep it,
+/** Code the map draws, by extension: the analyzer's language for it and the language's name. The one list of
+ * what the analyzer parses: build.ts maps a file to its language with it and the folder readers keep these files.
+ * To draw another language, move its extensions here from READABLE with the same name: maps made before then
+ * counted that name in stats.otherCode, and the map offers to map them again (migrate.ts drawnSince). */
+export const DRAWN: Readonly<Record<string, { lang: Lang; name: string }>> = {
+  ts: { lang: "ts", name: "TypeScript" }, mts: { lang: "ts", name: "TypeScript" }, cts: { lang: "ts", name: "TypeScript" },
+  tsx: { lang: "tsx", name: "TypeScript" }, js: { lang: "js", name: "JavaScript" }, mjs: { lang: "js", name: "JavaScript" },
+  cjs: { lang: "js", name: "JavaScript" }, jsx: { lang: "jsx", name: "JavaScript" }, py: { lang: "py", name: "Python" },
+  sql: { lang: "sql", name: "SQL" }, prisma: { lang: "prisma", name: "Prisma" }, dart: { lang: "dart", name: "Dart" },
+  php: { lang: "php", name: "PHP" }, twig: { lang: "twig", name: "Twig" }, rs: { lang: "rust", name: "Rust" },
+};
+/** Source in a language the map doesn't draw yet (Go, Java, C#, Ruby…). The folder readers keep it,
  * so the guide can list, read and search it ("not on the map"); without this a Rust project was empty to it. */
-const READABLE: Record<string, string> = {
-  rs: "Rust", go: "Go", java: "Java", kt: "Kotlin", kts: "Kotlin", scala: "Scala", groovy: "Groovy", swift: "Swift",
+export const READABLE: Readonly<Record<string, string>> = {
+  go: "Go", java: "Java", kt: "Kotlin", kts: "Kotlin", scala: "Scala", groovy: "Groovy", swift: "Swift",
   cs: "C#", fs: "F#", vb: "Visual Basic", rb: "Ruby", ex: "Elixir", exs: "Elixir", erl: "Erlang", hrl: "Erlang",
   hs: "Haskell", clj: "Clojure", cljs: "Clojure", lua: "Lua", pl: "Perl", pm: "Perl", r: "R", jl: "Julia", zig: "Zig",
   nim: "Nim", c: "C", h: "C", cc: "C++", cpp: "C++", cxx: "C++", hpp: "C++", hh: "C++", m: "Objective-C", mm: "Objective-C",
   vue: "Vue", svelte: "Svelte", astro: "Astro", html: "HTML", htm: "HTML", css: "CSS", scss: "CSS", sass: "CSS", less: "CSS",
   sh: "Shell", bash: "Shell", ps1: "PowerShell", graphql: "GraphQL", gql: "GraphQL", sol: "Solidity",
 };
-/** The language of a file the map doesn't draw ("Rust" for main.rs), or null. */
-export function readableLanguage(path: string): string | null {
+/** A path's extension, lower case ("rs" for src/main.rs), or "". */
+function extOf(path: string): string {
   const m = /\.([A-Za-z0-9]+)$/.exec(path);
-  return (m && READABLE[m[1].toLowerCase()]) || null;
+  return m ? m[1].toLowerCase() : "";
+}
+const own = <T>(table: Readonly<Record<string, T>>, key: string): T | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+/** The analyzer's language for a file the map draws ("rust" for main.rs), or null. */
+export function drawnLang(path: string): Lang | null {
+  return own(DRAWN, extOf(path))?.lang ?? null;
+}
+/** Does the map draw this language now? By the name a map counts it under in stats.otherCode ("Rust"). */
+export function drawsLanguage(name: string): boolean {
+  return Object.values(DRAWN).some((d) => d.name === name);
+}
+/** The language of a file the map doesn't draw ("Go" for main.go), or null. */
+export function readableLanguage(path: string): string | null {
+  return own(READABLE, extOf(path)) ?? null;
 }
 export function isReadablePath(path: string): boolean {
   return readableLanguage(path) !== null;
@@ -220,4 +244,33 @@ function redactK8sSecrets(lines: string[]): string[] {
  * turns out not to be Kubernetes) is redacted too. */
 export function redactSource(path: string, content: string): string {
   return !CODE_EXT.test(path) && (isConfigPath(path) || configLangOf(path, content)) ? redactConfigText(content, path) : content;
+}
+
+// ── every other file: listed in Files, read only when it's plain text worth reading ──
+// The owner (13 Nov): "whatever file found in the project should be shown in the file structure". Files the map
+// doesn't read (README.md, LICENSE, .gitignore, images, fonts, lock files…) are kept as paths, with empty text, the
+// way assets are; small text documents are read so they open like code. Never a secret: no real .env, no keys,
+// no .npmrc, not even their names.
+
+/** Never listed, not even by name. (.env.example and friends are config, read as config: isConfigPath.) */
+const SECRET_FILE = /(^|\/)(\.env(\.(?!example$|sample$|template$|dist$)[^/]*)?|[^/]*\.(pem|key|p12|pfx|jks|keystore|crt|cer)|id_(rsa|dsa|ecdsa|ed25519)[^/]*|[^/]*secrets?\.(json|ya?ml|toml)|\.npmrc|\.yarnrc(\.yml)?|\.pypirc|\.netrc|\.git-credentials|credentials(\.json)?|[^/]*\.kdbx)$/i;
+/** Plain text documents read for Files (their text opens like code): prose, licences and small tool settings that never hold secrets. */
+const DOC_FILE = /\.(md|mdx|markdown|txt|rst|adoc)$|(^|\/)(README|LICEN[CS]E|COPYING|CHANGELOG|CHANGES|CONTRIBUTING|NOTICE|AUTHORS|CODEOWNERS|SECURITY|Makefile|Procfile|Justfile)([.-][^/]*)?$|(^|\/)(\.gitignore|\.gitattributes|\.gitmodules|\.editorconfig|\.dockerignore|\.prettierignore|\.eslintignore|\.nvmrc|\.node-version|\.python-version|\.ruby-version|\.tool-versions|\.prettierrc(\.json|\.ya?ml)?|\.eslintrc(\.json|\.ya?ml)?|\.babelrc|\.browserslistrc|tsconfig[^/]*\.json|jsconfig\.json|rustfmt\.toml|\.rustfmt\.toml|clippy\.toml|rust-toolchain(\.toml)?|biome\.json|deno\.jsonc?|turbo\.json)$/i;
+/** Hidden folders never walked, even to list: version control, caches, installs and editors' private state. */
+const HIDDEN_NEVER = new Set([".git", ".hg", ".svn", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", ".parcel-cache", ".venv", ".walkmycode", ".lantern", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".gradle", ".dart_tool", ".pub-cache", ".expo", ".vercel", ".netlify", ".terraform", ".serverless", ".aws", ".ssh", ".gnupg", ".docker", ".kube", ".idea", ".vs", ".history", ".yarn", ".pnpm-store", ".npm"]);
+
+/** Paths of other files listed per repo (not counted in the code limit). */
+export const MAX_OTHER = 5000;
+/** Documents bigger than this are listed, not read. */
+export const DOC_MAX_BYTES = 512_000;
+
+/** A file the readers don't keep as code, config or an asset: "doc" (read its text), "path" (list it only), or null (never: a secret). */
+export function otherFileMode(path: string): "doc" | "path" | null {
+  if (SECRET_FILE.test(path)) return null;
+  return DOC_FILE.test(path) ? "doc" : "path";
+}
+
+/** A hidden folder whose files are listed (never read as code): .vscode, .husky, .cargo, .devcontainer… Never .git or a cache. */
+export function listsHiddenDir(name: string): boolean {
+  return name.startsWith(".") && !HIDDEN_NEVER.has(name.toLowerCase());
 }

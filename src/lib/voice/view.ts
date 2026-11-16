@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { TARGET } from "@/lib/adapters/target";
 import type { FriendlyError } from "@/lib/providers/wire";
 import { readPref } from "../prefs";
-import { NARRATORS, SPEED, sttFor, VOICE_DEFAULT, type InputMode, type LecturerId, type LecturerModelId, type NarratorId, type SttId, type SttKeyEnv } from "./catalogue";
+import { lecturerStyleFor, NARRATORS, SPEED, sttFor, VOICE_DEFAULT, type InputMode, type LecturerId, type LecturerModelId, type LecturerStyle, type NarratorId, type SttId, type SttKeyEnv } from "./catalogue";
 
 export interface VoiceView {
   narrator: NarratorId;
@@ -16,6 +16,8 @@ export interface VoiceView {
   speed: number;
   lecturer: LecturerId;
   lecturerModel: LecturerModelId;
+  /** How lively the Deepgram lecturer sounds (Settings → Voice). */
+  lecturerStyle: LecturerStyle;
   /** How Talk listens (Settings → Voice): hands-free, or hold to talk. */
   input: InputMode;
   /** Headphones on: the lecturer hears the real microphone even while it speaks. */
@@ -55,6 +57,7 @@ function liteView(): VoiceView {
     speed: clampSpeed(saved.speed),
     lecturer: VOICE_DEFAULT.lecturer,
     lecturerModel: "haiku",
+    lecturerStyle: VOICE_DEFAULT.lecturerStyle,
     input: VOICE_DEFAULT.input,
     headphones: false,
     stt: VOICE_DEFAULT.stt,
@@ -90,11 +93,11 @@ export function loadVoiceView(): Promise<VoiceView> {
       if (!res.ok) throw new Error(String(res.status));
       const d = (await res.json()) as { saved: Omit<VoiceView, "keys" | "readiness" | "parakeet">; keys: VoiceView["keys"]; readiness: VoiceView["readiness"]; parakeet?: { ready?: boolean } };
       const input: InputMode = d.saved.input === "push-to-talk" ? "push-to-talk" : "hands-free";
-      return { ...d.saved, input, headphones: d.saved.headphones === true, stt: sttFor(d.saved.stt ?? "")?.id ?? VOICE_DEFAULT.stt, parakeet: d.parakeet?.ready === true, keys: d.keys, readiness: d.readiness };
+      return { ...d.saved, lecturerStyle: lecturerStyleFor(d.saved.lecturerStyle ?? "")?.id ?? VOICE_DEFAULT.lecturerStyle, input, headphones: d.saved.headphones === true, stt: sttFor(d.saved.stt ?? "")?.id ?? VOICE_DEFAULT.stt, parakeet: d.parakeet?.ready === true, keys: d.keys, readiness: d.readiness };
     })
     .catch((): VoiceView => {
       cached = null; // ask again next time
-      return { narrator: "browser", voiceId: null, speed: VOICE_DEFAULT.speed, lecturer: VOICE_DEFAULT.lecturer, lecturerModel: "haiku", input: VOICE_DEFAULT.input, headphones: false, stt: VOICE_DEFAULT.stt, keys: {}, readiness: { narrator: null, lecturer: UNREACHABLE } };
+      return { narrator: "browser", voiceId: null, speed: VOICE_DEFAULT.speed, lecturer: VOICE_DEFAULT.lecturer, lecturerModel: "haiku", lecturerStyle: VOICE_DEFAULT.lecturerStyle, input: VOICE_DEFAULT.input, headphones: false, stt: VOICE_DEFAULT.stt, keys: {}, readiness: { narrator: null, lecturer: UNREACHABLE } };
     });
   return cached;
 }

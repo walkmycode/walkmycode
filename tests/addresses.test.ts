@@ -337,7 +337,7 @@ describe("deploy files that name an address", () => {
     assert.equal(redactSource(".github/workflows/deploy.yml", yml), shown);
   });
 
-  it("the folder reader keeps .github/workflows' YAML and nothing else of .github", async () => {
+  it("the folder reader reads .github/workflows' YAML and only lists the rest of .github", async () => {
     const root = await mkdtemp(join(tmpdir(), "walkmycode-ci-"));
     try {
       await mkdir(join(root, ".github", "workflows"), { recursive: true });
@@ -349,7 +349,14 @@ describe("deploy files that name an address", () => {
       await writeFile(join(root, ".github", "scripts", "check.js"), "1\n");
       await writeFile(join(root, ".vscode", "settings.json"), "{}\n");
       await writeFile(join(root, "app.ts"), "export {};\n");
-      assert.deepEqual((await readDir(root)).map((s) => s.path).sort(), [".github/workflows/deploy.yml", "app.ts"]);
+      const read = await readDir(root);
+      // Read (with their text): the workflows' YAML and the code. Everything else is listed for Files, path only.
+      assert.deepEqual(read.filter((s) => s.content).map((s) => s.path).sort(), [".github/workflows/deploy.yml", "app.ts"]);
+      assert.deepEqual(read.filter((s) => !s.content).map((s) => s.path).sort(), [".github/dependabot.yml", ".github/scripts/check.js", ".github/workflows/notify.js", ".vscode/settings.json"]);
+      // …and none of those is the app's code on the map.
+      const { map } = await buildMap(read, { name: "ci" });
+      assert.ok(map.files.every((f) => read.find((s) => s.path === f.path)?.content), map.files.map((f) => f.path).join(", "));
+      assert.ok(map.files.some((f) => f.path === "app.ts"));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

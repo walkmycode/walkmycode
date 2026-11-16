@@ -2,13 +2,14 @@
 // computer, through the user's own git and its sign-in, so no GitHub token is
 // ever stored. What changed, a file's diff, commit the files the user ticked,
 // discard a file's changes, push and pull, branches, the last commits, and a
-// merge's conflicts. The page only names files from the status it was shown;
+// merge's conflicts. And who changed each line of a file and when (blame), and
+// the file's own commits (docs/design/git-history.html). The page only names files from the status it was shown;
 // every argument goes to git as argv (execFile, no shell), and a commit
 // message is never read as an option. Pushing never waits on a typed password
 // (GIT_TERMINAL_PROMPT=0): the terminal is where a first sign-in happens.
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 export type GitChange = "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted" | "type";
 
@@ -52,6 +53,33 @@ export interface GitCommit {
   when: string;
   /** "HEAD -> main, origin/main". */
   refs: string;
+  /** When it was made, ISO 8601 with the author's offset ("2026-11-12T22:41:07+00:00"). */
+  date?: string;
+}
+
+/** A block of lines in a file that one commit last changed (git blame). */
+export interface GitBlameHunk {
+  /** Its first line in the file as it is now, from 1. */
+  start: number;
+  lines: number;
+  /** The commit's short hash; "" for lines changed and not committed yet. */
+  hash: string;
+  author: string;
+  email: string;
+  /** When the commit was made, in seconds since 1970 (0 when not committed). */
+  time: number;
+  /** The commit's message, its first line. */
+  summary: string;
+}
+
+/** One commit that changed a file. */
+export interface GitFileCommit {
+  hash: string;
+  subject: string;
+  author: string;
+  email: string;
+  /** ISO 8601 with the author's offset. */
+  date: string;
 }
 
 export type GitResult = { ok: true; output: string } | { ok: false; output: string };
@@ -114,7 +142,7 @@ export function parseStatus(out: string, top: string): GitStatus {
 }
 
 /** `git log` with these fields: unit separators between them, a record separator after each commit. */
-const LOG_FORMAT = "--format=%h%x1f%s%x1f%an%x1f%ar%x1f%D%x1e";
+const LOG_FORMAT = "--format=%h%x1f%s%x1f%an%x1f%ar%x1f%D%x1f%aI%x1e";
 
 export function parseLog(out: string): GitCommit[] {
   return out
@@ -122,10 +150,69 @@ export function parseLog(out: string): GitCommit[] {
     .map((r) => r.trim())
     .filter(Boolean)
     .map((r) => {
-      const [hash, subject, author, when, refs] = r.split("\x1f");
-      return { hash, subject, author, when, refs: refs ?? "" };
+      const [hash, subject, author, when, refs, date] = r.split("\x1f");
+      return { hash, subject, author, when, refs: refs ?? "", ...(date ? { date } : {}) };
     });
 }
+
+/** A file's own commits: hash, subject, author, email, date. */
+const FILE_LOG_FORMAT = "--format=%h%x1f%s%x1f%an%x1f%ae%x1f%aI%x1e";
+
+export function parseFileLog(out: string): GitFileCommit[] {
+  return out
+    .split("\x1e")
+    .map((r) => r.trim())
+    .filter(Boolean)
+    .map((r) => {
+      const [hash, subject, author, email, date] = r.split("\x1f");
+      return { hash, subject: subject ?? "", author: author ?? "", email: email ?? "", date: date ?? "" };
+    });
+}
+
+/** `git blame --porcelain` into blocks of lines, each last changed by one commit. A commit's details
+ * come once, with its first line; later lines of it carry only the header. Lines not committed yet
+ * (the all-zero hash) form blocks of their own with no author. */
+export function parseBlame(out: string): GitBlameHunk[] {
+  const commits = new Map<string, { author: string; email: string; time: number; summary: string }>();
+  const lines: { line: number; hash: string }[] = [];
+  let cur: string | null = null;
+  let at = 0;
+  for (const l of out.split("\n")) {
+    const head = /^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$/.exec(l);
+    if (head) {
+      cur = head[1];
+      at = Number(head[2]);
+      if (!commits.has(cur)) commits.set(cur, { author: "", email: "", time: 0, summary: "" });
+      continue;
+    }
+    if (!cur) continue;
+    if (l.startsWith("\t")) {
+      lines.push({ line: at, hash: cur });
+      continue;
+    }
+    const c = commits.get(cur)!;
+    if (l.startsWith("author ")) c.author = l.slice(7);
+    else if (l.startsWith("author-mail ")) c.email = l.slice(12).replace(/^<|>$/g, "");
+    else if (l.startsWith("author-time ")) c.time = Number(l.slice(12)) || 0;
+    else if (l.startsWith("summary ")) c.summary = l.slice(8);
+  }
+  const hunks: GitBlameHunk[] = [];
+  for (const { line, hash } of lines.sort((a, b) => a.line - b.line)) {
+    const pending = /^0+$/.test(hash);
+    const short = pending ? "" : hash.slice(0, 7);
+    const last = hunks[hunks.length - 1];
+    if (last && last.hash === short && last.start + last.lines === line) {
+      last.lines++;
+      continue;
+    }
+    const c = commits.get(hash)!;
+    hunks.push(pending ? { start: line, lines: 1, hash: "", author: "", email: "", time: 0, summary: "" } : { start: line, lines: 1, hash: short, author: c.author, email: c.email, time: c.time, summary: c.summary });
+  }
+  return hunks;
+}
+
+/** The biggest file blamed (a minified bundle is not worth it). */
+const BLAME_MAX_LINES = 20_000;
 
 const tail = (r: { stdout: string; stderr: string }) => `${r.stdout}${r.stderr}`.trim();
 
@@ -177,9 +264,52 @@ export function createGit(exec: Exec = runGit) {
     return r.code > 1 ? null : r.stdout;
   };
 
+  /** A file of the map in one of these folders: its repo's top and its path in the repo. The map's path
+   * is the folder's own (one folder) or starts with the folder's label (several); never outside the folder. */
+  const locate = async (roots: string[], path: string): Promise<{ top: string; rel: string } | null> => {
+    const clean = path.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!clean || clean.split("/").includes("..")) return null;
+    const tries = [clean, clean.split("/").slice(1).join("/")].filter(Boolean);
+    for (const root of roots) {
+      const base = resolve(root);
+      for (const t of tries) {
+        const abs = resolve(base, t);
+        if (!abs.startsWith(base + sep) || !existsSync(abs)) continue;
+        // The file's place in the repo comes from git (its folder's prefix), not from relative(top, abs): git
+        // may spell the top differently from the folder we were given (C:\Users\RUNNER~1 against
+        // C:/Users/runneradmin, a symlink, a drive letter's case), and the two would not line up.
+        const r = await exec(["rev-parse", "--show-toplevel", "--show-prefix"], dirname(abs), 10_000);
+        const [top = "", prefix = ""] = r.stdout.split(/\r?\n/).map((l) => l.trim());
+        if (r.code !== 0 || !top) return null;
+        return { top, rel: `${prefix}${basename(abs)}` };
+      }
+    }
+    return null;
+  };
+
   return {
     topOf,
     status,
+    locate,
+
+    /** Who last changed each line of a file, and when: blocks of lines per commit. Lines changed
+     * since the last commit come as blocks with no hash. */
+    async blame(top: string, rel: string): Promise<{ ok: true; hunks: GitBlameHunk[]; me: string } | { ok: false; output: string }> {
+      const tracked = await exec(["ls-files", "--error-unmatch", "--", rel], top, 10_000);
+      if (tracked.code !== 0) return { ok: false, output: `${rel} isn't in git yet: commit it first, then its history shows here.` };
+      const r = await exec(["blame", "--porcelain", "--", rel], top, 60_000);
+      if (r.code !== 0) return { ok: false, output: tail(r) || `git couldn't blame ${rel}.` };
+      const hunks = parseBlame(r.stdout);
+      if (hunks.length && hunks[hunks.length - 1].start > BLAME_MAX_LINES) return { ok: false, output: `${rel} is too long to show who changed each line.` };
+      const me = await exec(["config", "user.email"], top, 10_000);
+      return { ok: true, hunks, me: me.stdout.trim() };
+    },
+
+    /** The commits that changed a file, newest first, following it through renames. */
+    async fileLog(top: string, rel: string, n = 100): Promise<GitFileCommit[]> {
+      const r = await exec(["log", `-n${n}`, "--follow", FILE_LOG_FORMAT, "--", rel], top, 30_000);
+      return r.code === 0 ? parseFileLog(r.stdout) : [];
+    },
 
     /** One file's change as a unified diff; a new file as all added lines. */
     async diff(top: string, path: string): Promise<GitResult> {

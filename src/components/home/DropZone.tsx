@@ -99,7 +99,7 @@ export default function DropZone(p: Props) {
                     </span>
                   </div>
                   <div className="acts">
-                    {r.handle && (
+                    {(r.handle || r.path) && (
                       <button type="button" className="hbtn small ghost" disabled={!!p.busy} onClick={() => p.onRefresh(i)} title="Read this folder again from disk">
                         Refresh
                       </button>

@@ -174,8 +174,8 @@ export const LECTURERS: Record<LecturerId, LecturerDef> = {
       {
         id: "fast",
         label: "Fast",
-        detail: "Claude Haiku 4.5 managed by Deepgram, falling back to Claude Sonnet 5",
-        think: ["claude-haiku-4-5", "claude-sonnet-5"],
+        detail: "Claude Haiku 5.5 managed by Deepgram, falling back to Claude Haiku 4.5",
+        think: ["claude-haiku-5-5", "claude-haiku-4-5"],
         pricePerMin: 0.075,
         tier: "Standard: the model is included",
         phase: 1,
@@ -183,8 +183,8 @@ export const LECTURERS: Record<LecturerId, LecturerDef> = {
       {
         id: "smarter",
         label: "Smarter",
-        detail: "Claude Sonnet 5 managed by Deepgram",
-        think: ["claude-sonnet-5"],
+        detail: "Claude Sonnet 5.5 managed by Deepgram, falling back to Claude Sonnet 5",
+        think: ["claude-sonnet-5-5", "claude-sonnet-5"],
         pricePerMin: 0.163,
         tier: "Advanced: the model is included",
         phase: 1,
@@ -200,7 +200,7 @@ export const LECTURERS: Record<LecturerId, LecturerDef> = {
         untested: true,
       },
     ],
-    hint: "Listens with Flux, thinks with a Claude model Deepgram runs, and speaks with Flux Colin (British). Billed by connected minute.",
+    hint: "Listens with Flux, thinks with a Claude model Deepgram runs, and speaks with Flux Colin (British) in the style you pick. Billed by connected minute.",
     privacy:
       "Talk sends your microphone audio and the conversation, which can include code names and the lines the lecturer reads, to Deepgram, which runs Claude (Anthropic) for the replies. WalkMyCode sends mip_opt_out, so Deepgram does not use it to improve its models.",
   },
@@ -344,7 +344,23 @@ export const VOICE_DEFAULT = {
   input: "hands-free" as InputMode,
   /** The browser hears first; when it can't, the first transcriber with a key (STT_FALLBACK). */
   stt: "browser" as SttId,
+  /** A teacher who sounds glad to explain (owner, 11 Nov): one step towards Animated. */
+  lecturerStyle: "lively" as LecturerStyle,
 };
+
+/**
+ * How the Deepgram lecturer's voice sounds: Flux's expressivity, -2 (calm) to
+ * +2 (animated), 0 is the voice as recorded (playground.deepgram.com, Voice
+ * Agent → Voice, checked 11 Nov 2026; sent as agent.speak.provider.expressivity).
+ */
+export type LecturerStyle = "calm" | "natural" | "lively" | "excited";
+export const LECTURER_STYLES: { id: LecturerStyle; label: string; expressivity: number; detail: string }[] = [
+  { id: "calm", label: "Calm", expressivity: -1, detail: "Even and unhurried, for long sessions" },
+  { id: "natural", label: "Natural", expressivity: 0, detail: "The voice as recorded" },
+  { id: "lively", label: "Lively", expressivity: 1, detail: "Warm and engaged, like a teacher who enjoys the subject" },
+  { id: "excited", label: "Excited", expressivity: 2, detail: "As animated as the voice goes" },
+];
+export const lecturerStyleFor = (id: string) => LECTURER_STYLES.find((s) => s.id === id);
 
 export const NARRATOR_IDS = Object.keys(NARRATORS) as NarratorId[];
 export const LECTURER_IDS = Object.keys(LECTURERS) as LecturerId[];

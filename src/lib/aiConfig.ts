@@ -7,7 +7,7 @@ import type { Effort, ProviderId } from "@/lib/providers/catalogue";
 import type { FriendlyError } from "@/lib/providers/wire";
 import type { AiConfig } from "./aiPill";
 
-export type KeyStanding = { has_key: boolean; source: "settings" | "env" | null; found?: string };
+export type KeyStanding = { has_key: boolean; source: "settings" | "env" | null; found?: string; note?: string };
 
 /** The error text a config endpoint put in its body, or the status. */
 export async function errorOf(res: Response): Promise<string> {

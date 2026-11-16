@@ -146,7 +146,7 @@ async function reachable(base_url: string, fetchImpl: typeof fetch): Promise<boo
 }
 
 /**
- * Port of iReliabee's resolve_llm: null when a question can be asked, else
+ * Null when a question can be asked, else
  * the FriendlyError to show. The local probe is the only network call.
  */
 export async function readiness(r: Resolved = resolve().resolved, fetchImpl: typeof fetch = fetch): Promise<FriendlyError | null> {

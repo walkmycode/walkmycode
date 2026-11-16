@@ -38,7 +38,7 @@ export type Board = {
   /** A talk board's everyday picture: the idea as a child would understand it. Shown in a 💡 block. */
   analogy?: string;
   /** The analogy as a scene to watch, written the first time the student asks for it (scene.ts). */
-  scene?: import("./scene").Scene;
+  scene?: import("../../lib/scene/any").AnyScene;
   /** Code the student can run from this board with one click (a course folder's example file). */
   example?: { name: string; code: string; language: CodeLanguage };
   /** A code board from a course folder: the exercise's file, the course's own answer (never shown
@@ -93,6 +93,9 @@ export type Lesson = {
   source?: { file: string; start?: number; end?: number };
   /** The course folder's lesson this was written from ("01_foundations/06_ownership"). */
   folder?: string;
+  /** What the request asked for beyond its subject (src/learn/lib/codebaseAsk.ts): the codebase on this computer it was
+   *  taught from, or the one that could not be found; the diagrams it named (UML, sequence, class…). */
+  ground?: { codebase?: { name: string; path: string }; missing?: string; diagrams?: string[]; uml?: boolean };
 };
 
 /** One step of a course's road to mastery: a few lessons' worth. */

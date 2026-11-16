@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File tree follows the map</title>
+<!-- Mockup only (docs/design): the Files panel revealing the file the map, a trace or the guide is on.
+     Colours, type and motion timings are the app's own (globals.css dark theme, docs/MOTION.md §2). -->
+<style>
+:root {
+  --wall: #1e1f22; --board: #1b1c1f; --ui: #2b2d30; --ui-2: #35373c; --ui-line: #43454a;
+  --ui-text: #dfe1e5; --ui-dim: #9da0a8; --ui-faint: #6f737a; --out: #17181a; --ui-raise: #3c3f44;
+  --hair: rgba(255,255,255,.06); --hair-2: rgba(255,255,255,.11);
+  --yellow: #f3d77a; --yellow-dim: rgba(243,215,122,.55); --yellow-wash: rgba(243,215,122,.10);
+  --glow: 0 0 0 4px rgba(243,215,122,.18), 0 0 14px 3px rgba(243,215,122,.4);
+  --text: 13px; --mono: "JetBrains Mono", ui-monospace, Consolas, monospace; --sans: "Inter", system-ui, sans-serif;
+  --m: 1;
+  --t-tap: calc(120ms * var(--m)); --t-fade: 150ms; --t-dim: calc(250ms * var(--m));
+  --t-draw: calc(260ms * var(--m)); --t-step: calc(70ms * var(--m)); --t-land: calc(300ms * var(--m));
+  --ease-out: cubic-bezier(.2,.8,.2,1); --ease-settle: cubic-bezier(.22,1,.36,1); --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  --row: 22px;
+}
+:root.still { --m: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--wall); color: var(--ui-text); font: var(--text)/1.45 var(--sans); }
+button { font: inherit; color: inherit; }
+
+/* The page: a top bar of demo controls, then the three panes the app already has. */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--ui-line); }
+.bar b { margin-right: 6px; }
+.bar .act { padding: 4px 10px; border: 1px solid var(--ui-line); background: var(--ui-2); cursor: pointer; }
+.bar .act:hover { background: var(--ui-raise); }
+.bar .act.primary { border-color: var(--yellow-dim); color: var(--yellow); }
+.bar label { display: inline-flex; gap: 5px; align-items: center; color: var(--ui-dim); margin-left: 8px; cursor: pointer; }
+.bar .sep { flex: 1; }
+.bar .note { color: var(--ui-faint); }
+.panes { display: grid; grid-template-columns: 300px minmax(0, 1fr) minmax(0, 1.1fr); height: calc(100% - 37px); }
+.pane { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ui-line); background: var(--board); }
+.pane > header { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; background: var(--ui); border-bottom: 1px solid var(--hair-2); font-weight: 600; flex: none; }
+.pane > header .tools { margin-left: auto; display: flex; gap: 2px; }
+.pane > header .tools button { width: 22px; height: 22px; border: 0; background: none; color: var(--ui-dim); cursor: pointer; }
+.pane > header .tools button:hover, .pane > header .tools button.on { color: var(--yellow); background: var(--hair); }
+
+/* ── The Files panel ── */
+.crumbs { display: flex; flex-wrap: nowrap; overflow: hidden; gap: 0; height: 24px; align-items: center; padding: 0 10px; border-bottom: 1px solid var(--hair); font: var(--text) var(--mono); color: var(--ui-dim); flex: none; white-space: nowrap; }
+.crumbs span { animation: crumb var(--t-dim) var(--ease-settle) both; animation-delay: calc(var(--i) * var(--t-step)); }
+.crumbs span.last { color: var(--yellow); font-weight: 600; }
+.crumbs span + span::before { content: "/"; color: var(--ui-faint); margin: 0 3px; }
+@keyframes crumb { from { opacity: 0; transform: translateX(-6px); } }
+
+.tree { position: relative; flex: 1; overflow: auto; padding: 4px 0; font: var(--text) var(--mono); scroll-behavior: smooth; contain: strict; }
+:root.still .tree { scroll-behavior: auto; }
+.row { position: relative; display: flex; align-items: center; gap: 4px; width: 100%; height: var(--row); padding: 0 8px 0 calc(8px + var(--d) * 14px); border: 0; background: none; color: var(--ui-dim); text-align: left; white-space: nowrap; cursor: pointer; }
+.row:hover { color: var(--ui-text); background: var(--hair); }
+.row .glyph { display: inline-block; width: 1ch; color: var(--ui-faint); transition: transform var(--t-tap) var(--ease-spring); }
+.row.dir { color: var(--ui-text); font-weight: 600; }
+.row.dir.open .glyph { transform: rotate(90deg); }
+.row .icon { width: 14px; text-align: center; opacity: .8; }
+.row .badge { margin-left: auto; min-width: 16px; height: 16px; padding: 0 4px; font: 600 11px/16px var(--sans); text-align: center; color: var(--out); background: var(--yellow); transform: scale(0); transition: transform var(--t-tap) var(--ease-spring); }
+.row .badge.on { transform: scale(1); }
+/* Rows that appear because a folder opened rise in, staggered by depth order (compositor-only: opacity + transform). */
+.row.enter { animation: rise var(--t-dim) var(--ease-settle) both; animation-delay: calc(var(--k) * 12ms * var(--m)); }
+@keyframes rise { from { opacity: 0; transform: translateY(-4px); } }
+
+/* The way down: folders on the path are lit, the file is the beacon. */
+.row.trail { color: var(--yellow-dim); }
+.row.trail .glyph { color: var(--yellow); }
+.row.visited { color: var(--ui-text); }
+.row.visited .name { text-decoration: underline; text-decoration-color: var(--yellow-dim); text-underline-offset: 3px; }
+.row.beacon { color: var(--yellow); font-weight: 600; }
+.row.beacon::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--yellow-wash), rgba(243,215,122,.03) 70%, transparent); transform-origin: left; animation: sweep var(--t-land) var(--ease-out) both; }
+.row.beacon::after { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; background: var(--yellow); box-shadow: var(--glow); transform-origin: center; animation: post var(--t-land) var(--ease-spring) both; }
+@keyframes sweep { from { transform: scaleX(0); opacity: 0; } 40% { opacity: 1; } }
+@keyframes post { from { transform: scaleY(0); } }
+.row.beacon .name { position: relative; }
+.row.ping .icon { animation: ping calc(700ms * var(--m)) var(--ease-out) 1; border-radius: 0; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(243,215,122,.7); } 100% { box-shadow: 0 0 0 9px rgba(243,215,122,0); } }
+
+/* The rail: one SVG line drawn from the top folder down each level to the file. */
+.rail { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.rail path { fill: none; stroke: var(--yellow); stroke-width: 1.5; stroke-linecap: square; filter: drop-shadow(0 0 3px rgba(243,215,122,.6)); }
+.rail path.draw { animation: draw var(--t-draw) var(--ease-out) both; }
+.rail path.old { stroke: var(--yellow-dim); filter: none; transition: opacity var(--t-dim); }
+@keyframes draw { from { stroke-dashoffset: var(--len); } to { stroke-dashoffset: 0; } }
+
+/* Off-screen hint: when the file is above or below the view and follow is off. */
+.offhint { position: absolute; left: 50%; transform: translateX(-50%); padding: 2px 10px; background: var(--ui-raise); color: var(--yellow); border: 1px solid var(--yellow-dim); cursor: pointer; display: none; z-index: 2; }
+.offhint.up { top: 52px; } .offhint.down { bottom: 8px; }
+
+/* ── The map stand-in ── */
+.map { flex: 1; position: relative; overflow: hidden; background: radial-gradient(circle at 1px 1px, var(--hair-2) 1px, transparent 0) 0 0/18px 18px; }
+.card { position: absolute; width: 170px; padding: 6px 8px; background: var(--ui); border: 1px solid var(--ui-line); font: var(--text) var(--mono); color: var(--ui-dim); transition: border-color var(--t-fade), color var(--t-fade), box-shadow var(--t-dim); cursor: pointer; }
+.card small { display: block; color: var(--ui-faint); font: var(--text) var(--sans); }
+.card.lit { border-color: var(--yellow); color: var(--yellow); box-shadow: var(--glow); }
+.map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.map svg line { stroke: var(--ui-line); stroke-width: 1.5; }
+.map svg line.lit { stroke: var(--yellow); }
+
+/* ── The code stand-in ── */
+.code { flex: 1; overflow: auto; padding: 8px 0; font: var(--text)/1.6 var(--mono); color: var(--ui-dim); }
+.code div { padding: 0 12px; white-space: pre; }
+.code div.hl { background: var(--yellow-wash); color: var(--ui-text); box-shadow: inset 2px 0 var(--yellow); }
+.code .ln { display: inline-block; width: 3ch; color: var(--ui-faint); margin-right: 12px; text-align: right; }
+.spec { padding: 10px 12px; border-top: 1px solid var(--hair-2); color: var(--ui-dim); flex: none; max-height: 42%; overflow: auto; }
+.spec h3 { margin: 0 0 4px; font-size: var(--text); color: var(--ui-text); }
+.spec ul { margin: 0 0 8px; padding-left: 18px; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Mockup</b>
+  <button class="act primary" id="trace">▶ Trace “sign in”</button>
+  <button class="act" id="deep">Open a deep file</button>
+  <button class="act" id="far">Jump across the repo</button>
+  <button class="act" id="reset">Reset</button>
+  <label><input type="checkbox" id="follow" checked> Follow the map</label>
+  <label><input type="checkbox" id="tidy"> Fold what's off the path</label>
+  <label><input type="checkbox" id="still"> Reduce motion</label>
+  <span class="sep"></span>
+  <span class="note">Click any card on the map too.</span>
+</div>
+<div class="panes">
+  <section class="pane">
+    <header>Files <span class="tools">
+      <button id="locate" title="Show the open file (Alt+F1)">◎</button>
+      <button id="followBtn" class="on" title="Follow the map">⇄</button>
+      <button id="collapse" title="Fold everything">⊟</button>
+    </span></header>
+    <div class="crumbs" id="crumbs"><span style="--i:0">team-tasks</span></div>
+    <div class="tree" id="tree"><svg class="rail" id="rail"></svg></div>
+    <button class="offhint up" id="hintUp">▲ app/api/login/route.ts</button>
+    <button class="offhint down" id="hintDown">▼ lib/db.ts</button>
+  </section>
+  <section class="pane">
+    <header>Map</header>
+    <div class="map" id="map"><svg id="wires"></svg></div>
+  </section>
+  <section class="pane" style="border-right:0">
+    <header id="codeHead">Code</header>
+    <div class="code" id="code"></div>
+    <div class="spec">
+      <h3>What happens when the map, a trace or the guide lands on a file</h3>
+      <ul>
+        <li><b>Folders open down the path</b>, one level every 70 ms; the rows they hold rise in.</li>
+        <li><b>A rail is drawn</b> from the top folder down each level to the file (260 ms), and the path's folders turn gold.</li>
+        <li><b>The file becomes the beacon</b>: a gold post grows, a wash sweeps across, the icon pings once.</li>
+        <li><b>The tree scrolls only if it must</b>, and only enough to centre the file.</li>
+        <li><b>Each file on a trace keeps its number</b> (1, 2, 3…), so the tree shows the whole path at once.</li>
+        <li>The <b>path bar</b> at the top spells out where the file is.</li>
+      </ul>
+      <h3>Speed</h3>
+      <ul>
+        <li>Opacity and transform only, plus one SVG stroke, so it all runs on the compositor.</li>
+        <li>Rows are virtualised: only what's on screen is built, so a 12,000-file workspace scrolls as fast as a small one.</li>
+        <li>A new reveal cancels the one still running.</li>
+        <li>With Reduce motion, everything still happens, but instantly.</li>
+      </ul>
+      <h3>Controls (panel header)</h3>
+      <ul>
+        <li>◎ shows the open file.</li>
+        <li>⇄ turns following on or off. When it's off, a ▲/▼ chip appears if the file is out of view.</li>
+        <li>⊟ folds everything.</li>
+        <li>“Fold what's off the path” (optional) keeps only the path open.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+<script>
+const FILES = `app/layout.tsx app/page.tsx app/globals.css app/login/page.tsx app/projects/[id]/page.tsx app/tasks/[id]/page.tsx
+app/api/login/route.ts app/api/logout/route.ts app/api/me/route.ts app/api/projects/route.ts app/api/projects/[id]/route.ts
+app/api/projects/[id]/tasks/route.ts app/api/tasks/[id]/route.ts app/api/tasks/[id]/comments/route.ts
+components/CommentBox.tsx components/Header.tsx components/LoginForm.tsx components/NewTaskForm.tsx components/TaskCard.tsx components/TaskList.tsx
+components/ui/Button.tsx components/ui/Dialog.tsx components/ui/Field.tsx components/ui/Menu.tsx components/ui/Spinner.tsx
+lib/auth.ts lib/comments.ts lib/db.ts lib/email.ts lib/password.ts lib/projects.ts lib/tasks.ts lib/types.ts
+lib/server/session/cookies.ts lib/server/session/store.ts lib/server/session/tokens.ts lib/server/rate-limit.ts
+db/migrations/0001_init.sql db/migrations/0002_tasks.sql db/migrations/0003_comments.sql db/schema.sql db/seed.sql
+scripts/dev.mjs scripts/seed.mjs tests/auth.test.ts tests/tasks.test.ts tests/projects.test.ts
+public/favicon.svg public/logo.svg .env.example README.md package.json tsconfig.json next.config.ts`.split(/\s+/);
+
+const $ = (id) => document.getElementById(id);
+const tree = $("tree"), rail = $("rail");
+const expanded = new Set();
+const visited = new Map(); // path -> trace number
+let active = null, runId = 0, timers = [];
+
+// Folder structure from the paths, folders first, then files, by name.
+function build() {
+  const root = { name: "", path: "", dirs: new Map(), files: [] };
+  for (const p of FILES) {
+    const parts = p.split("/"); let d = root;
+    parts.slice(0, -1).forEach((seg, i) => {
+      const path = parts.slice(0, i + 1).join("/");
+      if (!d.dirs.has(seg)) d.dirs.set(seg, { name: seg, path, dirs: new Map(), files: [] });
+      d = d.dirs.get(seg);
+    });
+    d.files.push(p);
+  }
+  return root;
+}
+const ROOT = build();
+const icon = (p) => p.endsWith(".tsx") ? "⚛" : p.endsWith(".ts") ? "ʦ" : p.endsWith(".sql") ? "⛁" : p.endsWith(".css") ? "#" : p.endsWith(".md") ? "¶" : "·";
+const ancestors = (p) => p.split("/").slice(0, -1).map((_, i, a) => a.slice(0, i + 1).join("/"));
+
+// Visible rows (what a virtual list would window over).
+function rows() {
+  const out = [];
+  (function walk(d, depth) {
+    for (const sub of [...d.dirs.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      out.push({ kind: "dir", path: sub.path, name: sub.name, depth });
+      if (expanded.has(sub.path)) walk(sub, depth + 1);
+    }
+    for (const f of [...d.files].sort()) out.push({ kind: "file", path: f, name: f.split("/").pop(), depth });
+  })(ROOT, 0);
+  return out;
+}
+
+let shown = new Set();
+function render(trail = new Set()) {
+  const list = rows();
+  const before = shown; shown = new Set(list.map((r) => r.path));
+  const frag = document.createDocumentFragment(); let k = 0;
+  for (const r of list) {
+    const b = document.createElement("button");
+    b.className = "row " + r.kind;
+    b.style.setProperty("--d", r.depth);
+    b.dataset.path = r.path;
+    if (r.kind === "dir" && expanded.has(r.path)) b.classList.add("open");
+    if (!before.has(r.path) && before.size) { b.classList.add("enter"); b.style.setProperty("--k", k++); }
+    if (trail.has(r.path)) b.classList.add("trail");
+    if (visited.has(r.path)) b.classList.add("visited");
+    if (r.path === active) b.classList.add("beacon");
+    b.innerHTML = r.kind === "dir"
+      ? `<span class="glyph">▸</span><span class="icon">▤</span><span class="name">${r.name}</span>`
+      : `<span class="glyph"></span><span class="icon">${icon(r.path)}</span><span class="name">${r.name}</span><span class="badge${visited.has(r.path) ? " on" : ""}">${visited.get(r.path) ?? ""}</span>`;
+    b.onclick = () => r.kind === "dir" ? toggle(r.path) : land(r.path, { from: "tree" });
+    frag.append(b);
+  }
+  tree.replaceChildren(rail, frag);
+}
+function toggle(p) { expanded.has(p) ? expanded.delete(p) : expanded.add(p); render(trailOf(active)); drawRail(active, false); }
+const trailOf = (p) => new Set(p ? ancestors(p) : []);
+const rowOf = (p) => tree.querySelector(`[data-path="${CSS.escape(p)}"]`);
+const still = () => document.documentElement.classList.contains("still");
+
+// The rail: from the top folder's glyph, down to each next level, ending at the file.
+function drawRail(p, animate) {
+  rail.innerHTML = "";
+  if (!p) return;
+  const chain = [...ancestors(p), p].map(rowOf);
+  if (chain.some((x) => !x)) return;
+  const x = (row) => 8 + Number(row.style.getPropertyValue("--d")) * 14 + 4;
+  const y = (row) => row.offsetTop + row.offsetHeight / 2;
+  let d = `M ${x(chain[0])} ${y(chain[0]) + 6}`;
+  for (let i = 1; i < chain.length; i++) d += ` V ${y(chain[i])} H ${x(chain[i]) - 3}`;
+  rail.setAttribute("width", tree.scrollWidth); rail.setAttribute("height", tree.scrollHeight);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", d);
+  rail.append(path);
+  const len = path.getTotalLength();
+  path.style.setProperty("--len", len);
+  path.style.strokeDasharray = len;
+  if (animate && !still()) path.classList.add("draw");
+}
+
+function crumbs(p) {
+  const parts = ["team-tasks", ...p.split("/")];
+  $("crumbs").innerHTML = parts.map((s, i) => `<span style="--i:${i}" class="${i === parts.length - 1 ? "last" : ""}">${s}</span>`).join("");
+}
+
+// Landing on a file: open the folders one level at a time, then scroll (only if needed), then the beacon and the rail.
+function land(p, o = {}) {
+  const id = ++runId; timers.forEach(clearTimeout); timers = [];
+  active = p; crumbs(p); showCode(p, o.lines);
+  if (!$("follow").checked && o.from !== "tree") { render(trailOf(p)); offHint(); return; }
+  if ($("tidy").checked) for (const e of [...expanded]) if (!ancestors(p).includes(e)) expanded.delete(e);
+  const closed = ancestors(p).filter((a) => !expanded.has(a));
+  const step = still() ? 0 : 70;
+  closed.forEach((a, i) => timers.push(setTimeout(() => { if (id !== runId) return; expanded.add(a); render(trailOf(p)); }, i * step)));
+  timers.push(setTimeout(() => {
+    if (id !== runId) return;
+    render(trailOf(p));
+    const row = rowOf(p);
+    const top = row.offsetTop, bottom = top + row.offsetHeight;
+    if (top < tree.scrollTop + 8 || bottom > tree.scrollTop + tree.clientHeight - 8) tree.scrollTo({ top: top - tree.clientHeight / 2, behavior: still() ? "auto" : "smooth" });
+    drawRail(p, true);
+    row.classList.add("ping");
+    offHint();
+  }, closed.length * step + (closed.length ? 40 : 0)));
+}
+
+function offHint() {
+  const row = active && rowOf(active);
+  const up = $("hintUp"), down = $("hintDown");
+  up.style.display = down.style.display = "none";
+  if ($("follow").checked || !active) return;
+  const name = active.split("/").slice(-2).join("/");
+  if (!row) { down.textContent = "▼ " + name; down.style.display = "block"; return; }
+  if (row.offsetTop < tree.scrollTop) { up.textContent = "▲ " + name; up.style.display = "block"; }
+  else if (row.offsetTop > tree.scrollTop + tree.clientHeight) { down.textContent = "▼ " + name; down.style.display = "block"; }
+}
+tree.addEventListener("scroll", offHint, { passive: true });
+$("hintUp").onclick = $("hintDown").onclick = $("locate").onclick = () => { const f = $("follow").checked; $("follow").checked = true; land(active ?? "lib/db.ts"); $("follow").checked = f; };
+
+// ── Map and code stand-ins ──
+const CARDS = [
+  { id: "login", file: "components/LoginForm.tsx", x: 30, y: 40, sub: "the sign-in form" },
+  { id: "route", file: "app/api/login/route.ts", x: 250, y: 40, sub: "POST /api/login" },
+  { id: "auth", file: "lib/auth.ts", x: 250, y: 150, sub: "checks the password" },
+  { id: "tokens", file: "lib/server/session/tokens.ts", x: 30, y: 260, sub: "issues the session" },
+  { id: "db", file: "lib/db.ts", x: 250, y: 260, sub: "talks to the database" },
+  { id: "schema", file: "db/migrations/0001_init.sql", x: 250, y: 370, sub: "users table" },
+  { id: "tasks", file: "components/TaskList.tsx", x: 30, y: 370, sub: "the task list" },
+];
+const WIRES = [["login", "route"], ["route", "auth"], ["auth", "tokens"], ["auth", "db"], ["db", "schema"], ["tasks", "db"]];
+const map = $("map");
+for (const c of CARDS) {
+  const el = document.createElement("div");
+  el.className = "card"; el.id = "c-" + c.id; el.style.left = c.x + "px"; el.style.top = c.y + "px";
+  el.innerHTML = `${c.file.split("/").pop()}<small>${c.sub}</small>`;
+  el.onclick = () => { light([c.id]); land(c.file, { from: "map" }); };
+  map.append(el);
+}
+const wires = $("wires");
+for (const [a, b] of WIRES) {
+  const A = CARDS.find((c) => c.id === a), B = CARDS.find((c) => c.id === b);
+  const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  l.setAttribute("x1", A.x + 85); l.setAttribute("y1", A.y + 20); l.setAttribute("x2", B.x + 85); l.setAttribute("y2", B.y + 20);
+  l.id = `w-${a}-${b}`; wires.append(l);
+}
+function light(ids) {
+  document.querySelectorAll(".card.lit, line.lit").forEach((e) => e.classList.remove("lit"));
+  ids.forEach((id, i) => { $("c-" + id).classList.add("lit"); if (i) $(`w-${ids[i - 1]}-${id}`)?.classList.add("lit"); });
+}
+function showCode(p, lines = [3, 5]) {
+  $("codeHead").textContent = p;
+  const body = ["import { db } from \"@/lib/db\";", "", "export async function handler(req: Request) {", "  const body = await req.json();", "  const user = await check(body.email, body.password);", "  if (!user) return new Response(null, { status: 401 });", "  return Response.json({ ok: true });", "}"];
+  $("code").innerHTML = body.map((t, i) => `<div class="${i + 1 >= lines[0] && i + 1 <= lines[1] ? "hl" : ""}"><span class="ln">${i + 1}</span>${t.replace(/</g, "&lt;")}</div>`).join("");
+}
+
+// ── Demo buttons ──
+let traceTimers = [];
+$("trace").onclick = () => {
+  visited.clear(); traceTimers.forEach(clearTimeout); traceTimers = [];
+  const hops = ["login", "route", "auth", "tokens"];
+  hops.forEach((id, i) => traceTimers.push(setTimeout(() => {
+    const c = CARDS.find((x) => x.id === id);
+    visited.set(c.file, i + 1);
+    light(hops.slice(0, i + 1));
+    land(c.file, { from: "trace" });
+  }, i * (still() ? 300 : 1100))));
+};
+$("deep").onclick = () => { light(["tokens"]); land("lib/server/session/tokens.ts", { from: "map" }); };
+$("far").onclick = () => { const p = ["db/migrations/0003_comments.sql", "app/api/tasks/[id]/comments/route.ts", "components/ui/Spinner.tsx", "tests/projects.test.ts"]; land(p[Math.floor(Math.random() * p.length)], { from: "map" }); };
+$("reset").onclick = () => { runId++; timers.forEach(clearTimeout); traceTimers.forEach(clearTimeout); expanded.clear(); visited.clear(); active = null; light([]); rail.innerHTML = ""; tree.scrollTop = 0; $("crumbs").innerHTML = `<span style="--i:0">team-tasks</span>`; render(); offHint(); };
+$("collapse").onclick = () => { expanded.clear(); render(); drawRail(null); offHint(); };
+$("followBtn").onclick = () => { $("follow").checked = !$("follow").checked; $("follow").onchange(); };
+$("follow").onchange = () => { $("followBtn").classList.toggle("on", $("follow").checked); offHint(); };
+$("still").onchange = () => document.documentElement.classList.toggle("still", $("still").checked);
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) { $("still").checked = true; $("still").onchange(); }
+render(); showCode("README.md", [0, 0]);
+</script>
+</body>
+</html>

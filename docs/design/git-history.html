@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WalkMyCode git history (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  Who changed each line, and when (docs/GIT.md): in the Code panel, "Blame" puts a
+  gutter beside the line numbers with the author and the exact date and time of the
+  last change to each block of lines; hovering one shows the commit. "History" lists
+  the file's own commits. Graphite theme, one text size, square corners.
+-->
+<style>
+:root{
+  --wall:#1e1f22; --wall-2:#232428; --ui:#2b2d30; --ui-2:#35373c; --ui-raise:#3c3f44; --ui-line:#43454a;
+  --ui-text:#dfe1e5; --ui-dim:#9da0a8; --ui-faint:#6f737a; --hair:rgba(255,255,255,.06); --hair-2:rgba(255,255,255,.11);
+  --yellow:#f3d77a; --blue:#9fd3f0; --green:#a8e0a0; --pink:#f2a7a0;
+  --code-bg:#1e1f22; --code-gutter:#1e1f22; --code-gutter-ink:#6f737a;
+  --text:13px; --sans:Inter,"Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;border-radius:0}
+html,body{margin:0}
+body{background:#111214;color:var(--ui-text);font:var(--text)/1.5 var(--sans);padding:28px 16px 60px;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer}
+h1,h2{font:700 var(--text)/1.3 var(--sans);margin:0}
+h1{color:var(--yellow)}
+p{margin:6px 0 0;color:var(--ui-dim);max-width:80ch}
+.wrap{max-width:1100px;margin:0 auto;display:grid;gap:22px}
+.panel{border:1px solid var(--hair-2);background:var(--wall);position:relative}
+.tabs{display:flex;align-items:center;height:30px;background:var(--ui);border-bottom:1px solid var(--hair)}
+.tab{padding:0 12px;height:100%;display:flex;align-items:center;gap:6px;color:var(--ui-dim)}
+.tab.on{color:var(--ui-text);box-shadow:inset 0 -2px 0 var(--yellow)}
+.head{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--hair);background:var(--wall-2)}
+.path{font-family:var(--mono);color:var(--ui-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp{flex:1}
+.ctl{height:26px;padding:0 10px;border:1px solid var(--ui-line);background:var(--ui-2);color:var(--ui-text);font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.ctl:hover{background:var(--ui-raise)}
+.ctl[aria-pressed="true"]{border-color:var(--yellow);color:var(--yellow)}
+.ctl svg{width:14px;height:14px}
+.code{display:grid;grid-template-columns:auto auto 1fr;font:var(--text)/1.6 var(--mono);background:var(--code-bg)}
+.blame,.nums{color:var(--code-gutter-ink);user-select:none}
+.blame{border-right:1px solid var(--hair);background:#1b1c1f}
+.blame div{height:1.6em;padding:0 10px;display:flex;gap:10px;white-space:nowrap;font-family:var(--sans)}
+.blame div.first{color:var(--ui-dim)}
+.blame div.first:hover{background:var(--ui);color:var(--ui-text)}
+.blame .who{width:15ch;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.blame .when{width:17ch;text-align:right}
+.blame div.mine .who{color:var(--yellow)}
+.blame div.new{color:var(--green)}
+.blame div.cont{color:transparent}
+.nums div{height:1.6em;padding:0 10px 0 14px;text-align:right}
+.lines div{height:1.6em;padding:0 12px;white-space:pre;color:#c9ccd1}
+.k{color:#c9a8e0}.s{color:var(--green)}.f{color:var(--blue)}.c{color:var(--ui-faint)}
+.tip{position:absolute;left:150px;top:132px;width:360px;background:var(--ui);border:1px solid var(--ui-line);box-shadow:0 18px 50px rgba(0,0,0,.5);padding:10px 12px;display:grid;gap:4px}
+.tip b{color:var(--ui-text)}
+.tip .meta{color:var(--ui-dim)}
+.tip code{font-family:var(--mono);color:var(--yellow)}
+.hist{position:absolute;right:10px;top:68px;width:430px;background:var(--ui);border:1px solid var(--ui-line);box-shadow:0 18px 50px rgba(0,0,0,.5)}
+.hist header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--hair);font-weight:700}
+.hist ol{list-style:none;margin:0;padding:0;max-height:330px;overflow:auto}
+.hist li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:8px 12px;border-bottom:1px solid var(--hair)}
+.hist li:hover{background:var(--ui-2)}
+.hist .subj{font-weight:600}
+.hist .hash{font-family:var(--mono);color:var(--yellow)}
+.hist .meta{color:var(--ui-dim);grid-column:1/-1}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.legend div{padding:12px 14px;border:1px solid var(--hair-2);background:var(--wall-2)}
+.legend b{display:block}
+.legend span{color:var(--ui-dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Who changed each line, and when</h1>
+    <p>In the Code panel, <b>Blame</b> adds a gutter: at the start of each block of lines last changed together, the author and the exact date and time. Hover it for the commit. <b>History</b> lists the file's own commits. Only where WalkMyCode can reach the project's folder on this computer (the desktop app, or the full app with the folder set), through the user's own git.</p>
+  </div>
+
+  <div class="panel">
+    <div class="tabs"><span class="tab">Code</span><span class="tab on">main.rs</span></div>
+    <div class="head">
+      <span class="path">src/main.rs</span><span class="sp"></span>
+      <button class="ctl" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><circle cx="5" cy="4" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="11" cy="8" r="1.6"/><path d="M5 5.6v4.8M6.4 4.6l3.2 2.4"/></svg>Blame</button>
+      <button class="ctl" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.5 1.5"/></svg>History</button>
+      <button class="ctl">✎ Edit</button>
+    </div>
+    <div class="code">
+      <div class="blame">
+        <div class="first"><span class="who">Ama Owusu</span><span class="when">2 Nov 2026, 09:14</span></div>
+        <div class="cont"><span class="who">.</span><span class="when">.</span></div>
+        <div class="cont"><span class="who">.</span><span class="when">.</span></div>
+        <div class="first mine"><span class="who">You</span><span class="when">12 Nov 2026, 22:41</span></div>
+        <div class="cont"><span class="who">.</span><span class="when">.</span></div>
+        <div class="cont"><span class="who">.</span><span class="when">.</span></div>
+        <div class="first"><span class="who">Kofi Mensah</span><span class="when">28 Oct 2026, 16:02</span></div>
+        <div class="cont"><span class="who">.</span><span class="when">.</span></div>
+        <div class="first new"><span class="who">Not committed</span><span class="when">your change</span></div>
+        <div class="first"><span class="who">Ama Owusu</span><span class="when">2 Nov 2026, 09:14</span></div>
+      </div>
+      <div class="nums"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div><div>10</div></div>
+      <div class="lines">
+        <div><span class="k">mod</span> gateway;</div>
+        <div><span class="k">mod</span> ledger;</div>
+        <div></div>
+        <div><span class="k">fn</span> <span class="f">main</span>() {</div>
+        <div>    <span class="k">let mut</span> gw = gateway::Gateway::<span class="f">new</span>();</div>
+        <div>    <span class="k">for</span> line <span class="k">in</span> std::io::<span class="f">stdin</span>().<span class="f">lines</span>() {</div>
+        <div>        <span class="f">run_command</span>(&amp;<span class="k">mut</span> gw, &amp;line.<span class="f">unwrap</span>());</div>
+        <div>    }</div>
+        <div>    <span class="c">// print the ledger on exit</span></div>
+        <div>}</div>
+      </div>
+    </div>
+    <div class="tip">
+      <b>Kofi Mensah</b>
+      <span class="meta">Tuesday 28 October 2026, 16:02 · two weeks ago</span>
+      <span>Read commands until stdin closes</span>
+      <span class="meta"><code>a41c9e2</code> · lines 7–8</span>
+    </div>
+    <div class="hist">
+      <header><span>History of main.rs</span><span class="meta" style="color:var(--ui-dim);font-weight:400">12 commits</span></header>
+      <ol>
+        <li><span class="subj">Print the ledger when the session ends</span><span class="hash">9f3d2b1</span><span class="meta">You · 12 Nov 2026, 22:41</span></li>
+        <li><span class="subj">Gateway owns the ledger</span><span class="hash">51aa07c</span><span class="meta">Ama Owusu · 2 Nov 2026, 09:14</span></li>
+        <li><span class="subj">Read commands until stdin closes</span><span class="hash">a41c9e2</span><span class="meta">Kofi Mensah · 28 Oct 2026, 16:02</span></li>
+        <li><span class="subj">First commit</span><span class="hash">0c11f8e</span><span class="meta">Ama Owusu · 20 Oct 2026, 11:30</span></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><b>Blame</b><span>One label per block of lines changed together: author (you in yellow), date and time in your time zone. Lines changed but not committed say so, in green.</span></div>
+    <div><b>Hover</b><span>The full date, how long ago, the commit's message, its short hash and the lines it covers.</span></div>
+    <div><b>History</b><span>The file's own commits, newest first, following renames: message, short hash, author, date and time.</span></div>
+    <div><b>Where</b><span>Needs the project's folder on this computer: the desktop app knows it; the full web app asks for it once. Not in WalkMyCode Lite.</span></div>
+  </div>
+</div>
+</body>
+</html>

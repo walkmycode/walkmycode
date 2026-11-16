@@ -128,7 +128,7 @@ describe("an analogy to watch: what the professor is asked", () => {
   });
 
   it("holds every analogy to the same bar: concrete, one idea, mapped, true to the code, honest about its limit", () => {
-    for (const rule of [/ten-year-old has touched/, /One idea per analogy/, /what stands for what/, /true to the code/, /where it stops/]) assert.match(ANALOGY_RULES, rule);
+    for (const rule of [/ten-year-old has seen or touched, from any part of life/,/One idea per analogy/, /what stands for what/, /true to the code/, /where it stops/]) assert.match(ANALOGY_RULES, rule);
     const written = lessonPrompt({ topic: "Ownership", course: "Rust", level: "Beginner", boards: 10, notes: "" }, DEFAULT_PROFILE, []);
     const fromFolder = folderLessonPrompt(readLesson("01/06_ownership", { "README.md": "# Ownership\n\n## Move\n" }), "Rust", DEFAULT_PROFILE, []);
     for (const p of [written, fromFolder]) {

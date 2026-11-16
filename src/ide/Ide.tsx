@@ -26,18 +26,23 @@
  *   in whichever place it is.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { sampleMessage, type Sample } from "@/learn/lib/claude";
 import { Chalk } from "@/learn/lib/markup";
 import { checkPrompt, codeHelpPrompt, type CodeContext } from "@/learn/lib/professor";
 import type { Board, CodeCheck, Lesson, Profile } from "@/learn/lib/types";
 import DebugPanel from "./DebugPanel";
-import Editor, { languageOf, type Language, type Selection } from "./Editor";
+import LiveDebug, { GetDebugger } from "./LiveDebug";
+import { debugAt, useDebugAt } from "./debugAt";
+import { getWorkspace } from "@/lib/store";
+import Editor, { languageOf, type BlameMark, type Language, type Selection } from "./Editor";
 import { JsRunner } from "./js";
 import { abortLaptop, debugPython, laptopAvailable, restartPython, runPython, runRust, stopPython, type DebugRun, type Engine, type OutPart } from "./python";
 import { resetSql, runSql } from "./sql";
 import { outputs } from "./outputStore";
 import OutputArea, { useLocalStatus } from "./localrun/OutputArea";
-import { loadLocalStatus, outputMode, runLocal, stopLocal } from "./localrun/client";
+import { debugLocal, installDebugger, LOCAL_BUILD, loadLocalStatus, outputMode, runLocal, sendInput, stopLocal, type DebugSession } from "./localrun/client";
+import { NATIVE_DEBUG_LANGS, type AdapterOffer, type FrameView, type PausedView, type VarView } from "@/lib/localrun/protocol";
 import { useConsent } from "./localrun/Consent";
 import { localLangFromEditor, localLangOf } from "@/lib/localrun/langs";
 import { LITE } from "@/lib/adapters/target";
@@ -45,6 +50,7 @@ import { codeRoom } from "./codeRoom";
 import { SPLIT_DEFAULT, SPLIT_GUTTER, clampSplit, readSplit, stepSplit, writeSplit, type SplitAxis } from "./split";
 import "./ide.css";
 import { readPref } from "@/lib/prefs";
+import type { MdView } from "./mdView";
 
 /** Ask about the code another way than the professor's `sample`: "explain" for the Explain
  * buttons (the file, or the selected lines), "question" for typed words. Resolves to the answer. */
@@ -86,6 +92,13 @@ export type IdeProps = {
   onRan?: (output: string, o: { test: boolean }) => void;
   /** Side by side (editor left, output right) or stacked. */
   layout?: "side" | "stacked";
+  /** More buttons for the file's header, before Edit (the Code panel's Blame and History). */
+  headTools?: React.ReactNode;
+  /** A Markdown file's preview (src/components/MarkdownPreview.tsx), and how it is shown beside the source. */
+  preview?: React.ReactNode;
+  view?: MdView;
+  /** Who last changed each block of lines (git blame); hidden while the file is being edited. */
+  blame?: BlameMark[] | null;
   /** No card of its own (border, padding, fixed editor height): it fills the panel it is put in, as in a dock. */
   frameless?: boolean;
   /** Explore wraps long lines for reading; code is not wrapped by default. */
@@ -94,6 +107,43 @@ export type IdeProps = {
 };
 
 const ENGINE_PREF = "walkmycode:engine";
+/** A switch for every code panel on the page, remembered in this browser ("on" / "off"). */
+function pagePref(key: string) {
+  let now: boolean | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    read: (): boolean => {
+      if (now === null) {
+        try {
+          now = readPref(localStorage, key) === "on";
+        } catch {
+          now = false;
+        }
+      }
+      return now;
+    },
+    subscribe: (f: () => void) => {
+      listeners.add(f);
+      return () => {
+        listeners.delete(f);
+      };
+    },
+    set: (on: boolean): void => {
+      now = on;
+      try {
+        localStorage.setItem(key, on ? "on" : "off");
+      } catch {
+        // Storage blocked: the choice lasts until the page closes.
+      }
+      listeners.forEach((f) => f());
+    },
+  };
+}
+/** "Code only": the run bar, the output and the professor are hidden, and the code has the whole panel (owner, 12 Nov). */
+const CODE_ONLY = pagePref("walkmycode:ide-code-only");
+/** "Hide chat": the questions and answers are hidden, the code and the output (or terminal) stay (owner, 13 Nov). */
+const CHAT_HIDDEN = pagePref("walkmycode:ide-chat-hidden");
+const serverOff = () => false;
 
 /** Where code runs: this page, the laptop connector (Lite's Learn), or this computer (./localrun). */
 type RunOn = Engine | "local";
@@ -143,6 +193,10 @@ export default function Ide({
   speak,
   onRan,
   layout = "side",
+  headTools,
+  preview,
+  view = "preview",
+  blame = null,
   frameless = false,
   wrap = false,
   fontSize,
@@ -150,6 +204,9 @@ export default function Ide({
   const lang = language ?? languageOf(path);
   // "This computer": the language by the file's ending (Go, Java… too), else by the editor's.
   const localStatus = useLocalStatus();
+  /** Code the page can't run itself (Rust, C#…) waits for "This computer" to answer before Run: pressed sooner,
+   *  it fell back to the laptop engine ("Rust runs on your laptop, which is not reachable"). */
+  const awaitingLocal = LOCAL_BUILD && !localStatus && !(RUNNABLE.includes(lang) && lang !== "rust");
   const localLang = localLangOf(path) ?? localLangFromEditor(lang);
   const localTool = localLang ? localStatus?.toolchains.find((t) => t.lang === localLang) : undefined;
   const localOk = !!localStatus?.available && !!localLang;
@@ -163,6 +220,8 @@ export default function Ide({
   const dbKey = `${path ?? "room"}:${uid}`;
   const js = useRef<JsRunner | null>(null);
   const [editing, setEditing] = useState(mode === "edit" && !!onChange);
+  // Editing a Markdown file from its preview shows the source beside it, to see each change as it reads.
+  const shownView: MdView = editing && view === "preview" ? "split" : view;
   // The run's output, in the shared store (one entry per IDE), so the
   // popped-out Output panel shows the very same thing.
   const outId = `ide:${uid}`;
@@ -175,6 +234,10 @@ export default function Ide({
   const setRan = useCallback((ran: boolean) => outputs.update(outId, { ran }), [outId]);
   const [breakpoints, setBreakpoints] = useState<number[]>([]);
   const [dbg, setDbg] = useState<{ run: DebugRun; index: number } | null>(null);
+  // A live debug on this computer (./LiveDebug.tsx): stopped at `paused`, or running when that is null.
+  const [liveDbg, setLive] = useState<{ session: DebugSession; paused: PausedView | null; frame: number; vars: VarView[]; prev: VarView[]; adapter: string } | null>(null);
+  // Its language's debugger isn't here yet: the offer, and how fetching it goes.
+  const [need, setNeed] = useState<{ offer: AdapterOffer; progress: { got: number; total: number; phase: string } | null; error: string } | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [q, setQ] = useState("");
   const [help, setHelp] = useState<{ text: string; busy: boolean; err: string } | null>(null);
@@ -193,6 +256,8 @@ export default function Ide({
     picked === "local" && !localOk ? "page" : (picked ?? (localOk && (!pageRunnable || (localReady && prefLocal)) ? "local" : "page"));
   // The engine the page's own runners and the debugger use ("This computer" has neither).
   const pageEngine: Engine = engine === "local" ? "page" : engine;
+  /** A live debugger on this computer for this language (Rust so far): breakpoints, steps, variables. */
+  const nativeDebug = engine === "local" && !!localLang && NATIVE_DEBUG_LANGS.includes(localLang);
   useEffect(() => {
     let live = true;
     void loadLocalStatus().then(() => {
@@ -271,13 +336,25 @@ export default function Ide({
     done: () => {
       setRunning(false);
       setStatus("");
+      outputs.update(outId, { stdin: null });
       onDone?.();
     },
   });
+  /** While a program runs on this computer: what the user types in the Output goes to its input, echoed as a terminal would. */
+  const typeInto = (id: string) =>
+    outputs.update(outId, {
+      stdin: {
+        send: (text) => {
+          sendInput(id, text);
+          outputs.append(outId, { kind: "out", text });
+        },
+        end: () => sendInput(id, "", true),
+      },
+    });
 
   /** Run the code. `sandbox`: only in the page (Python's MicroPython worker, never the laptop), for the lecturer. */
   const start = (o: { onDone?: () => void; sandbox?: boolean; test?: boolean } = {}) => {
-    if (!runnable || running || dbg) return false;
+    if (!runnable || running || dbg || liveDbg) return false;
     // The lecturer's run_code never leaves the page's sandbox.
     if (o.sandbox && !pageRunnable) return false;
     own();
@@ -293,6 +370,7 @@ export default function Ide({
       // The selection when there is one, else the whole file; the server knows the file's folder when it is on disk.
       const code = selection?.text.trim() && !o.test ? selection.text : value;
       localRun.current = runLocal({ lang: localLang, code, path: selection?.text.trim() ? null : path, test: o.test }, l);
+      typeInto(localRun.current);
     } else if (isPython) runPython(value, l, o.sandbox ? "page" : pageEngine);
     else if (lang === "sql") void runSql(value, l, dbKey);
     else if (lang === "rust") runRust(value, l);
@@ -320,6 +398,7 @@ export default function Ide({
     testNow.current = () => void start({ test: true });
   });
   const stop = (sandboxed = false) => {
+    if (liveDbg && !sandboxed) return liveDbg.session.stop();
     if (engine === "local" && !sandboxed) stopLocal(localRun.current);
     else if (isPython) stopPython(sandboxed ? "page" : pageEngine);
     else if (lang === "rust") abortLaptop();
@@ -375,6 +454,76 @@ export default function Ide({
     else void (js.current ??= new JsRunner()).debug(value, l, { typescript: lang === "typescript" || lang === "tsx", jsx: lang === "jsx" || lang === "tsx" });
   };
   const toggleBreakpoint = (line: number) => setBreakpoints((b) => (b.includes(line) ? b.filter((x) => x !== line) : [...b, line]));
+
+  /** Debug on this computer: build with debug info, run under the language's debugger, stop at the breakpoints. */
+  const debugNative = async () => {
+    if (running || liveDbg || !localLang) return;
+    if (!localStatus?.allowed && !(await askConsent())) return;
+    own();
+    outputMode.set("output");
+    setOut([]);
+    setNeed(null);
+    setRunning(true);
+    setRan(true);
+    const session = debugLocal(
+      // The workspace's name: the full app finds its folder (as Source Control does), so other files' frames are the project's.
+      { lang: localLang, code: value, path, breakpoints, workspace: getWorkspace()?.name },
+      {
+        onPart: (p) => outputs.append(outId, p),
+        onStatus: setStatus,
+        onNeed: (offer) => setNeed({ offer, progress: null, error: "" }),
+        onStart: (adapter) => setLive((l) => (l ? { ...l, adapter } : l)),
+        onPaused: (v) => {
+          setLive((l) => (l ? { ...l, paused: v, frame: v.frame, prev: l.vars, vars: v.vars } : l));
+          stoppedIn(v.frames[v.frame]);
+        },
+        onRunning: () => {
+          setLive((l) => (l ? { ...l, paused: null } : l));
+          debugAt.clear(outId);
+        },
+        done: () => {
+          setRunning(false);
+          setStatus("");
+          setLive(null);
+          debugAt.clear(outId);
+          outputs.update(outId, { stdin: null });
+        },
+      },
+    );
+    typeInto(session.id);
+    setLive({ session, paused: null, frame: 0, vars: [], prev: [], adapter: "" });
+  };
+  /** The user said yes: fetch the debugger, then debug. */
+  const getDebugger = () => {
+    if (!need) return;
+    const { offer } = need;
+    setNeed({ offer, progress: { got: 0, total: offer.bytes, phase: "download" }, error: "" });
+    installDebugger(offer.id, (progress) => setNeed({ offer, progress, error: "" })).then(
+      () => {
+        setNeed(null);
+        void debugNative();
+      },
+      (e: Error) => setNeed({ offer, progress: null, error: e.message }),
+    );
+  };
+  // Breakpoints set or cleared while debugging reach the debugger at once.
+  const liveSession = liveDbg?.session;
+  useEffect(() => {
+    liveSession?.breakpoints(breakpoints);
+  }, [liveSession, breakpoints]);
+  /** Where it stopped, for every panel (./debugAt.ts): Explore opens that file at that line, and Files follows it. */
+  const stoppedIn = (f: FrameView | undefined) => {
+    if (f?.mine && f.file) debugAt.set({ path: f.file, line: f.line, owner: outId });
+    else debugAt.clear(outId);
+  };
+  /** Another frame of the call stack: its variables, and its file opened at its line. */
+  const showFrame = (index: number) => {
+    if (!liveDbg) return;
+    stoppedIn(liveDbg.paused?.frames[index]);
+    void liveDbg.session.frame(index).then((vars) => setLive((l) => (l ? { ...l, frame: index, prev: vars, vars } : l)));
+  };
+  // A debug that goes (its panel closed) lets go of the stopped line.
+  useEffect(() => () => debugAt.clear(outId), [outId]);
 
   const select = (s: Selection | null) => {
     setSelection(s);
@@ -432,7 +581,16 @@ export default function Ide({
   const handleRef = useRef<HTMLDivElement>(null);
   const split = useRef(SPLIT_DEFAULT.rows);
   const splitAxis: SplitAxis = layout === "stacked" || narrow ? "rows" : "cols";
-  const splitShown = (runnable && (!(dock.popped && dock.canPop) || !!dbg)) || !!help || !!sample || !!askVia || !!check;
+  const codeOnly = useSyncExternalStore(CODE_ONLY.subscribe, CODE_ONLY.read, serverOff);
+  const toggleCodeOnly = () => CODE_ONLY.set(!codeOnly);
+  const chatHidden = useSyncExternalStore(CHAT_HIDDEN.subscribe, CHAT_HIDDEN.read, serverOff);
+  const hasChat = !!sample || !!askVia;
+  const chatShown = hasChat && !chatHidden;
+  // The panels exist at all (what there is to hide), and are shown (unless "Code only" is on, or all that is
+  // left beside the code is the hidden chat).
+  const outputSide = (runnable && (!(dock.popped && dock.canPop) || !!dbg)) || !!check;
+  const hasSide = outputSide || !!help || hasChat;
+  const splitShown = !codeOnly && (outputSide || chatShown);
   const applySplit = useCallback((f: number) => {
     split.current = f;
     const g = gridRef.current;
@@ -501,13 +659,105 @@ export default function Ide({
   };
 
   const hasError = out.some((p) => p.kind === "error");
-  const readOnly = !editing || !!dbg;
+  const readOnly = !editing || !!dbg || !!liveDbg;
+  // The line the live debugger stopped at, when the frame on show is in this file.
+  const liveFrame = liveDbg?.paused?.frames[liveDbg.frame];
+  const liveLine = liveFrame?.mine && (!path || liveFrame.file === path || (!!liveFrame.file && path.endsWith("/" + liveFrame.file))) ? liveFrame.line : null;
+  // Another panel's debug stopped in this file: its line is marked here too.
+  const at = useDebugAt();
+  const atLine = at && path && at.path === path ? at.line : null;
   // Popped out (Explore only): the dock's Output panel draws the output, and
   // the space under the editor keeps the debugger, the check and the professor.
   const popped = dock.popped && dock.canPop;
   const showOutput = runnable && !popped;
   const showSide = splitShown;
   const axis = splitAxis;
+  // The run section in Explore's Run panel (src/shell/panels/OutputPanel.tsx): the run bar, the debugger, the
+  // program's input and the Output or Terminal move there together, the editor keeps the whole height, and the
+  // panel docks in either sidebar like any other. This IDE draws them there (a portal) while it owns the panel.
+  const docked = !!(popped && dock.slot && dock.owner === outId && runnable);
+  const codeBar = (
+    <div className="code-bar">
+    <button className="ctl primary" type="button" onClick={run} disabled={running || !!dbg || !!liveDbg || awaitingLocal} title={awaitingLocal ? "Checking this computer…" : engine === "local" ? "Run on this computer (the selected lines, when some are selected)" : undefined}>
+      ▶ {engine === "local" && selection?.text.trim() ? "Run selection" : "Run"} <kbd>Ctrl ↵</kbd>
+    </button>
+    {nativeDebug ? (
+      <button className="ctl" type="button" onClick={() => void debugNative()} disabled={running || !!dbg || !!liveDbg} title="Build with debug info and run it under a debugger on this computer: it stops at your breakpoints">
+        🐞 Debug
+      </button>
+    ) : (
+      debuggable && pageRunnable && <button className="ctl" type="button" onClick={debug} disabled={running || !!dbg} title="Run once while recording every line, then step through it">🐞 Debug</button>
+    )}
+    {canTest && <button className="ctl" type="button" onClick={() => void runTests()} disabled={running || !!dbg} title="Compile this file with its own tests and run them on this computer">🧪 Run the tests</button>}
+    {running && <button className="ctl" type="button" onClick={() => stop()}>■ Stop</button>}
+    {isPython && engine !== "local" && <button className="ctl" type="button" disabled={running} onClick={() => { void restartPython(pageEngine); setOut([]); setRan(false); }} title="Forget all variables and start Python afresh">Restart Python</button>}
+    {lang === "sql" && engine !== "local" && <button className="ctl" type="button" disabled={running} onClick={() => { resetSql(dbKey); setOut([]); setRan(false); }} title="Drop every table and start with an empty database">Reset database</button>}
+    {starter !== undefined && onChange && (
+      <button className="ctl" type="button" disabled={value === starter || !editing} onClick={() => onChange(starter)}>Reset code</button>
+    )}
+    {(isPython || localOk) && (
+      <label className="engine" htmlFor={`engine-${uid}`}>
+        Run on
+        <select id={`engine-${uid}`} value={engine} disabled={running} onChange={(e) => void chooseEngine(e.target.value as RunOn)}>
+          {pageRunnable && <option value="page">{isPython ? "This page (MicroPython)" : "This page"}</option>}
+          {localOk && <option value="local">{localLabel(localTool, localStatus?.allowed ?? false)}</option>}
+          {/* Lecture Hall's laptop connector: Lite's Learn, or wherever it is actually connected. */}
+          {(isPython || lang === "rust") && (LITE || laptop || !localOk) && (
+            <option value="laptop">My laptop ({isPython ? "full Python" : "Rust"}){laptop ? "" : " · not connected"}</option>
+          )}
+        </select>
+      </label>
+    )}
+    {popped && !docked && (
+      <button className="ctl" type="button" onClick={() => outputs.dockBack()} title="The output is in its own panel: put it back under the editor">
+        ⧈ Dock output back
+      </button>
+    )}
+    {lang === "rust" && !laptop && engine !== "local" && <span className="hint">Your laptop isn&rsquo;t connected, so Rust can&rsquo;t run here.</span>}
+    {onCheck && sample && (
+      <button className="ctl" type="button" disabled={checking || running} onClick={checkWork}>{checking ? "Checking…" : "✓ Check my work"}</button>
+    )}
+</div>
+  );
+  const debugParts = (
+    <>
+      {need && <GetDebugger offer={need.offer} progress={need.progress} error={need.error} onGet={getDebugger} onCancel={() => setNeed(null)} />}
+      {liveDbg && (
+        <LiveDebug
+          paused={liveDbg.paused}
+          frame={liveDbg.frame}
+          vars={liveDbg.vars}
+          prev={liveDbg.prev}
+          adapter={liveDbg.adapter}
+          onCmd={(c) => liveDbg.session.cmd(c)}
+          onStop={() => liveDbg.session.stop()}
+          onFrame={showFrame}
+          loadVars={(ref) => liveDbg.session.vars(ref)}
+        />
+      )}
+    </>
+  );
+
+  const editorEl = (
+    <Editor
+      path={path}
+      language={lang}
+      value={value}
+      onChange={onChange}
+      readOnly={readOnly}
+      onRun={runnable ? run : undefined}
+      onSave={onSave && editing ? () => onSave(value) : undefined}
+      highlight={highlight}
+      onSelect={select}
+      breakpoints={breakpoints}
+      onToggleBreakpoint={debuggable || nativeDebug ? toggleBreakpoint : undefined}
+      debugLine={dbg ? dbg.run.steps[dbg.index]?.line ?? null : (liveLine ?? atLine)}
+      wrap={wrap}
+      blame={editing || dirty ? null : blame}
+      fontSize={fontSize}
+      label={path ? `Code: ${path}` : "Code"}
+    />
+  );
 
   return (
     <div className={`ide ${layout}${frameless ? " frameless" : ""}`} onPointerDownCapture={own} onFocusCapture={own}>
@@ -519,11 +769,56 @@ export default function Ide({
         </div>
       )}
 
-      {(path || onSave || (onChange && mode === "read")) && (
+      {(path || onSave || (onChange && mode === "read") || hasSide || runnable) && (
         <div className="ide-head">
           {path && <span className="ide-path" title={path}>{path}</span>}
           {dirty && <span className="pill warn">Unsaved changes</span>}
           <span className="sp" />
+          {headTools}
+          {/* Icon buttons, to keep the head short: their names are the tooltip and the label. */}
+          {hasChat && !codeOnly && (
+            <button
+              className={`ctl code-only icon${chatHidden ? " on" : ""}`}
+              type="button"
+              aria-pressed={chatHidden}
+              aria-label={chatHidden ? "Show chat" : "Hide chat"}
+              onClick={() => CHAT_HIDDEN.set(!chatHidden)}
+              title={chatHidden ? "Show chat: the questions and answers" : "Hide chat: the code and the output keep the panel"}
+              data-testid="ide-chat-toggle"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3h11v7.5H7l-3 2.5v-2.5H2.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+                {chatHidden ? (
+                  <path d="M1.5 14.5l13-13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                ) : (
+                  <path d="M5 6h6M5 8h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                )}
+              </svg>
+            </button>
+          )}
+          {(hasSide || runnable) && (
+            <button
+              className={`ctl code-only icon${codeOnly ? " on" : ""}`}
+              type="button"
+              aria-pressed={codeOnly}
+              aria-label={codeOnly ? "Show panels" : "Code only"}
+              onClick={toggleCodeOnly}
+              title={codeOnly ? "Show panels: the run bar, the output and the chat" : "Code only: hide the run bar, the output and the chat"}
+              data-testid="ide-code-only"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2" y="2.5" width="12" height="11" fill="none" stroke="currentColor" strokeWidth="1.3" />
+                {codeOnly ? (
+                  <path d="M6 6.2L4.2 8 6 9.8M10 6.2L11.8 8 10 9.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <>
+                    <path d="M2 9.5h12" stroke="currentColor" strokeWidth="1.3" />
+                    <rect x="2.6" y="10.1" width="10.8" height="2.8" fill="currentColor" opacity=".35" />
+                  </>
+                )}
+              </svg>
+            </button>
+          )}
           {onChange && mode === "read" && (
             <button className="ctl" type="button" aria-pressed={editing} onClick={() => setEditing((e) => !e)} disabled={!!dbg}>
               {editing ? "Done editing" : "✎ Edit"}
@@ -539,60 +834,16 @@ export default function Ide({
 
       <div ref={gridRef} className={`ide-grid ${showSide ? `split ${axis}` : "single"}`}>
         <div className="ide-left">
-          <Editor
-            path={path}
-            language={lang}
-            value={value}
-            onChange={onChange}
-            readOnly={readOnly}
-            onRun={runnable ? run : undefined}
-            onSave={onSave && editing ? () => onSave(value) : undefined}
-            highlight={highlight}
-            onSelect={select}
-            breakpoints={breakpoints}
-            onToggleBreakpoint={debuggable ? toggleBreakpoint : undefined}
-            debugLine={dbg ? dbg.run.steps[dbg.index]?.line ?? null : null}
-            wrap={wrap}
-            fontSize={fontSize}
-            label={path ? `Code: ${path}` : "Code"}
-          />
-          {runnable && (
-            <div className="code-bar">
-              <button className="ctl primary" type="button" onClick={run} disabled={running || !!dbg} title={engine === "local" ? "Run on this computer (the selected lines, when some are selected)" : undefined}>
-                ▶ {engine === "local" && selection?.text.trim() ? "Run selection" : "Run"} <kbd>Ctrl ↵</kbd>
-              </button>
-              {debuggable && pageRunnable && <button className="ctl" type="button" onClick={debug} disabled={running || !!dbg} title="Run once while recording every line, then step through it">🐞 Debug</button>}
-              {canTest && <button className="ctl" type="button" onClick={() => void runTests()} disabled={running || !!dbg} title="Compile this file with its own tests and run them on this computer">🧪 Run the tests</button>}
-              {running && <button className="ctl" type="button" onClick={() => stop()}>■ Stop</button>}
-              {isPython && engine !== "local" && <button className="ctl" type="button" disabled={running} onClick={() => { void restartPython(pageEngine); setOut([]); setRan(false); }} title="Forget all variables and start Python afresh">Restart Python</button>}
-              {lang === "sql" && engine !== "local" && <button className="ctl" type="button" disabled={running} onClick={() => { resetSql(dbKey); setOut([]); setRan(false); }} title="Drop every table and start with an empty database">Reset database</button>}
-              {starter !== undefined && onChange && (
-                <button className="ctl" type="button" disabled={value === starter || !editing} onClick={() => onChange(starter)}>Reset code</button>
-              )}
-              {(isPython || localOk) && (
-                <label className="engine" htmlFor={`engine-${uid}`}>
-                  Run on
-                  <select id={`engine-${uid}`} value={engine} disabled={running} onChange={(e) => void chooseEngine(e.target.value as RunOn)}>
-                    {pageRunnable && <option value="page">{isPython ? "This page (MicroPython)" : "This page"}</option>}
-                    {localOk && <option value="local">{localLabel(localTool, localStatus?.allowed ?? false)}</option>}
-                    {/* Lecture Hall's laptop connector: Lite's Learn, or wherever it is actually connected. */}
-                    {(isPython || lang === "rust") && (LITE || laptop || !localOk) && (
-                      <option value="laptop">My laptop ({isPython ? "full Python" : "Rust"}){laptop ? "" : " · not connected"}</option>
-                    )}
-                  </select>
-                </label>
-              )}
-              {popped && (
-                <button className="ctl" type="button" onClick={() => outputs.dockBack()} title="The output is in its own panel: put it back under the editor">
-                  ⧈ Dock output back
-                </button>
-              )}
-              {lang === "rust" && !laptop && engine !== "local" && <span className="hint">Your laptop isn&rsquo;t connected, so Rust can&rsquo;t run here.</span>}
-              {onCheck && sample && (
-                <button className="ctl" type="button" disabled={checking || running} onClick={checkWork}>{checking ? "Checking…" : "✓ Check my work"}</button>
-              )}
+          {preview ? (
+            // A Markdown file: as it reads, its source, or both (src/ide/mdView.ts). Editing shows the source beside it.
+            <div className={`md-view md-${shownView}`}>
+              {editorEl}
+              {shownView !== "source" && <div className="md-pane">{preview}</div>}
             </div>
+          ) : (
+            editorEl
           )}
+          {runnable && !codeOnly && !docked && codeBar}
         </div>
 
         {showSide && (
@@ -614,6 +865,7 @@ export default function Ide({
 
         {showSide && (
           <div className="ide-right">
+            {!docked && debugParts}
             {runnable &&
               (dbg ? (
                 <DebugPanel
@@ -644,7 +896,7 @@ export default function Ide({
 
             {check && <p className={`check ${check.passed ? "ok" : "no"}`}>{check.passed ? "✓ Well done. " : "Not yet. "}{check.feedback}</p>}
 
-            {(sample || askVia) && (
+            {chatShown && (
               <div className="ask">
                 <div className="row">
                   {hasError && <button className="ctl" type="button" onClick={() => ask("What does this error mean, and how do I fix it?")}>Explain this error</button>}
@@ -674,6 +926,16 @@ export default function Ide({
         )}
       </div>
       {consentDialog}
+      {docked &&
+        dock.slot &&
+        createPortal(
+          <div className="ide frameless run-dock" onPointerDownCapture={own} onFocusCapture={own}>
+            {codeBar}
+            {debugParts}
+            <OutputArea state={outState} />
+          </div>,
+          dock.slot,
+        )}
     </div>
   );
 }

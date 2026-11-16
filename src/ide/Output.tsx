@@ -6,12 +6,12 @@
  * "Output | Terminal" (`tabs`) where code can run on this computer: then the
  * body (`children`) is the terminal instead of the output.
  */
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { OutputState } from "./outputStore";
 
 export default function Output({ state, action, title, tabs, children }: { state: OutputState; action?: ReactNode; title?: string; tabs?: ReactNode; children?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const { parts, status, running, ran, hint, empty, tip } = state;
+  const { parts, status, running, ran, hint, empty, tip, stdin } = state;
   useEffect(() => {
     ref.current?.scrollTo({ top: ref.current.scrollHeight });
   }, [parts]);
@@ -43,7 +43,31 @@ export default function Output({ state, action, title, tabs, children }: { state
           {!ran && !status && tip && <p className="hint">{tip}</p>}
         </div>
       )}
+      {!children && running && stdin && <Stdin stdin={stdin} />}
     </div>
+  );
+}
+
+/** A line typed for the running program (its input, as in a terminal): Enter sends it, "End input" closes it. */
+function Stdin({ stdin }: { stdin: { send(text: string): void; end(): void } }) {
+  const [line, setLine] = useState("");
+  return (
+    <form
+      className="out-stdin"
+      onSubmit={(e) => {
+        e.preventDefault();
+        stdin.send(`${line}\n`);
+        setLine("");
+      }}
+    >
+      <span className="prompt" aria-hidden>
+        ›
+      </span>
+      <input value={line} onChange={(e) => setLine(e.target.value)} placeholder="Type the program's input, then Enter" aria-label="The program's input" autoComplete="off" spellCheck={false} data-testid="program-input" />
+      <button type="button" className="ctl compact" onClick={() => stdin.end()} title="Close the program's input (end of file, Ctrl+D in a terminal)">
+        End input
+      </button>
+    </form>
   );
 }
 

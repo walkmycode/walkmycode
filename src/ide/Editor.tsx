@@ -8,6 +8,7 @@
  * - a highlighted line range (a tour step or a citation), scrolled into view;
  * - `onSelect`, reporting the lines the user selects (for "explain this");
  * - breakpoints in a gutter, and the debugger's current line.
+ * - who last changed each block of lines, and when (git blame), in a gutter of its own.
  *
  * The language follows the file's extension, or `language` when there is no path.
  */
@@ -27,11 +28,15 @@ import {
 import { Compartment, EditorState, RangeSet, StateEffect, StateField, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { sql } from "@codemirror/lang-sql";
-import { tags as t } from "@lezer/highlight";
+import { javascript, javascriptLanguage, jsxLanguage, tsxLanguage, typescriptLanguage } from "@codemirror/lang-javascript";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { python, pythonLanguage } from "@codemirror/lang-python";
+import { rust, rustLanguage } from "@codemirror/lang-rust";
+import { StandardSQL, sql } from "@codemirror/lang-sql";
+import { Tag, styleTags, tags as t } from "@lezer/highlight";
+
+/** The mark that starts a list item, coloured on its own (VS Code does). */
+const listMark = Tag.define();
 
 const chalk = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.operatorKeyword], color: "#f3d77a", fontWeight: "600" },
@@ -43,6 +48,20 @@ const chalk = HighlightStyle.define([
   { tag: [t.operator, t.punctuation, t.bracket], color: "#cfd8d3" },
   { tag: [t.tagName], color: "#9fd3f0" },
   { tag: [t.attributeName, t.propertyName], color: "#f3d77a" },
+  // Markdown, as VS Code colours it: headings bold and blue, emphasis in its own style, code spans,
+  // links and list marks in colour, and the marks themselves (#, **, `, >) quieter than the words.
+  { tag: t.heading, color: "#9fd3f0", fontWeight: "700" },
+  { tag: t.strong, fontWeight: "700", color: "#f4f1e8" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: t.monospace, color: "#f2c9a0" },
+  { tag: t.link, color: "#9fd3f0" },
+  { tag: t.url, color: "#8fb8d0", textDecoration: "underline" },
+  { tag: t.quote, color: "#b9c4bf", fontStyle: "italic" },
+  // A list mark (-, *, 1.) only: Markdown tags whole lists, and their words keep the text colour.
+  { tag: [listMark, t.contentSeparator, t.atom], color: "#f3d77a" },
+  { tag: [t.processingInstruction, t.labelName], color: "#7f8a86" },
+  { tag: t.escape, color: "#f2a7a0" },
 ]);
 
 const theme = EditorView.theme(
@@ -58,6 +77,7 @@ const theme = EditorView.theme(
     ".cm-cursor": { borderLeftColor: "#f3d77a", borderLeftWidth: "2px" },
     ".cm-matchingBracket": { backgroundColor: "rgba(159,211,240,.25)", outline: "none" },
     ".cm-bp-gutter": { width: "18px", cursor: "pointer" },
+    // Git blame (docs/design/git-history.html): its look is in src/ide/localrun/git/git.css.
     ".cm-bp-gutter .cm-gutterElement": { display: "flex", alignItems: "center", justifyContent: "center" },
     ".cm-bp": { width: "10px", height: "10px", borderRadius: "50%", background: "#e8665a", boxShadow: "0 0 0 2px rgba(232,102,90,.25)" },
     ".cm-lit-line": { backgroundColor: "rgba(243,215,122,.14) !important", boxShadow: "inset 3px 0 0 #f3d77a" },
@@ -66,7 +86,7 @@ const theme = EditorView.theme(
   { dark: true },
 );
 
-export type Language = "python" | "javascript" | "typescript" | "jsx" | "tsx" | "json" | "sql" | "rust" | "text";
+export type Language = "python" | "javascript" | "typescript" | "jsx" | "tsx" | "json" | "sql" | "rust" | "markdown" | "text";
 
 /** The language for a file, from its extension. */
 export function languageOf(path: string | null | undefined): Language {
@@ -79,6 +99,7 @@ export function languageOf(path: string | null | undefined): Language {
   if (/\.json$/.test(path)) return "json";
   if (/\.sql$/.test(path)) return "sql";
   if (/\.rs$/.test(path)) return "rust";
+  if (/\.(md|markdown|mdx)$/i.test(path)) return "markdown";
   return "text";
 }
 
@@ -99,12 +120,85 @@ function languageExtension(lang: Language): Extension {
       return sql();
     case "rust":
       return rust();
+    case "markdown":
+      // GitHub's Markdown (tables, task lists, ~~strike~~), with each fenced block coloured in its own language.
+      return markdown({ base: markdownLanguage, codeLanguages: fencedLanguage, extensions: { props: [styleTags({ ListMark: listMark })] } });
     default:
       return [];
   }
 }
 
+/** A fenced block's language in Markdown, from its info string (```ts, ```rust, ```python …). */
+function fencedLanguage(info: string) {
+  const name = info.trim().toLowerCase().split(/[\s{]/)[0];
+  if (["py", "python", "python3"].includes(name)) return pythonLanguage;
+  if (["ts", "typescript", "mts", "cts"].includes(name)) return typescriptLanguage;
+  if (name === "tsx") return tsxLanguage;
+  if (name === "jsx") return jsxLanguage;
+  if (["js", "javascript", "mjs", "cjs", "json", "jsonc", "json5"].includes(name)) return javascriptLanguage;
+  if (["rs", "rust"].includes(name)) return rustLanguage;
+  if (name === "sql") return StandardSQL.language;
+  return null;
+}
+
 /* Breakpoints: a marker per line, set from React. */
+/** One block of lines one commit last changed, as the blame gutter shows it (src/ide/localrun/git/FileGit.tsx). */
+export interface BlameMark {
+  /** Its first line, from 1, and how many lines. */
+  start: number;
+  lines: number;
+  /** "Ama Owusu", "You", "Not committed". */
+  who: string;
+  /** "2 Nov", " 2026" and "09:14": the year is left out where the editor is narrow. */
+  when: { day: string; year: string; time: string } | string;
+  /** The hover: full date, how long ago, the message, the commit. */
+  tip: string;
+  tone?: "me" | "new";
+}
+
+class BlameMarker extends GutterMarker {
+  constructor(readonly mark: BlameMark | null) {
+    super();
+  }
+  eq(other: BlameMarker) {
+    return other.mark === this.mark;
+  }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = `cm-blame${this.mark?.tone ? ` ${this.mark.tone}` : ""}`;
+    const who = el.appendChild(document.createElement("span"));
+    who.className = "who";
+    const when = el.appendChild(document.createElement("span"));
+    when.className = "when";
+    if (this.mark) {
+      who.textContent = this.mark.who;
+      const w = this.mark.when;
+      if (typeof w === "string") when.textContent = w;
+      else
+        for (const [cls, text] of [["d", w.day], ["y", w.year], ["t", w.time]] as const) {
+          const s = when.appendChild(document.createElement("span"));
+          s.className = cls;
+          s.textContent = text;
+        }
+      el.title = this.mark.tip;
+    }
+    return el;
+  }
+}
+/** Sizes the gutter before any line is drawn. */
+const blameSpacer = new BlameMarker({ start: 0, lines: 0, who: "Not committed", when: { day: "28 Nov", year: " 2026", time: "22:41" }, tip: "" });
+
+/** The blame gutter: a label where each block begins, nothing on the block's other lines. */
+function blameGutter(marks: BlameMark[] | null): Extension {
+  if (!marks?.length) return [];
+  const byStart = new Map(marks.map((m) => [m.start, new BlameMarker(m)]));
+  return gutter({
+    class: "cm-blame-gutter",
+    lineMarker: (v, line) => byStart.get(v.state.doc.lineAt(line.from).number) ?? null,
+    initialSpacer: () => blameSpacer,
+  });
+}
+
 class BreakMarker extends GutterMarker {
   toDOM() {
     const d = document.createElement("span");
@@ -183,6 +277,8 @@ export interface EditorProps {
   debugLine?: number | null;
   /** Long lines wrap instead of scrolling sideways (good for reading). */
   wrap?: boolean;
+  /** Who last changed each block of lines, and when (git blame): a gutter beside the line numbers. */
+  blame?: BlameMark[] | null;
   fontSize?: number;
   label?: string;
   /** Size the editor from outside, e.g. to fill a dock panel. It fills its box; it has no height of its own. */
@@ -204,6 +300,7 @@ export default function Editor({
   onToggleBreakpoint,
   debugLine = null,
   wrap = false,
+  blame = null,
   fontSize,
   label = "Code",
   className = "",
@@ -212,7 +309,7 @@ export default function Editor({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, path });
-  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment() });
+  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment() });
   useEffect(() => {
     cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, path };
   });
@@ -244,6 +341,7 @@ export default function Editor({
                 }),
               ]
             : []),
+          c.blame.of(blameGutter(blame)),
           lineNumbers({ domEventHandlers: { mousedown: (v, line) => toggle(v, line.from) } }),
           highlightActiveLineGutter(),
           highlightActiveLine(),
@@ -309,6 +407,9 @@ export default function Editor({
   useEffect(() => {
     view.current?.dispatch({ effects: comp.current.wrap.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }, [wrap]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: comp.current.blame.reconfigure(blameGutter(blame)) });
+  }, [blame]);
   useEffect(() => {
     view.current?.dispatch({ effects: comp.current.size.reconfigure(EditorView.theme({ "&": { fontSize: fontSize ? `calc(${fontSize}px * var(--fs, 1))` : "var(--text, 13px)" } })) });
   }, [fontSize]);

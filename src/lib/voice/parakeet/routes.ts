@@ -20,7 +20,7 @@ import { HttpError } from "@/lib/providers/guard";
 import { int16ToFloat32 } from "./detect";
 import { decode, engineAvailable, engineStatus, preload, unload } from "./engine";
 import { findModel, installModel, InstallError, MODEL, modelDirs, removeOwnModel, type InstallProgress } from "./model";
-import { SttSession, type SttEvent } from "./session";
+import { SttSession, type SessionDeps, type SttEvent } from "./session";
 import type { ParakeetStatus } from "./status";
 
 const NO_STORE = { "cache-control": "no-store" };
@@ -59,7 +59,7 @@ export async function parakeetStatus(): Promise<ParakeetStatus> {
   s.available ??= await engineAvailable();
   const found = findModel();
   const dirs = modelDirs();
-  const own = findModel({ own: dirs.own, ireliabee: "" });
+  const own = findModel({ own: dirs.own, shared: "" });
   const busy = s.install.phase === "downloading" || s.install.phase === "verifying" || s.install.phase === "unpacking";
   return {
     state: busy ? "installing" : found ? "installed" : "missing",
@@ -155,7 +155,7 @@ const StreamBody = z.object({
 
 export interface StreamDeps {
   /** Tests stand in for the engine. */
-  decode?: (samples: Float32Array) => Promise<string>;
+  decode?: SessionDeps["decode"];
   now?: () => number;
   /** Tests: whether the model is there. */
   installed?: () => boolean;

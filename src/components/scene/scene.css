@@ -1,0 +1,248 @@
+/* An analogy scene (SceneBlock.tsx; mockup docs/design/learn-analogy-visual.html): the picture above the real
+   thing, column for column, or the same scene as a sequence diagram. It sizes itself to the box it is in (a
+   full stage in the Learn room, a narrow answer in the guide), so the breakpoints are the container's, not the
+   window's. Only transform and opacity move, × --m. */
+.wscene { container-type: inline-size; border: 1px solid var(--ui-line); background: var(--ui); color: var(--ui-text); font: var(--text)/1.5 var(--sans); display: flex; flex-direction: column; min-width: 0; text-align: left; }
+/* Its parts keep their own height: in a short box the scene scrolls, it is never squeezed. */
+.wscene > * { flex: none; }
+/* Filling the window, it sits over the app and its light (1000), under a toast (1100). */
+.wscene.full { position: fixed; inset: 0; z-index: 1050; overflow: auto; }
+.wscene p { margin: 0; }
+.wscene .mono, .wscene code { font-family: var(--mono); }
+.wscene .eyebrow { font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ui-faint); }
+.wscene > header { display: flex; flex-wrap: wrap; align-items: center; gap: calc(6px * var(--sp)) calc(10px * var(--sp)); padding: calc(9px * var(--sp)) calc(14px * var(--sp)); border-bottom: 1px solid var(--ui-line); }
+.wscene > header b { color: var(--yellow); font-weight: 650; }
+.wscene > header .s-where { color: var(--ui-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.wscene > header .s-sp { flex: 1; }
+.wscene .ctl { border-radius: 0; white-space: nowrap; }
+.wscene .ctl[aria-pressed="true"] { border-color: var(--yellow); color: var(--yellow); }
+.wscene .seg { display: inline-flex; }
+.wscene .seg .ctl + .ctl { margin-left: -1px; }
+
+.wscene .s-stage { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(calc(260px * var(--sp)), 1fr); }
+.wscene .s-board { --side: .7fr; position: relative; padding: calc(14px * var(--sp)) calc(16px * var(--sp)) calc(8px * var(--sp)); min-width: 0; }
+.wscene .side { border-left: 1px solid var(--ui-line); display: flex; flex-direction: column; min-width: 0; }
+.wscene .side > .eyebrow { padding: calc(10px * var(--sp)) calc(14px * var(--sp)) calc(6px * var(--sp)); }
+
+/* One grid for both rows and the ties between them: that is what lines a child up with its variable. */
+.wscene .s-row, .wscene .ties { display: grid; grid-template-columns: var(--cols); gap: calc(10px * var(--sp)); }
+.wscene .rowhead { display: flex; justify-content: space-between; gap: calc(14px * var(--sp)); margin-bottom: calc(8px * var(--sp)); }
+.wscene .rowhead span + span { text-align: right; }
+.wscene .cell { background: var(--ui-2); border: 1.5px solid var(--ui-line); padding: calc(10px * var(--sp)) calc(8px * var(--sp)) max(42px, calc(40px * var(--sp))); display: flex; flex-direction: column; align-items: center; gap: calc(6px * var(--sp)); min-width: 0; text-align: center; transition: border-color calc(.2s * var(--m)); }
+.wscene .cell > svg.art { width: 64px; height: 64px; transition: opacity calc(.3s * var(--m)); }
+.wscene .cell .s-name { font-weight: 650; overflow-wrap: anywhere; }
+.wscene .s-row.r .cell .s-name { color: var(--blue); }
+.wscene .cell .state { color: var(--ui-faint); min-height: 1.5em; }
+.wscene .cell.off { border-style: dashed; }
+.wscene .cell.off > svg, .wscene .cell.off .s-name { opacity: .45; }
+.wscene .cell.off .state { color: var(--pink); font-weight: 600; }
+.wscene .cell.aside { background: transparent; border-color: transparent; color: var(--ui-dim); }
+.wscene .cell.aside.stop { color: var(--pink); border-color: var(--pink); background: rgba(242,167,160,.07); }
+.wscene .cell.aside.stop .state { color: var(--pink); font-weight: 650; }
+.wscene .cell.bin { border-style: dashed; background: transparent; color: var(--ui-dim); }
+.wscene .cell.reach { border-color: var(--pink); animation: wscene-shake calc(.36s * var(--m)); }
+.wscene .slot { min-height: 66px; display: flex; align-items: flex-start; justify-content: center; gap: calc(6px * var(--sp)); flex-wrap: wrap; }
+.wscene .thing { display: flex; flex-direction: column; align-items: center; gap: calc(2px * var(--sp)); padding: calc(5px * var(--sp)) calc(9px * var(--sp)); border: 1.5px solid var(--yellow); color: var(--yellow); background: rgba(243,215,122,.09); font-weight: 650; max-width: 100%; overflow-wrap: anywhere; will-change: transform; }
+.wscene .thing svg.art { width: 44px; height: 44px; }
+.wscene .thing.lent { border-style: dashed; border-color: var(--blue); color: var(--blue); background: rgba(159,211,240,.07); }
+.wscene .thing.lent svg.art { opacity: .6; }
+.wscene .thing.lent { animation: wscene-pop calc(.26s * var(--m)) var(--ease-settle) backwards; }
+.wscene .thing small { font: 500 var(--text) var(--sans); color: var(--ui-dim); }
+.wscene .thing.was { border-color: var(--ui-line); color: var(--ui-faint); background: none; text-decoration: line-through; }
+.wscene .thing.was svg.art { filter: grayscale(1); opacity: .45; }
+.wscene [data-lit] { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow); }
+
+.wscene .ties { height: 46px; position: relative; }
+.wscene .ties i { justify-self: center; width: 0; border-left: 1.5px dotted var(--ui-faint); position: relative; }
+.wscene .ties i::after { content: "="; position: absolute; top: 50%; left: 0; transform: translate(-50%, -50%); background: var(--ui); color: var(--ui-faint); padding: 0 calc(5px * var(--sp)); font-style: normal; font-weight: 650; }
+.wscene .ties i[data-lit] { border-color: var(--yellow); box-shadow: none; }
+.wscene .ties i[data-lit]::after { color: var(--yellow); }
+.wscene .ties i.none { border: 0; }
+.wscene .ties i.none::after { content: none; }
+.wscene .stamp { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: flex; gap: calc(8px * var(--sp)); align-items: center; padding: calc(5px * var(--sp)) calc(12px * var(--sp)); background: var(--out); border: 1.5px solid var(--yellow); z-index: 2; width: max-content; max-width: 94%; text-align: center; line-height: 1.25; animation: wscene-stamp calc(.3s * var(--m)) var(--ease-spring) calc(.38s * var(--m)) backwards; }
+.wscene .stamp b, .wscene .word .pair b, .wscene .s-lab b, .wscene .ev .s-tag b { color: var(--yellow); font-weight: 650; }
+.wscene .stamp code, .wscene .word .pair code, .wscene .s-lab code, .wscene .ev .s-tag code, .wscene .shead code { color: var(--blue); font-weight: 600; }
+
+.wscene svg.links { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.wscene svg.links text { font: 600 var(--text) var(--sans); text-anchor: middle; paint-order: stroke; stroke: var(--ui-2); stroke-width: 5px; }
+.wscene svg.links .move { --c: var(--yellow); }
+.wscene svg.links .end { --c: var(--pink); }
+.wscene svg.links .loan { --c: var(--blue); }
+/* An arrow, as a trace on the map: a thin line draws itself once the thing has landed, a dot rides it, and
+   then short dashes keep flowing the way the thing went, with a small open head. A loan flows as longer dashes. */
+.wscene svg.links path { fill: none; stroke: var(--c); stroke-linecap: round; stroke-linejoin: round; }
+.wscene svg.links .base { stroke-width: 1.5; opacity: .32; stroke-dasharray: 1; animation: wscene-draw calc(.38s * var(--m)) var(--ease-out) calc(.46s * var(--m)) backwards; }
+.wscene svg.links .flow { stroke-width: 2; stroke-dasharray: 1.5 9.5; animation: wscene-appear calc(.2s * var(--m)) linear calc(.8s * var(--m)) backwards, wscene-flow 5s linear infinite; }
+.wscene svg.links .loan .flow { stroke-dasharray: 6 5; }
+.wscene svg.links marker path { stroke-width: 1.6; stroke-dasharray: none; }
+.wscene svg.links .dot { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); offset-rotate: 0deg; animation: wscene-dot calc(.52s * var(--m)) var(--ease-out) calc(.46s * var(--m)) both; }
+.wscene svg.links text { fill: var(--c); animation: wscene-appear calc(.2s * var(--m)) linear calc(.8s * var(--m)) backwards; }
+/* Reduced motion: no rider and nothing flowing; the arrow simply is there. */
+:root[data-motion="off"] .wscene svg.links .flow { animation: none; }
+:root[data-motion="off"] .wscene svg.links .dot { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .wscene svg.links .flow { animation: none; }
+  :root:not([data-motion="on"]) .wscene svg.links .dot { display: none; }
+}
+
+/* The same scene as a UML sequence diagram: each holder a lifeline, each hand-over a message. An arrow
+   spans the columns it joins, so nothing is measured. */
+.wscene .seq { --cols: repeat(var(--n), minmax(0, 1fr)); padding: calc(14px * var(--sp)) calc(16px * var(--sp)) calc(8px * var(--sp)) calc(40px * var(--sp)); min-width: 0; }
+.wscene .shead, .wscene .ev, .wscene .lifes { display: grid; grid-template-columns: var(--cols); gap: calc(10px * var(--sp)); }
+.wscene .shead > span { background: var(--ui-2); border: 1.5px solid var(--ui-line); padding: calc(8px * var(--sp)) calc(6px * var(--sp)); display: flex; flex-direction: column; align-items: center; gap: calc(4px * var(--sp)); text-align: center; min-width: 0; overflow-wrap: anywhere; }
+.wscene .shead .both { display: flex; align-items: center; gap: calc(8px * var(--sp)); color: var(--ui-faint); font-weight: 650; }
+.wscene .shead svg.art { width: 48px; height: 48px; }
+.wscene .shead .both i { font-style: normal; }
+.wscene .shead .both i + svg.art { width: 34px; height: 34px; }
+.wscene .shead b { font-weight: 650; }
+.wscene .srow { position: relative; display: block; width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: inherit; padding: calc(5px * var(--sp)) 0; cursor: pointer; transition: opacity calc(.25s * var(--m)), background-color calc(.2s * var(--m)); }
+.wscene .srow.later { opacity: .16; }
+.wscene .srow.now { background: rgba(243,215,122,.07); }
+.wscene .srow > .num { position: absolute; left: calc(-26px * var(--sp)); top: 50%; translate: 0 -50%; color: var(--ui-faint); font-family: var(--mono); }
+.wscene .srow.now > .num { color: var(--yellow); font-weight: 600; }
+.wscene .lifes { position: absolute; inset: 0; }
+.wscene .lifes i { justify-self: center; border-left: 1.5px dashed var(--ui-line); }
+.wscene .ev { position: relative; min-height: 14px; }
+.wscene .s-msg { display: block; position: relative; height: 58px; --half: calc((100% - (var(--span) - 1) * 10px * var(--sp)) / var(--span) / 2); color: var(--yellow); min-width: 0; }
+.wscene .s-msg .s-lab { position: absolute; left: 0; right: 0; top: 0; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wscene .wire { position: absolute; left: var(--half); right: var(--half); top: 40px; border-top: 2px solid currentColor; transform-origin: left; }
+.wscene .wire::after { content: ""; position: absolute; right: -1px; top: -6px; border: 5px solid transparent; border-left: 9px solid currentColor; border-right: 0; }
+.wscene .s-msg.rtl .wire { transform-origin: right; }
+.wscene .s-msg.rtl .wire::after { right: auto; left: -1px; border-left: 0; border-right: 9px solid currentColor; }
+.wscene .s-msg.loan { color: var(--blue); }
+.wscene .s-msg.loan .wire { border-top-style: dashed; }
+/* The thing rides the arrow: its track is as wide as the arrow, so sliding the track by its own width carries it across. */
+.wscene .run { position: absolute; left: var(--half); right: var(--half); top: 24px; height: 30px; pointer-events: none; }
+.wscene .rider { position: absolute; top: 0; right: 14px; }
+.wscene .s-msg.rtl .rider { right: auto; left: 14px; }
+.wscene .srow.now .wire { animation: wscene-wire calc(.34s * var(--m)) var(--ease-out) backwards; }
+.wscene .srow.now .run { animation: wscene-ride calc(.62s * var(--m)) var(--ease-settle) backwards; }
+.wscene .srow.now .s-msg.rtl .run { animation-name: wscene-ride-back; }
+.wscene .srow.now .s-tag { animation: wscene-pop calc(.26s * var(--m)) var(--ease-spring) backwards; }
+.wscene .rider svg.art { width: 30px; height: 30px; }
+.wscene .ev .s-tag { justify-self: center; display: flex; align-items: center; gap: calc(6px * var(--sp)); background: var(--out); border: 1.5px solid var(--ui-line); padding: calc(3px * var(--sp)) calc(9px * var(--sp)); margin: calc(4px * var(--sp)) 0; max-width: 100%; min-width: 0; overflow-wrap: anywhere; text-align: center; }
+.wscene .ev .s-tag svg.art { width: 26px; height: 26px; }
+.wscene .ev .s-tag.end, .wscene .ev .s-tag.stop { border-color: var(--pink); }
+/* A step where nothing changes hands still says what happened. */
+.wscene .ev .s-tag.quiet { border-style: dashed; background: none; color: var(--ui-dim); justify-self: stretch; justify-content: center; }
+.wscene .ev .s-tag.end b, .wscene .ev .s-tag.stop b { color: var(--pink); }
+
+.wscene pre { margin: 0; background: var(--out); padding: calc(10px * var(--sp)) 0; overflow: auto; font: var(--text)/1.8 var(--mono); tab-size: 4; border-bottom: 1px solid var(--ui-line); }
+.wscene pre .ln { display: block; padding: 0 calc(14px * var(--sp)); border-left: 3px solid transparent; color: var(--ui-dim); white-space: pre; transition: background-color calc(.2s * var(--m)); }
+.wscene pre .ln.now { border-left-color: var(--yellow); background: rgba(243,215,122,.09); color: var(--ui-text); }
+.wscene pre .ln.now.bad { border-left-color: var(--pink); background: rgba(242,167,160,.1); }
+.wscene.plain pre { font-family: var(--sans); }
+.wscene.plain pre .ln { white-space: pre-wrap; }
+.wscene .tok-keyword, .wscene .tok-operatorKeyword { color: var(--pink); }
+.wscene .tok-string, .wscene .tok-string2 { color: var(--green); }
+.wscene .tok-comment { color: var(--ui-faint); font-style: italic; }
+.wscene .tok-number, .wscene .tok-bool { color: var(--yellow); }
+.wscene .tok-typeName, .wscene .tok-namespace { color: var(--blue); }
+
+.wscene .words { display: grid; grid-template-columns: repeat(auto-fit, minmax(calc(220px * var(--sp)), 1fr)); border-top: 1px solid var(--ui-line); flex: 1; align-content: start; }
+.wscene .word { background: var(--ui); border: 0; border-bottom: 1px solid var(--ui-line); border-right: 1px solid var(--ui-line); border-radius: 0; color: var(--ui-text); text-align: left; padding: calc(8px * var(--sp)) calc(12px * var(--sp)); cursor: pointer; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: calc(2px * var(--sp)) calc(10px * var(--sp)); align-items: center; font: inherit; transition: background-color calc(.2s * var(--m)); }
+.wscene .word.bare { grid-template-columns: minmax(0, 1fr); }
+.wscene .word:disabled { cursor: default; }
+.wscene .word svg.art { width: 30px; height: 30px; grid-row: span 2; }
+.wscene .word .why { color: var(--ui-dim); }
+.wscene .word.now { background: rgba(243,215,122,.1); }
+.wscene .word.seen .pair::after { content: " ✓"; color: var(--green); }
+.wscene .word:hover:not(:disabled) { background: var(--ui-2); }
+
+.wscene .say { padding: calc(11px * var(--sp)) calc(16px * var(--sp)); border-top: 1px solid var(--ui-line); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: calc(28px * var(--sp)); min-height: 4.4em; }
+.wscene > footer { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: calc(18px * var(--sp)); align-items: start; padding: calc(11px * var(--sp)) calc(16px * var(--sp)); border-top: 1px solid var(--ui-line); }
+.wscene .stepper { display: flex; gap: calc(6px * var(--sp)); align-items: center; flex-wrap: wrap; }
+.wscene .dots { display: inline-flex; gap: calc(4px * var(--sp)); margin-inline: calc(6px * var(--sp)); }
+.wscene .dots button { width: 18px; height: 6px; padding: 0; border: 0; border-radius: 0; background: var(--ui-line); cursor: pointer; }
+.wscene .dots button.on { background: var(--yellow); }
+.wscene .s-keys { color: var(--ui-faint); }
+.wscene .s-keys kbd { border: 1px solid var(--ui-line); padding: 0 calc(4px * var(--sp)); font: var(--text) var(--mono); color: var(--ui-dim); }
+.wscene .rule, .wscene .breaks { display: flex; flex-direction: column; gap: calc(2px * var(--sp)); padding-left: calc(10px * var(--sp)); border-left: 3px solid var(--yellow); }
+.wscene .rule b { font-weight: 650; }
+.wscene .breaks { border-left-color: var(--pink); color: var(--ui-dim); }
+
+@keyframes wscene-pop { from { opacity: 0; transform: scale(.82); } }
+@keyframes wscene-stamp { from { opacity: 0; scale: .7; } }
+@keyframes wscene-draw { from { stroke-dashoffset: 1; } }
+@keyframes wscene-appear { from { opacity: 0; } }
+@keyframes wscene-flow { to { stroke-dashoffset: -110; } }
+@keyframes wscene-dot { from { offset-distance: 0%; opacity: 0; } 12%, 85% { opacity: 1; } to { offset-distance: 100%; opacity: 0; } }
+@keyframes wscene-wire { from { transform: scaleX(0); } }
+@keyframes wscene-ride { from { transform: translateX(calc(-100% + 44px)); } }
+@keyframes wscene-ride-back { from { transform: translateX(calc(100% - 44px)); } }
+@keyframes wscene-shake { 25% { transform: translateX(-5px); } 50% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+
+@container (max-width: 900px) {
+  .wscene .s-stage { grid-template-columns: minmax(0, 1fr); }
+  .wscene .side { border-left: 0; border-top: 1px solid var(--ui-line); }
+  .wscene > footer, .wscene .say { grid-template-columns: minmax(0, 1fr); gap: calc(10px * var(--sp)); }
+}
+@container (max-width: 560px) {
+  .wscene .s-row, .wscene .ties, .wscene .shead, .wscene .ev, .wscene .lifes { gap: calc(5px * var(--sp)); }
+  .wscene .s-board { --side: 1fr; padding-inline: calc(8px * var(--sp)); }
+  .wscene .cell { padding: calc(8px * var(--sp)) calc(3px * var(--sp)) max(42px, calc(38px * var(--sp))); }
+  .wscene .cell.aside, .wscene .cell.bin { padding-inline: 0; }
+  .wscene .cell > svg.art { width: 42px; height: 42px; }
+  .wscene .thing { padding: calc(3px * var(--sp)) calc(5px * var(--sp)); }
+  .wscene .thing svg.art { width: 30px; height: 30px; }
+  .wscene .cell.aside .state, .wscene .s-keys, .wscene .rowhead span + span, .wscene .shead .both i, .wscene .shead .both i + svg.art { display: none; }
+  .wscene .seq { padding-left: calc(24px * var(--sp)); padding-right: calc(8px * var(--sp)); }
+  .wscene .srow > .num { left: calc(-18px * var(--sp)); }
+  .wscene .s-msg { --half: calc((100% - (var(--span) - 1) * 5px * var(--sp)) / var(--span) / 2); }
+  .wscene .s-msg .s-lab { white-space: normal; }
+  .wscene .ev .s-tag { flex-direction: column; gap: 0; padding: calc(2px * var(--sp)) calc(4px * var(--sp)); }
+  /* The word being taught takes a line of its own between the two rows, however long it is. */
+  .wscene .ties { display: block; height: auto; min-height: 46px; padding: calc(8px * var(--sp)) 0; }
+  .wscene .ties i { display: none; }
+  .wscene .stamp { position: static; translate: none; white-space: normal; text-align: center; justify-content: center; }
+}
+
+/* The picture key under a diagram that backs an analogy (PictureKey.tsx). */
+.wkey { list-style: none; margin: calc(8px * var(--sp)) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: calc(6px * var(--sp)) calc(14px * var(--sp)); font: var(--text)/1.4 var(--sans); color: var(--ui-dim); }
+.wkey li { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
+.wkey svg.art { width: 30px; height: 30px; }
+.wkey b { color: var(--yellow); font-weight: 650; }
+.wkey code { font-family: var(--mono); color: var(--blue); font-weight: 600; }
+
+/* A class, ER, state or flow diagram with its analogy drawn in (PictureDiagram.tsx): boxes in rows, the lines
+   drawn over them. The gaps are wide enough to hold a line's words whatever the density. */
+.wpic .pd-body { position: relative; padding: calc(20px * var(--sp)) calc(16px * var(--sp)); display: flex; flex-direction: column; gap: max(64px, calc(60px * var(--sp))); min-width: 0; overflow-x: auto; }
+.wpic .pd-row { display: flex; justify-content: center; align-items: flex-start; gap: max(44px, calc(48px * var(--sp))); }
+.wpic .pd-node { position: relative; z-index: 1; flex: 0 1 calc(190px * var(--sp)); min-width: calc(96px * var(--sp)); background: var(--ui-2); border: 1.5px solid var(--ui-line); padding: calc(10px * var(--sp)) calc(10px * var(--sp)); display: flex; flex-direction: column; align-items: center; gap: calc(3px * var(--sp)); text-align: center; overflow-wrap: anywhere; transition: opacity calc(.25s * var(--m)), border-color calc(.2s * var(--m)); }
+.wpic .pd-node svg.art { width: 56px; height: 56px; }
+.wpic .pd-node b { font-weight: 650; }
+.wpic .pd-node code { color: var(--blue); font-weight: 600; }
+.wpic .pd-node ul { list-style: none; margin: calc(5px * var(--sp)) 0 0; padding: calc(5px * var(--sp)) 0 0; border-top: 1px solid var(--ui-line); align-self: stretch; text-align: left; font: var(--text)/1.5 var(--mono); color: var(--ui-dim); }
+.wpic .pd-node.now, .wpic .pd-node.near { border-color: var(--yellow); box-shadow: 0 0 0 1px var(--yellow); }
+.wpic .pd-node.now { animation: wscene-pop calc(.26s * var(--m)) var(--ease-settle); }
+.wpic .pd-node.far { opacity: .4; }
+.wpic .pd-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.wpic .pd-words { z-index: 2; }
+.wpic .pd-line { --c: var(--ui-dim); transition: opacity calc(.25s * var(--m)); }
+.wpic .pd-line.now, .wpic .pd-line.near { --c: var(--yellow); }
+.wpic .pd-line.far { opacity: .22; }
+.wpic .pd-line path { fill: none; stroke: var(--c); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.wpic .pd-lines .hollow { fill: var(--ui); }
+/* Each line draws itself in turn when the diagram appears; the one being shown flows, with a dot riding it. */
+.wpic .pd-line .base { stroke-dasharray: 1; animation: wscene-draw calc(.42s * var(--m)) var(--ease-out) calc(var(--i, 0) * 70ms * var(--m)) backwards; }
+.wpic .pd-line.now .base { opacity: .4; }
+.wpic .pd-line .flow { stroke-width: 2; stroke-dasharray: 1.5 9.5; animation: wscene-flow 5s linear infinite; }
+.wpic .pd-line .dot { fill: var(--c); filter: drop-shadow(0 0 4px var(--c)); offset-rotate: 0deg; animation: wscene-dot calc(.6s * var(--m)) var(--ease-out) both; }
+.wpic .pd-line text { font: 600 var(--text) var(--sans); text-anchor: middle; paint-order: stroke; stroke: var(--ui); stroke-width: 5px; stroke-linejoin: round; fill: var(--ui-dim); animation: wscene-appear calc(.2s * var(--m)) linear calc(var(--i, 0) * 70ms * var(--m) + .3s * var(--m)) backwards; }
+.wpic .pd-line text .a { fill: var(--yellow); }
+/* The real words of a line show while it is the one being shown or pointed at: a busy diagram stays readable. */
+.wpic .pd-line text .real { display: none; }
+.wpic .pd-line.now text .real, .wpic .pd-line.near text .real { display: inline; }
+.wpic .pd-line text .r { fill: var(--blue); font-family: var(--mono); }
+.wpic .pd-line text.end { text-anchor: start; fill: var(--ui-text); font-family: var(--mono); }
+:root[data-motion="off"] .wpic .pd-line .flow { animation: none; }
+:root[data-motion="off"] .wpic .pd-line .dot { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="on"]) .wpic .pd-line .flow { animation: none; }
+  :root:not([data-motion="on"]) .wpic .pd-line .dot { display: none; }
+}
+@container (max-width: 560px) {
+  .wpic .pd-row { gap: max(26px, calc(24px * var(--sp))); }
+  .wpic .pd-node { padding: calc(6px * var(--sp)) calc(4px * var(--sp)); min-width: 0; }
+  .wpic .pd-node svg.art { width: 38px; height: 38px; }
+}

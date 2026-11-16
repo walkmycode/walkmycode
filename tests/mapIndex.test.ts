@@ -185,10 +185,10 @@ describe("the walks on real fixture maps", () => {
 });
 
 // The big real map the speed work was measured on, when it is on this machine (it is not checked in).
-const IRELIABEE = join(dataDirIn(process.cwd()), "ireliabee.map.json");
-describe("the walks on the indexed iReliabee map", { skip: existsSync(IRELIABEE) ? false : "no .walkmycode/ireliabee.map.json here" }, () => {
+const REFERENCE = join(dataDirIn(process.cwd()), "reference.map.json");
+describe("the walks on an indexed reference map", { skip: existsSync(REFERENCE) ? false : "no .walkmycode/reference.map.json here" }, () => {
   it("neighbourhood and trace match the scans for every node", async () => {
-    const map = upgradeMap(JSON.parse(await readFile(IRELIABEE, "utf8")), "cli");
+    const map = upgradeMap(JSON.parse(await readFile(REFERENCE, "utf8")), "cli");
     sameWalks(map, map.nodes.map((n) => n.id));
   });
 });

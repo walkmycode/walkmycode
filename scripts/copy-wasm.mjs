@@ -14,6 +14,7 @@ const files = [
   "node_modules/tree-sitter-javascript/tree-sitter-javascript.wasm",
   "node_modules/tree-sitter-python/tree-sitter-python.wasm",
   "node_modules/tree-sitter-php/tree-sitter-php.wasm",
+  "node_modules/tree-sitter-rust/tree-sitter-rust.wasm",
   "vendor/tree-sitter-dart/tree-sitter-dart.wasm",
 ];
 for (const f of files) {

@@ -39,6 +39,7 @@ import { Examples, PickUp } from "@/components/home/MapCards";
 import type { CardView, RepoRow } from "@/components/home/types";
 import { readPref } from "@/lib/prefs";
 import { prefStore, showDropTip, showFolderPrompt, turnFolderPromptOff } from "@/lib/folderPrompt";
+import { isDesktop } from "@/lib/desktop";
 
 const folders = () => import("@/lib/localFolder");
 const workspaces = () => import("@/lib/store");
@@ -50,7 +51,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 
 // canPickFolders never changes during a visit, so there is nothing to subscribe to.
 const noSubscribe = () => () => {};
-const canPick = () => typeof window !== "undefined" && "showDirectoryPicker" in window;
+// The desktop app has the system's folder picker (src/lib/desktop.ts), read by the server.
+const canPick = () => typeof window !== "undefined" && ("showDirectoryPicker" in window || isDesktop());
 // What this build offers: Lite has no folder picker, indexed repos, keys or provider list.
 const { indexed: INDEXED, drop: DROP } = pickSource({ target: TARGET, directoryPicker: false });
 const SETTINGS = pickSettings(TARGET);
@@ -87,7 +89,7 @@ function markOpened(key: string) {
 }
 
 function rowOf(p: PickedFolder): RepoRow {
-  return { label: p.name, kind: "local", files: p.files, ...(p.handle ? { handle: p.handle } : {}), capped: p.capped };
+  return { label: p.name, kind: "local", files: p.files, ...(p.handle ? { handle: p.handle } : {}), ...(p.path ? { path: p.path } : {}), capped: p.capped };
 }
 
 type Problem = { where: "drop" | "cards"; text: string };
@@ -203,7 +205,7 @@ export default function Home() {
         setBusy(`Mapping ${file}`);
       });
       const now = new Date().toISOString();
-      const list: RepoSource[] = rows.map((r, i) => ({ label: refs[i].label, kind: r.kind, fileCount: r.files.length, addedAt: now, ...(r.handle ? { handle: r.handle } : {}) }));
+      const list: RepoSource[] = rows.map((r, i) => ({ label: refs[i].label, kind: r.kind, fileCount: r.files.length, addedAt: now, ...(r.handle ? { handle: r.handle } : {}), ...(r.path ? { path: r.path } : {}) }));
       const ws = s.newWorkspace(named, list, map, contents, assertions);
       s.setWorkspace(starterTour ? { ...ws, starterTour } : ws);
       markOpened(`ws:${ws.id}`);
@@ -241,7 +243,12 @@ export default function Home() {
       else fileInput.current?.click();
       return;
     }
-    const picked = await (await folders()).pickFolder();
+    let picked: PickedFolder | null;
+    try {
+      picked = await (await folders()).pickFolder();
+    } catch (e) {
+      return setErr({ where: "drop", text: (e as Error).message });
+    }
     if (!picked) return;
     if (into === "map") void mapRepos([rowOf(picked)]);
     else addRows([rowOf(picked)]);
@@ -307,9 +314,10 @@ export default function Home() {
 
   async function refresh(i: number) {
     const r = repos[i];
-    if (!r.handle) return;
+    if (!r.handle && !r.path) return;
     setBusy(`Reading ${r.label} again…`);
-    const again = await (await folders()).rereadFolder(r.handle);
+    const lf = await folders();
+    const again = r.path ? await lf.readPath(r.path).catch(() => null) : await lf.rereadFolder(r.handle!);
     setBusy(null);
     if (!again) return setErr({ where: "drop", text: `The browser did not let me read ${r.label} again. Remove it and add the folder once more.` });
     const why = tooMany(total - r.files.length, again.files.length);

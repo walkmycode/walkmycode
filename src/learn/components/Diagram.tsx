@@ -14,6 +14,8 @@
  */
 import { textScale } from "@/lib/look";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { pictureKey } from "@/lib/scene/key";
 import { frontMatter, INK, kindLabel, LANES, styleSvg, type Lane } from "@/lib/diagramStyle";
 
 type Mermaid = typeof import("mermaid").default;
@@ -92,6 +94,17 @@ function load() {
   return ready;
 }
 
+/** Why Mermaid cannot read a diagram, or null when it can: read as it is drawn below. A lesson from a codebase asks
+ *  the professor once more for a board whose diagram would not draw (src/learn/lib/codebaseLesson.ts). */
+export async function diagramError(source: string): Promise<string | null> {
+  try {
+    await (await load()).parse(frontMatter(source).body);
+    return null;
+  } catch (e) {
+    return String((e as Error)?.message ?? e).split("\n").slice(0, 4).join(" ").trim() || "Mermaid could not read it.";
+  }
+}
+
 /** The drawing's own size, from its viewBox (Mermaid sizes the svg to its box with max-width). */
 function sizeOf(svg: string): { w: number; h: number } {
   const m = /viewBox="([\d.\-e]+)[ ,]+([\d.\-e]+)[ ,]+([\d.\-e]+)[ ,]+([\d.\-e]+)"/.exec(svg);
@@ -115,6 +128,9 @@ function remember(body: string, svg: string) {
   drawn.set(body, svg);
   if (drawn.size > 40) drawn.delete(drawn.keys().next().value as string);
 }
+
+// What stands for what, drawn (the analogy's words in a diagram's boxes): the drawings load only for a diagram that has them.
+const PictureKey = dynamic(() => import("@/components/scene/PictureKey"), { ssr: false });
 
 export default function Diagram({ source, label, laneOf }: { source: string; label?: string; laneOf?: (text: string) => Lane | null }) {
   const id = `d${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
@@ -179,10 +195,12 @@ export default function Diagram({ source, label, laneOf }: { source: string; lab
   const html = natural(svg, size);
   const kind = kindLabel(/aria-roledescription="([^"]*)"/.exec(svg)?.[1]);
   const frame: Frame = { kind, title, lanes, laneOf, onLanes: setLanes };
+  const key = pictureKey(source);
   return (
     <figure className="diagram" role="group" aria-label={title || label || "A diagram"}>
       <PanZoom html={html} size={size} label={title || label} frame={frame} onExpand={() => setBig(true)} />
       {big && <BigDiagram html={html} size={size} label={title || label} frame={frame} onClose={() => setBig(false)} />}
+      {key.length > 0 && <PictureKey pairs={key} />}
     </figure>
   );
 }

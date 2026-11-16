@@ -5,7 +5,7 @@
  * same in the artifact (WalkMyCode Lite) and in the app.
  */
 import { labelOf } from "@/lib/providers/catalogue";
-import type { Sample, SampleError, SampleOptions } from "./claude";
+import type { Look, Sample, SampleError, SampleOptions } from "./claude";
 
 type Input = Parameters<Sample>[0];
 type FriendlyError = { code?: string; title?: string; message?: string; status?: number; detail?: string; provider?: string };
@@ -39,7 +39,7 @@ async function ask(input: Input, opts: SampleOptions = {}, json = false): Promis
     res = await fetch("/api/learn", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ input, json, ...(opts.maxOutput ? { max_output: Math.round(opts.maxOutput) } : {}) }),
+      body: JSON.stringify({ input, json, ...(opts.maxOutput ? { max_output: Math.round(opts.maxOutput) } : {}), ...(opts.pc && !json ? { pc: true } : {}) }),
       signal: opts.signal,
     });
   } catch {
@@ -68,8 +68,9 @@ async function ask(input: Input, opts: SampleOptions = {}, json = false): Promis
         buf = buf.slice(cut + 2);
         if (!line) continue;
         // Explore's StreamEvent shapes (src/lib/providers/wire.ts).
-        const ev = JSON.parse(line) as { type: string; text?: string; finish?: string; error?: FriendlyError };
-        if (ev.type === "text" && ev.text) {
+        const ev = JSON.parse(line) as { type: string; text?: string; finish?: string; error?: FriendlyError } & Partial<Look>;
+        if (ev.type === "look" && ev.id && ev.tool) opts.onLook?.({ id: ev.id, tool: ev.tool, what: ev.what ?? "", note: ev.note, done: !!ev.done });
+        else if (ev.type === "text" && ev.text) {
           text += ev.text;
           opts.onText?.({ text, delta: ev.text });
         } else if (ev.type === "message") truncated = ev.finish === "length";

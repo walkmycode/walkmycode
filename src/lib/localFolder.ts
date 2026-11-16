@@ -4,23 +4,13 @@
 // is one repo of the workspace, read up to MAX_FILES_PER_REPO files; the
 // folder handle is kept (IndexedDB can store it) so "refresh" can read the
 // same folder again after the browser asks for permission.
-import { isAssetPath, isConfigPath, isReadablePath, MAX_ASSETS } from "@/analyzer/config/files";
+// In the desktop app (docs/DESKTOP.md) the system's folder picker gives a path
+// instead, and the server reads it with the same rules (src/lib/serverFolder.ts).
+import { DOC_MAX_BYTES, isAssetPath, listsHiddenDir, MAX_ASSETS, MAX_OTHER, otherFileMode } from "@/analyzer/config/files";
 import type { SourceFile } from "@/analyzer/types";
+import { FLUTTER_PLATFORMS, keep, MAX_FILE_BYTES, PHP_CACHE, PHP_RUNTIME, SKIP, skipDir } from "./folderRules";
+import { isDesktop, pickFolderPath } from "./desktop";
 import { MAX_FILES_PER_REPO } from "./workspace";
-
-/** Code and manifests by name; config files (compose, Dockerfile, .env.example, ...) by path. Never a real .env. */
-const KEEP = /\.(ts|tsx|js|jsx|mjs|cjs|mts|py|sql|prisma|dart|php|twig)$|(^|\/)(package\.json|pyproject\.toml|requirements\.txt|Cargo\.toml|go\.mod|pubspec\.yaml|composer\.json)$/;
-// The one hidden folder read is .github/workflows, for its config files only (a deploy's health check names the app's address).
-// Code in other languages (Rust, Go…) is kept too, for the guide to read and search, though the map doesn't draw it.
-const keep = (path: string) => (path.startsWith(".github/") ? isConfigPath(path) : KEEP.test(path) || isConfigPath(path) || isReadablePath(path));
-const HIDDEN_KEPT = /^\.github(\/workflows)?$/;
-const SKIP = new Set(["node_modules", "dist", "build", "out", "target", "__pycache__", "venv", "coverage", "vendor", "storybook-static", "site-packages"]);
-/** Beside a pubspec.yaml these are Flutter's platform folders: generated and native code. */
-const FLUTTER_PLATFORMS = new Set(["android", "ios", "macos", "linux", "windows"]);
-/** Beside a composer.json, storage/ (Laravel) and var/ (Symfony) are a PHP app's logs, sessions and compiled
- * views and container; bootstrap/cache holds Laravel's cached config and routes. All written at run time, never code. */
-const PHP_RUNTIME = new Set(["storage", "var"]);
-const PHP_CACHE = /(^|\/)bootstrap\/cache$/;
 
 type DirHandle = FileSystemDirectoryHandle & {
   values(): AsyncIterable<FileSystemHandle>;
@@ -33,15 +23,21 @@ export interface PickedFolder {
   files: SourceFile[];
   /** Only with the folder picker: lets "refresh" read the folder again. */
   handle?: FileSystemDirectoryHandle;
+  /** Only in the desktop app: the folder's path on disk, so "refresh" can read it again. */
+  path?: string;
   /** The folder had more files than one repo may hold; the rest were not read. */
   capped: boolean;
 }
 
 export function canPickFolders(): boolean {
-  return typeof window !== "undefined" && "showDirectoryPicker" in window;
+  return typeof window !== "undefined" && ("showDirectoryPicker" in window || isDesktop());
 }
 
 export async function pickFolder(): Promise<PickedFolder | null> {
+  if (isDesktop()) {
+    const path = await pickFolderPath();
+    return path ? readPath(path) : null;
+  }
   const w = window as unknown as { showDirectoryPicker?: (o?: { mode?: string }) => Promise<DirHandle> };
   if (!w.showDirectoryPicker) return null;
   let handle: DirHandle;
@@ -54,10 +50,17 @@ export async function pickFolder(): Promise<PickedFolder | null> {
 }
 
 async function readHandle(handle: DirHandle): Promise<PickedFolder> {
-  const files: SourceFile[] = [];
-  const assets: SourceFile[] = [];
-  const capped = await walk(handle, "", files, assets);
-  return { name: handle.name, files: [...files, ...assets], handle, capped };
+  const found: Found = { out: [], assets: [], others: [] };
+  const capped = await walk(handle, "", found, false);
+  return { name: handle.name, files: [...found.out, ...found.assets, ...found.others], handle, capped };
+}
+
+/** The desktop app's folder, read by the server from its path. Throws with the server's reason. */
+export async function readPath(path: string): Promise<PickedFolder> {
+  const r = await fetch("/api/folder", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path }) });
+  const body = (await r.json().catch(() => ({}))) as Partial<PickedFolder> & { error?: string };
+  if (!r.ok || !body.files) throw new Error(body.error ?? `${path} could not be read.`);
+  return { name: body.name ?? path, files: body.files, path: body.path ?? path, capped: !!body.capped };
 }
 
 /** Read a folder picked earlier again. Null when the browser (or the user) says no. */
@@ -73,9 +76,36 @@ export async function rereadFolder(handle: FileSystemDirectoryHandle): Promise<P
   }
 }
 
+interface Found {
+  out: SourceFile[];
+  assets: SourceFile[];
+  /** Every other file (README.md, LICENSE, images…): small text documents with their text, the rest as paths (MAX_OTHER). */
+  others: SourceFile[];
+}
+
+/** A file that is neither code, config nor an asset: listed, with its text when it is a small document; never a secret. */
+async function other(found: Found, path: string, file: () => Promise<File>): Promise<void> {
+  if (found.others.length >= MAX_OTHER) return;
+  const mode = otherFileMode(path);
+  if (!mode) return;
+  let content = "";
+  if (mode === "doc") {
+    try {
+      const f = await file();
+      if (f.size <= DOC_MAX_BYTES) content = await f.text();
+      if (content.includes("\0")) content = "";
+    } catch {
+      content = "";
+    }
+  }
+  found.others.push({ path, content });
+}
+
 /** Returns true when it stopped at the per-repo cap. Files an app serves as they are
- * (public/, static/) are listed apart, by path only, and do not count towards it. */
-async function walk(dir: DirHandle, prefix: string, out: SourceFile[], assets: SourceFile[]): Promise<boolean> {
+ * (public/, static/) are listed apart, by path only, and do not count towards it; so is every other file.
+ * In a hidden folder (.vscode, .husky…) `listOnly`: its files are listed, never read as code. */
+async function walk(dir: DirHandle, prefix: string, found: Found, listOnly: boolean): Promise<boolean> {
+  const { out, assets } = found;
   const entries: FileSystemHandle[] = [];
   for await (const h of dir.values()) entries.push(h);
   const flutter = entries.some((h) => h.kind === "file" && h.name === "pubspec.yaml");
@@ -84,17 +114,22 @@ async function walk(dir: DirHandle, prefix: string, out: SourceFile[], assets: S
     if (out.length >= MAX_FILES_PER_REPO) return true;
     const path = prefix ? `${prefix}/${h.name}` : h.name;
     if (h.kind === "directory") {
-      if (SKIP.has(h.name) || (h.name.startsWith(".") && !HIDDEN_KEPT.test(path)) || (flutter && FLUTTER_PLATFORMS.has(h.name))) continue;
-      if ((composer && PHP_RUNTIME.has(h.name)) || PHP_CACHE.test(path)) continue;
-      if (await walk(h as DirHandle, path, out, assets)) return true;
-    } else if (!keep(path) && isAssetPath(path)) {
+      const skip = listOnly ? SKIP.has(h.name) || (h.name.startsWith(".") && !listsHiddenDir(h.name)) : skipDir(h.name, path, { flutter, composer });
+      if (skip) {
+        if (!listOnly && listsHiddenDir(h.name) && (await walk(h as DirHandle, path, found, true))) return true;
+        continue;
+      }
+      if (await walk(h as DirHandle, path, found, listOnly)) return true;
+    } else if (!listOnly && !keep(path) && isAssetPath(path)) {
       if (assets.length < MAX_ASSETS) assets.push({ path, content: "" });
-    } else if (keep(path)) {
+    } else if (!listOnly && keep(path)) {
       const file = await (h as FileSystemFileHandle).getFile();
-      if (file.size > 2_000_000) continue;
+      if (file.size > MAX_FILE_BYTES) continue;
       const content = await file.text();
       if (content.includes("\0")) continue;
       out.push({ path, content });
+    } else {
+      await other(found, path, () => (h as FileSystemFileHandle).getFile());
     }
   }
   return false;
@@ -110,6 +145,7 @@ export async function filesFromInputAsync(list: FileList): Promise<PickedFolder>
 async function filesFromListAsync(list: { file: File; rel: string }[]): Promise<PickedFolder> {
   const files: SourceFile[] = [];
   const assets: SourceFile[] = [];
+  const found: Found = { out: files, assets, others: [] };
   let name = "folder";
   let capped = false;
   // Folders holding a pubspec.yaml: their android/, ios/, ... are Flutter's platform folders.
@@ -120,16 +156,23 @@ async function filesFromListAsync(list: { file: File; rel: string }[]): Promise<
     const parts = rel.split("/");
     name = parts[0];
     const path = parts.slice(1).join("/");
-    // Hidden folders are skipped (but .github/workflows); a hidden file (.env.example) is judged by keep().
-    if (!/^\.github\/workflows\/[^/]+$/.test(path) && parts.slice(0, -1).some((p) => SKIP.has(p) || (p.startsWith(".") && p.length > 1))) continue;
+    const dirs = parts.slice(1, -1);
+    // Never: build output and installs, nor .git or a cache. A file in another hidden folder (.vscode, .husky…) is
+    // listed only, but .github/workflows' config; a hidden file (.env.example, .gitignore) is judged like any other.
+    if (dirs.some((p) => SKIP.has(p) || (p.startsWith(".") && p.length > 1 && !listsHiddenDir(p)))) continue;
+    const inHidden = !/^\.github\/workflows\/[^/]+$/.test(path) && dirs.some((p) => p.startsWith(".") && p.length > 1);
     if (parts.slice(0, -1).some((p, i) => FLUTTER_PLATFORMS.has(p) && flutterDirs.has(parts.slice(0, i).join("/")))) continue;
     if (parts.slice(0, -1).some((p, i) => (PHP_RUNTIME.has(p) && composerDirs.has(parts.slice(0, i).join("/"))) || PHP_CACHE.test(parts.slice(0, i + 1).join("/")))) continue;
     // A file the app serves as it is: its path only, apart from the code.
-    if (!keep(path) && isAssetPath(path)) {
+    if (!inHidden && !keep(path) && isAssetPath(path)) {
       if (assets.length < MAX_ASSETS) assets.push({ path, content: "" });
       continue;
     }
-    if (!keep(path) || f.size > 2_000_000) continue;
+    if (inHidden || !keep(path)) {
+      await other(found, path, async () => f);
+      continue;
+    }
+    if (f.size > MAX_FILE_BYTES) continue;
     if (files.length >= MAX_FILES_PER_REPO) {
       capped = true;
       break;
@@ -137,7 +180,7 @@ async function filesFromListAsync(list: { file: File; rel: string }[]): Promise<
     const content = await f.text();
     if (!content.includes("\0")) files.push({ path, content });
   }
-  return { name, files: [...files, ...assets], capped };
+  return { name, files: [...files, ...assets, ...found.others], capped };
 }
 
 /** Folders dropped on the page (WalkMyCode Lite, inside Claude, has no folder picker): one
@@ -176,7 +219,7 @@ async function filesUnder(dir: FileSystemDirectoryEntry, rel: string, acc: { kep
       if (acc.kept > MAX_FILES_PER_REPO) break;
       const path = `${rel}/${e.name}`;
       if (e.isDirectory) {
-        if (!SKIP.has(e.name) && !e.name.startsWith(".")) await filesUnder(e as FileSystemDirectoryEntry, path, acc);
+        if (!SKIP.has(e.name) && (!e.name.startsWith(".") || listsHiddenDir(e.name))) await filesUnder(e as FileSystemDirectoryEntry, path, acc);
         continue;
       }
       const file = await new Promise<File>((res, rej) => (e as FileSystemFileEntry).file(res, rej));

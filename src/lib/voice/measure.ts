@@ -48,14 +48,45 @@ export function voicedRuns(levels: ArrayLike<number>, step: number): Run[] {
   return joined.filter((r) => r.end - r.start >= BLIP);
 }
 
-type Word = { from: number; to: number; weight: number; stop: boolean };
+type Word = { from: number; to: number; weight: number; stop: boolean; clause: boolean };
 
-/** The words of a text, each with how long it takes to say (its letters; a digit counts for more) and whether a sentence ends on it. */
+const SEPARATOR = /^[._/\\:@#]+$/;
+
+/**
+ * How long a word takes to say, in rough syllables, the way a voice says it rather than how it is spelled: the
+ * vowel sounds of each part (camelCase and snake_case split), a code name's dots, slashes and colons said aloud
+ * ("main.rs" is "main dot r s"), a part with no vowel spelled out letter by letter ("rs", "SQL"), a digit a syllable
+ * each. Letters count a little too, so a long word outlasts a short one of the same syllables. At least 1.
+ */
+export function spokenWeight(word: string): number {
+  const core = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  if (!core) return 0.5;
+  let syllables = 0;
+  for (const part of core.split(/([._/\\:@#]+)/)) {
+    if (!part) continue;
+    if (SEPARATOR.test(part)) {
+      syllables += part.length;
+      continue;
+    }
+    for (const piece of part.match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+|[\p{L}]+/gu) ?? [part]) {
+      if (/^\d+$/.test(piece)) {
+        syllables += piece.length;
+        continue;
+      }
+      const vowels = (piece.toLowerCase().match(/[aeiouy]+/g) ?? []).length;
+      if (!vowels || piece === piece.toUpperCase() && piece.length > 1 && piece.length <= 4) syllables += piece.length;
+      else syllables += Math.max(1, vowels - (/[^aeiouy]e$/i.test(piece) && vowels > 1 ? 1 : 0));
+    }
+  }
+  const letters = (core.match(/[\p{L}\p{N}]/gu) ?? []).length;
+  return Math.max(1, syllables + letters * 0.12);
+}
+
+/** The words of a text, each with how long it takes to say (spokenWeight) and whether a sentence ends on it. */
 function weighed(text: string): Word[] {
   return [...text.matchAll(/\S+/g)].map((m) => {
     const w = m[0];
-    const letters = (w.match(/[\p{L}]/gu) ?? []).length + (w.match(/\d/g) ?? []).length * 3;
-    return { from: m.index ?? 0, to: (m.index ?? 0) + w.length, weight: letters + 1, stop: /[.!?…]+["'”’)\]]*$/.test(w) };
+    return { from: m.index ?? 0, to: (m.index ?? 0) + w.length, weight: spokenWeight(w), stop: /[.!?…]+["'”’)\]]*$/.test(w), clause: CLAUSE_END.test(w) };
   });
 }
 
@@ -106,7 +137,7 @@ export function measuredWords(text: string, runs: readonly Run[]): SpokenWord[] 
     }
   }
   if (cur.length) groups.push(cur);
-  const whole = lay(words, runs);
+  const whole = byClauses(words, runs);
   if (groups.length < 2) return whole;
   // The longest pauses, one for each sentence end, if they are long enough to be sentence ends.
   const gaps = runs.slice(1).map((r, i) => ({ after: i, len: r.start - runs[i].end }));
@@ -120,8 +151,128 @@ export function measuredWords(text: string, runs: readonly Run[]): SpokenWord[] 
     const p = g.reduce((s, w) => s + w.weight, 0) / (sounding(parts[i]) || 1e-9);
     return p > pace * 0.6 && p < pace * 1.6;
   });
-  return fits ? groups.flatMap((g, i) => lay(g, parts[i])) : whole;
+  return fits ? groups.flatMap((g, i) => byClauses(g, parts[i])) : whole;
 }
+
+/** A word a voice may pause after inside a sentence: a comma, semicolon, colon or dash. */
+const CLAUSE_END = /[,;:—–]["'”’)\]]*$/;
+/** How far (seconds) a clause's laid end may be from a pause for the pause to be taken as that clause's end. */
+const CLAUSE_REACH = 1.2;
+
+/**
+ * Words laid over their runs of sound, with each comma (or semicolon, colon, dash) that the voice paused at matched
+ * to that pause: a voice pauses at some commas and not others, and the words after a paused comma start when the sound
+ * starts again, not before. A comma is matched to the nearest pause of at least SENTENCE_PAUSE within CLAUSE_REACH of
+ * where it was laid, in order; a match that would make a clause far faster or slower than the rest is not believed.
+ */
+function byClauses(words: readonly Word[], runs: readonly Run[]): SpokenWord[] {
+  const laid = lay(words, runs);
+  if (laid.length < 2 || runs.length < 2) return laid;
+  const gaps = runs.slice(1).map((r, i) => ({ after: i, start: runs[i].end, len: r.start - runs[i].end })).filter((g) => g.len >= SENTENCE_PAUSE);
+  const cuts: { word: number; gap: number }[] = [];
+  let next = 0;
+  words.forEach((w, i) => {
+    if (i === words.length - 1 || !w.clause) return;
+    const at = laid[i].end;
+    let best = -1;
+    for (let g = next; g < gaps.length; g++) {
+      const d = Math.abs(gaps[g].start - at);
+      if (d <= CLAUSE_REACH && (best < 0 || d < Math.abs(gaps[best].start - at))) best = g;
+    }
+    if (best >= 0) {
+      cuts.push({ word: i, gap: gaps[best].after });
+      next = best + 1;
+    }
+  });
+  if (!cuts.length) return laid;
+  const groups: Word[][] = [];
+  const parts: Run[][] = [];
+  let w0 = 0;
+  let r0 = 0;
+  for (const c of cuts) {
+    groups.push(words.slice(w0, c.word + 1));
+    parts.push(runs.slice(r0, c.gap + 1));
+    w0 = c.word + 1;
+    r0 = c.gap + 1;
+  }
+  groups.push(words.slice(w0));
+  parts.push(runs.slice(r0));
+  const pace = words.reduce((s, w) => s + w.weight, 0) / sounding(runs);
+  const fits = groups.every((g, i) => {
+    const p = g.reduce((s, w) => s + w.weight, 0) / (sounding(parts[i]) || 1e-9);
+    return g.length && parts[i].length && p > pace * 0.5 && p < pace * 2;
+  });
+  return fits ? groups.flatMap((g, i) => lay(g, parts[i])) : laid;
+}
+
+/**
+ * How a voice speaks, for lighting words before a line's audio has been measured (the first moments of a streamed
+ * line): seconds per unit of spokenWeight, the pause it takes at a comma or full stop, and the silence before its first
+ * word. `perUnit` covers the pauses a voice takes where the text has no punctuation (after a code name, a breath), so a
+ * line reckoned with it lasts as long as the voice takes to say it, not only as long as it is sounding.
+ */
+export interface Pace {
+  perUnit: number;
+  pause: number;
+  lead: number;
+}
+
+/**
+ * Deepgram Aura-2 (Draco) at speed 1, measured on a lesson line against Deepgram's own word times (15 Nov 2026): the
+ * line took 12.2 s, 0.17 s of it before the first word, with two punctuated pauses of about 0.5 s; 53.4 units of words.
+ */
+export const DEFAULT_PACE: Pace = { perUnit: 0.206, pause: 0.5, lead: 0.17 };
+
+/** How many pauses a reckoning takes in this text: one after each word that ends a sentence or a clause. */
+const punctuated = (words: readonly Word[]) => words.filter((w, i) => i < words.length - 1 && (w.stop || w.clause)).length;
+
+/** What each line measured so far says about the voice, by speed: the settings change the speed, and with it the pace. */
+const learned = new Map<number, Pace>();
+
+/**
+ * The pace to reckon with at this speed: learned from the lines measured at it, else the default stretched the way
+ * Deepgram stretches speech. It does not slow in proportion: speed 0.7 made a line 1.28 times as long, not 1.43.
+ */
+export function voicePace(speed = 1): Pace {
+  const s = speed > 0 ? speed : 1;
+  const known = learned.get(Math.round(s * 100));
+  if (known) return known;
+  const m = Math.pow(s, -0.7);
+  return { perUnit: DEFAULT_PACE.perUnit * m, pause: DEFAULT_PACE.pause * m, lead: DEFAULT_PACE.lead };
+}
+
+/** Learn the voice's pace from one measured line (a blend with what is known, so one odd line does not swing it). */
+export function learnPace(text: string, runs: readonly Run[], speed = 1): void {
+  const words = weighed(text);
+  const sound = sounding(runs);
+  const weight = words.reduce((s, w) => s + w.weight, 0);
+  if (!(sound > 0.5) || !(weight > 3)) return;
+  const pauses = runs
+    .slice(1)
+    .map((r, i) => r.start - runs[i].end)
+    .filter((g) => g >= SENTENCE_PAUSE)
+    .sort((a, b) => a - b);
+  const pause = pauses.length ? pauses[Math.floor(pauses.length / 2)] : DEFAULT_PACE.pause;
+  const lead = Math.min(0.6, runs[0].start);
+  // The whole line, first word to last, less the pauses the reckoning takes at punctuation: the rest is the words'.
+  const spoken = runs[runs.length - 1].end - runs[0].start - pause * Math.min(punctuated(words), pauses.length);
+  const now: Pace = { perUnit: Math.max(sound, spoken) / weight, pause, lead };
+  const key = Math.round((speed > 0 ? speed : 1) * 100);
+  const was = learned.get(key);
+  learned.set(key, was ? { perUnit: was.perUnit * 0.6 + now.perUnit * 0.4, pause: was.pause * 0.6 + now.pause * 0.4, lead: was.lead * 0.6 + now.lead * 0.4 } : now);
+}
+
+/** For tests: forget every learned pace. */
+export function forgetPaces(): void {
+  learned.clear();
+}
+
+/**
+ * The measurement's version, kept with each measured narration: audio kept from an older measurement is measured again
+ * (from the audio already here, nothing fetched). 2: words weighed as they are said, commas matched to pauses
+ * (15 Nov 2026; version 1 lit words up to 1.4 s early).
+ */
+export const MEASURE_VERSION = 2;
 
 /** After a word's sound has ended, it stays lit this long (seconds) before nothing is lit. */
 export const LINGER = 0.1;
@@ -160,14 +311,17 @@ const RATE = 16000;
  * The words of `text` timed against its audio, in the browser: decoded apart from what is played.
  * Empty where the browser cannot decode it, or takes too long: the reading goes on without lit words.
  */
-export async function measureWords(text: string, bytes: Uint8Array): Promise<SpokenWord[]> {
+export async function measureWords(text: string, bytes: Uint8Array, speed = 1): Promise<SpokenWord[]> {
   try {
     const Ctx = (globalThis as { OfflineAudioContext?: typeof OfflineAudioContext }).OfflineAudioContext;
     if (!Ctx || !bytes.byteLength) return [];
     const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
     const decoded = await Promise.race([new Ctx(1, 1, RATE).decodeAudioData(copy), new Promise<null>((r) => setTimeout(() => r(null), 4000))]);
     if (!decoded) return [];
-    return measuredWords(text, voicedRuns(loudness(decoded.getChannelData(0), decoded.sampleRate, STEP), STEP));
+    const runs = voicedRuns(loudness(decoded.getChannelData(0), decoded.sampleRate, STEP), STEP);
+    // Every measured line teaches the clock this voice's pace, for the first moments of the next line.
+    learnPace(text, runs, speed);
+    return measuredWords(text, runs);
   } catch {
     return [];
   }

@@ -10,7 +10,7 @@ import { kindOfImage, readCompose } from "../src/analyzer/config/compose";
 import { readDockerfile } from "../src/analyzer/config/dockerfile";
 import { readEnvFile } from "../src/analyzer/config/envfile";
 import { configKindOf, configLangOf, isConfigPath, REDACTED, redactConfigText, redactSource, redactValue } from "../src/analyzer/config/files";
-import { KEEP } from "../scripts/readDir";
+import { keepsCode } from "../scripts/readDir";
 import { buildFixture, readFixture } from "./analyzer.helpers";
 
 const COMPOSE = `services:
@@ -245,7 +245,7 @@ describe(".env.example and secrets", () => {
 
   it("never reads a real .env: the readers skip it and build.ts marks it secret", async () => {
     for (const p of [".env", ".env.local", ".env.production", "web/.env.development.local"]) {
-      assert.equal(isConfigPath(p) || KEEP.test(p), false, p);
+      assert.equal(isConfigPath(p) || keepsCode(p), false, p);
     }
     for (const p of [".env.example", "web/.env.sample", ".env.template", ".env.dist"]) assert.equal(isConfigPath(p), true, p);
     const { map } = await buildMap(

@@ -9,13 +9,16 @@
 //   without waiting for the server.
 // - Push-to-talk: audio flows while held, then a second of silence so the listener hears
 //   the turn end; hands-free: always, unless muted.
-// - Echo guard (speakers, not headphones; as iReliabee's mock interview does): while the
+// - Echo guard (speakers, not headphones): while the
 //   lecturer speaks, Deepgram gets silent frames instead of the microphone, so it never
 //   hears itself. The session still watches the microphone, and when the user is clearly
 //   louder than the echo it cuts the lecturer off ("barge") and the real frames flow again.
 // - KeepAlive every 8 s while no audio flows; close after a minute of nobody saying
 //   anything (billing is by connected time).
 // - A cancelled call is never answered, even if its answer arrives later.
+// - Raise your hand: his voice stops at once, he says "Go ahead." (an injected line that
+//   interrupts), and then the floor is the student's. With push-to-talk the microphone opens
+//   by itself until the student's turn ends; hands-free it is open anyway.
 import type { FriendlyError } from "@/lib/providers/wire";
 import { CONTEXT_RESERVE } from "../../agentSettings";
 import type { CloseReason, InputMode, LecturerEvent } from "../session";
@@ -30,6 +33,14 @@ export type Phase = "idle" | "connecting" | "configuring" | "live" | "closed";
 export type MicRoute = "off" | "live" | "silence" | "guard";
 
 export const KEEPALIVE_MS = 8000;
+/** What he says when a hand goes up, in turn, so it never sounds canned. */
+export const GO_AHEAD = ["Go ahead.", "Yes? Go ahead.", "Sure, go ahead."];
+/** A "Go ahead" that never starts (refused, or lost) gives the floor anyway after this long. */
+export const HAND_WAIT_MS = 3000;
+/** A floor nobody speaks into ends after this long (with push-to-talk, the microphone closes again). */
+export const FLOOR_QUIET_MS = 8000;
+/** A floor ends after this long whatever Deepgram hears (a noisy room can sound like speech for minutes). */
+export const FLOOR_MAX_MS = 15_000;
 export const TAIL_MS = 1200;
 const MAX_CANCELLED = 64;
 const MAX_NOTE = 1200;
@@ -54,6 +65,13 @@ export interface AgentState {
   calls: Record<string, string>;
   /** Recently cancelled call ids, never to be answered. */
   cancelled: string[];
+  /** A raised hand: none, waiting for his "Go ahead", or the floor is the student's. */
+  hand: Hand;
+  handAt: number;
+  /** How many hands so far (picks the "Go ahead" line). */
+  hands: number;
+  /** The microphone is held open by the floor, not by the student's own press. */
+  handHold: boolean;
   /** Characters UpdatePrompt may still add before the prompt reaches Deepgram's limit. */
   promptRoom: number;
   openedAt: number | null;
@@ -61,6 +79,8 @@ export interface AgentState {
   lastActivity: number;
   lastKeepAlive: number;
 }
+
+export type Hand = "none" | "asking" | "floor";
 
 export type Action =
   | { type: "connect"; at: number; input?: InputMode }
@@ -78,6 +98,8 @@ export type Action =
   | { type: "result"; id: string; name: string; content: string; at: number }
   | { type: "context"; note: string; at: number }
   | { type: "inject"; message: string; at: number }
+  /** The student raised a hand: stop, say "Go ahead", then listen. */
+  | { type: "hand"; at: number }
   | { type: "tick"; at: number }
   | { type: "socket-close"; code: number; reason: string; at: number }
   | { type: "fail"; error: FriendlyError; at: number }
@@ -111,6 +133,10 @@ export function initialState(at: number, input: InputMode = "push-to-talk", head
     userSpeaking: false,
     calls: {},
     cancelled: [],
+    hand: "none",
+    handAt: 0,
+    hands: 0,
+    handHold: false,
     promptRoom: CONTEXT_RESERVE,
     openedAt: null,
     closedAt: null,
@@ -161,10 +187,26 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
     if (n.agent === "speaking") emit({ type: "speaking", on: false });
     set({ agent: "idle" });
   };
+  const handTo = (hand: Hand, at: number) => {
+    if (n.hand === hand) return;
+    set({ hand, handAt: at });
+    emit({ type: "hand", state: hand === "none" ? "down" : hand });
+  };
+  /** The floor is the student's: with push-to-talk the microphone opens as if held. */
+  const giveFloor = (at: number) => {
+    if (n.hand !== "asking") return;
+    handTo("floor", at);
+    if (n.input === "push-to-talk" && !n.holding) set({ holding: true, handHold: true });
+  };
+  /** The student's turn is over (or abandoned): a floor-held microphone lets go with the usual tail. */
+  const lowerHand = (at: number) => {
+    if (n.handHold) set({ holding: false, handHold: false, tailUntil: at + TAIL_MS });
+    handTo("none", at);
+  };
   const shut = (at: number, reason: CloseReason, error?: FriendlyError) => {
     const wasLive = n.phase === "live";
     const open = n.phase === "configuring" || n.phase === "live";
-    set({ phase: "closed", closedAt: at, holding: false, calls: {} });
+    set({ phase: "closed", closedAt: at, holding: false, handHold: false, hand: "none", calls: {} });
     fx.push({ do: "flush" });
     if (open) fx.push({ do: "close-socket", code: 1000, reason });
     if (!wasLive) fx.push({ do: "failed", error: error ?? { code: "unknown", title: "Talk was closed", message: "The session closed before it was ready.", action: null } });
@@ -203,9 +245,13 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
         case "ConversationText":
           if (typeof m.content !== "string" || !m.content.trim()) break;
           emit({ type: "caption", role: m.role === "user" ? "user" : "assistant", text: m.content });
+          // His "Go ahead" is in: the audio after it is that line (Deepgram sends no AgentStartedSpeaking for an
+          // injected line, and the tail of the interrupted reply, still in flight, came before this text).
+          if (m.role !== "user" && n.hand === "asking") set({ gate: false });
           if (m.role === "user") {
             // The user's turn is in: whatever audio comes next is the new reply.
             set({ gate: false });
+            if (n.hand === "floor") lowerHand(a.at);
             if (n.userSpeaking) emit({ type: "listening", on: false });
             set({ userSpeaking: false });
           }
@@ -220,8 +266,11 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
         case "EndOfTurn":
           if (n.userSpeaking) emit({ type: "listening", on: false });
           set({ userSpeaking: false, gate: false });
+          if (n.hand === "floor") lowerHand(a.at);
           break;
         case "AgentThinking":
+          // His reply to what the student said: the hand has done its work.
+          if (n.hand === "floor") lowerHand(a.at);
           set({ agent: "thinking", gate: false });
           if (n.userSpeaking) emit({ type: "listening", on: false });
           set({ userSpeaking: false });
@@ -234,6 +283,10 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
           break;
         case "AgentAudioDone":
           set({ audioDone: true });
+          break;
+        case "InjectionRefused":
+          // Deepgram would not say "Go ahead" just now: the student has the floor without it.
+          giveFloor(a.at);
           break;
         case "FunctionCallRequest":
           for (const f of Array.isArray(m.functions) ? m.functions : []) {
@@ -281,12 +334,16 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
       if (s.agent === "speaking" && s.audioDone) {
         set({ lastActivity: a.at });
         stopSpeaking();
+        // "Go ahead" has been said: now he listens.
+        giveFloor(a.at);
       }
       break;
 
     case "press":
       if (s.phase === "closed") break;
-      set({ holding: true, lastActivity: a.at });
+      // The student's own press takes over from a raised hand.
+      if (n.hand !== "none") handTo("none", a.at);
+      set({ holding: true, handHold: false, lastActivity: a.at });
       // Barge-in without waiting for the server: whatever the lecturer was saying stops now.
       if (n.agent === "speaking") {
         fx.push({ do: "flush" });
@@ -346,14 +403,34 @@ export function reduce(s: AgentState, a: Action): { state: AgentState; effects: 
       fx.push({ do: "send", msg: { type: "InjectAgentMessage", message: a.message, behavior: "queue" } });
       break;
 
+    case "hand":
+      // Up once at a time, and not while the student is already holding the mic. A raised hand is deliberate, so it
+      // goes up even while Deepgram thinks the student is speaking: in a noisy room it can think so for minutes.
+      if (s.phase !== "live" || s.hand !== "none" || s.holding) break;
+      if (n.agent === "speaking") {
+        fx.push({ do: "flush" });
+        stopSpeaking();
+      }
+      if (n.userSpeaking) {
+        emit({ type: "listening", on: false });
+        set({ userSpeaking: false });
+      }
+      // The rest of what he was saying is dropped; "Go ahead" starts a reply of its own.
+      set({ gate: true, audioDone: true, hands: s.hands + 1, lastActivity: a.at });
+      handTo("asking", a.at);
+      fx.push({ do: "send", msg: { type: "InjectAgentMessage", message: GO_AHEAD[s.hands % GO_AHEAD.length], behavior: "interrupt" } });
+      break;
+
     case "tick":
       if (s.phase !== "live") break;
+      if (s.hand === "asking" && s.agent !== "speaking" && a.at - s.handAt >= HAND_WAIT_MS) giveFloor(a.at);
+      else if (s.hand === "floor" && ((!s.userSpeaking && a.at - s.handAt >= FLOOR_QUIET_MS) || a.at - s.handAt >= FLOOR_MAX_MS)) lowerHand(a.at);
       // Only once the audio had already stopped: the count starts when it stops (below).
       if (s.mic === "off" && micRoute(s, a.at) === "off" && a.at - s.lastKeepAlive >= KEEPALIVE_MS) {
         set({ lastKeepAlive: a.at });
         fx.push({ do: "send", msg: { type: "KeepAlive" } });
       }
-      if (!s.holding && s.agent === "idle" && !s.userSpeaking && !Object.keys(s.calls).length && a.at - s.lastActivity >= IDLE_CLOSE_MS) shut(a.at, "idle");
+      if (!n.holding && n.hand === "none" && s.agent === "idle" && !s.userSpeaking && !Object.keys(s.calls).length && a.at - s.lastActivity >= IDLE_CLOSE_MS) shut(a.at, "idle");
       break;
 
     case "socket-close":

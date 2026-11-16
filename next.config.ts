@@ -12,6 +12,9 @@ import type { NextConfig } from "next";
 //   the root by the local MCP server. With a static export, Next takes distDir as
 //   the export's folder (and builds in .next): out-mcp, so Lite's out is never
 //   clobbered. mcp/build.mjs copies it into mcp/dist/ui.
+// - WalkMyCode desktop (`npm run desktop:build`, WALKMYCODE_STANDALONE=1, docs/DESKTOP.md): this web
+//   app as it is, built with Next's standalone output: a server folder that runs on a bundled Node
+//   with no node_modules install. scripts/desktop/stage.mjs copies it into the Tauri app.
 // The old name, NEXT_PUBLIC_LANTERN_TARGET, still works when the new one is unset.
 process.env.NEXT_PUBLIC_WALKMYCODE_TARGET ??= process.env.NEXT_PUBLIC_LANTERN_TARGET;
 const target = process.env.NEXT_PUBLIC_WALKMYCODE_TARGET;
@@ -38,6 +41,22 @@ const nextConfig: NextConfig =
           // ws has optional native add-ons, node-pty is a native module. On-device speech to text
           // (src/lib/voice/parakeet) loads sherpa-onnx-node, a native module too, and unbzip2-stream to unpack its model.
           serverExternalPackages: ["ws", "node-pty", "sherpa-onnx-node", "unbzip2-stream"],
+          // Server code that reads files from paths it builds at run time (the data folder, a project's
+          // folder) makes Next's file trace take in the whole project, and the standalone build copies what
+          // is traced. The desktop build runs after `cargo test`, so it copied src-tauri/target (gigabytes
+          // of Rust output) into .next/standalone and filled the Windows runner's disk. The desktop server
+          // reads none of these folders, and scripts/desktop/stage.mjs never kept them.
+          outputFileTracingExcludes: {
+            "*": ["src-tauri/**", "docs/**", "tests/**", "site/**", "mcp/**", "examples/**", "out/**", "out-mcp/**", ".claude/**", ".git/**"],
+          },
+          ...(process.env.WALKMYCODE_STANDALONE === "1"
+            ? {
+                output: "standalone" as const,
+                // The desktop build is built from main, whose code ci.yml has type-checked (npm run
+                // typecheck); a second check inside `next build` is only time and memory.
+                typescript: { ignoreBuildErrors: true },
+              }
+            : {}),
         };
 
 export default nextConfig;

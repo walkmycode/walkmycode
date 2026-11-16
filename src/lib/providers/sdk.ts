@@ -96,6 +96,27 @@ export function toSdkTools(mode: "ask" | "tour", provider: ProviderId): Record<s
   return out;
 }
 
+/** A tool the server runs itself (the Learn professor's look at the computer), in SDK shape. */
+export interface ServerTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  run: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>;
+}
+
+/** Server-run tools in SDK shape: the SDK calls `run` and hands the result back to the model in the same request. */
+export function serverSdkTools(defs: ServerTool[]): Record<string, Tool> {
+  const out: Record<string, Tool> = {};
+  for (const def of defs) {
+    out[def.name] = tool({
+      description: def.description,
+      inputSchema: jsonSchema<Record<string, unknown>>(def.input_schema as JSONSchema7),
+      execute: (input: Record<string, unknown>, o: { abortSignal?: AbortSignal }) => def.run(input, o.abortSignal),
+    });
+  }
+  return out;
+}
+
 /** The two system messages, always in this order so auto-caching providers see a stable prefix. */
 export function systemMessages(mode: "ask" | "tour", mapSummary: string, provider: ProviderId): SystemModelMessage[] {
   const cache = PROVIDERS[provider].wire === "anthropic" ? { providerOptions: CACHE } : {};

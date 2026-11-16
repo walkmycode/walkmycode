@@ -1,8 +1,9 @@
 // The speech model on this computer (docs/VOICE.md §4d): NVIDIA Parakeet-TDT
 // 0.6B v2 (English), the int8 sherpa-onnx conversion. Where it is, whether it
 // is whole, and getting it:
-//  - a copy iReliabee already downloaded (~/.local/share/ireliabee/models/…)
-//    is used where it lies, and is never changed or removed by WalkMyCode;
+//  - a copy another app on this computer already downloaded (set
+//    WALKMYCODE_SHARED_MODELS_DIR to its models folder) is used where it
+//    lies, and is never changed or removed by WalkMyCode;
 //  - else WalkMyCode's own copy in ~/.walkmycode/models/, downloaded from the
 //    sherpa-onnx release: streamed to a .part file with its size and SHA-256
 //    checked, unpacked by our own reader (tar.ts: only the four files, no
@@ -34,19 +35,20 @@ export const MODEL = {
 export const SPARE_BYTES = 150 * 1024 * 1024;
 export const NEEDED_BYTES = MODEL.bytes + MODEL.unpackedBytes + SPARE_BYTES;
 
-export type ModelSource = "ireliabee" | "walkmycode";
+export type ModelSource = "shared" | "walkmycode";
 
 export interface ModelDirs {
   /** WalkMyCode's own models folder (~/.walkmycode/models, or WALKMYCODE_MODELS_DIR). */
   own: string;
-  /** Where iReliabee keeps its models (or WALKMYCODE_IRELIABEE_MODELS_DIR; "" = never look). */
-  ireliabee: string;
+  /** The models folder of another app on this computer that already downloaded a copy
+   *  (WALKMYCODE_SHARED_MODELS_DIR; "" = never look). */
+  shared: string;
 }
 
 export function modelDirs(env: Record<string, string | undefined> = process.env): ModelDirs {
   return {
     own: env.WALKMYCODE_MODELS_DIR || join(homedir(), ".walkmycode", "models"),
-    ireliabee: env.WALKMYCODE_IRELIABEE_MODELS_DIR ?? join(homedir(), ".local", "share", "ireliabee", "models"),
+    shared: env.WALKMYCODE_SHARED_MODELS_DIR ?? "",
   };
 }
 
@@ -62,11 +64,11 @@ export function isInstalled(dir: string): boolean {
   });
 }
 
-/** The model to use: iReliabee's copy when it is whole, else WalkMyCode's own, else null. */
+/** The model to use: another app's copy when it is whole, else WalkMyCode's own, else null. */
 export function findModel(dirs: ModelDirs = modelDirs()): { dir: string; source: ModelSource } | null {
-  if (dirs.ireliabee) {
-    const theirs = join(dirs.ireliabee, MODEL.name);
-    if (isInstalled(theirs)) return { dir: theirs, source: "ireliabee" };
+  if (dirs.shared) {
+    const theirs = join(dirs.shared, MODEL.name);
+    if (isInstalled(theirs)) return { dir: theirs, source: "shared" };
   }
   const ours = join(dirs.own, MODEL.name);
   return isInstalled(ours) ? { dir: ours, source: "walkmycode" } : null;
@@ -249,14 +251,14 @@ export async function moveIntoPlace(from: string, to: string, rename: (from: str
 
 /**
  * Remove WalkMyCode's own copy, and only that: the folder must be the model's
- * folder directly inside WalkMyCode's models folder. iReliabee's copy is never touched.
+ * folder directly inside WalkMyCode's models folder. Another app's copy is never touched.
  * Returns whether there was one.
  */
 export function removeOwnModel(dirs: ModelDirs = modelDirs()): boolean {
   const own = resolve(dirs.own);
   const target = resolve(own, MODEL.name);
   if (target !== own + sep + MODEL.name) throw new InstallError("WalkMyCode's models folder is not where it should be: nothing was removed.");
-  if (dirs.ireliabee && resolve(dirs.ireliabee, MODEL.name) === target) throw new InstallError("That folder is iReliabee's copy: WalkMyCode never removes it.");
+  if (dirs.shared && resolve(dirs.shared, MODEL.name) === target) throw new InstallError("That folder is another app's copy: WalkMyCode never removes it.");
   if (!existsSync(target)) return false;
   rmSync(target, { recursive: true, force: true });
   return true;

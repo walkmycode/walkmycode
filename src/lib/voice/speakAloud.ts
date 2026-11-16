@@ -23,6 +23,17 @@ export async function speakAloud(text: string, o: SpeakAloudOptions = {}): Promi
   return getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed }).speak(text, o);
 }
 
+/**
+ * Fetch a text's audio ahead of time, so that reading it later starts at once (the Learn room asks for the
+ * next line while one is heard). Kept under `scope`; nothing to do for the browser's own voice.
+ */
+export async function prefetchAloud(text: string, scope: Scope): Promise<void> {
+  const [{ getNarrator }, view] = await Promise.all([import("./narrate"), loadVoiceView()]);
+  const { narrator } = narratorInForce(view);
+  if (narrator === "browser") return;
+  await getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed }).prefetch(text, scope);
+}
+
 /** Stop whatever is being read aloud. */
 export async function stopSpeaking(): Promise<void> {
   const { stopNarration } = await import("./narrate");

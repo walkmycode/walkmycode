@@ -134,3 +134,40 @@
   .top-actions .git-btn[data-tip]::after, .top-actions .git-btn[data-tip]:hover::after { content: "Source control"; position: static; padding: 0; border: 0; background: none; box-shadow: none; font: 600 var(--text) var(--sans); color: var(--ui-text); transform: none; order: 5; }
   .top-actions .git-btn .git-branch { display: inline; order: 6; color: var(--ui-dim); font-weight: 500; }
 }
+
+/* Blame and History in the Code panel's header (FileGit.tsx; docs/design/git-history.html). */
+.ide-head:has(.file-git) { position: relative; }
+.file-git { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
+.file-git .ctl { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
+.file-git .ctl[aria-pressed="true"] { border-color: var(--yellow); color: var(--yellow); }
+.file-hist { position: absolute; right: calc(8px * var(--sp)); top: calc(100% + 4px); z-index: 30; width: min(440px, calc(100% - 16px)); background: var(--ui); border: 1px solid var(--ui-line); box-shadow: 0 18px 50px rgba(0, 0, 0, .5); }
+.file-hist header { display: flex; align-items: center; justify-content: space-between; gap: calc(12px * var(--sp)); padding: calc(8px * var(--sp)) calc(12px * var(--sp)); border-bottom: 1px solid var(--hair); }
+.file-hist header span { color: var(--ui-dim); }
+.file-hist ol { list-style: none; margin: 0; padding: 0; max-height: min(360px, 60vh); overflow: auto; }
+.file-hist li { display: grid; grid-template-columns: 1fr auto; gap: calc(2px * var(--sp)) calc(12px * var(--sp)); padding: calc(8px * var(--sp)) calc(12px * var(--sp)); border-bottom: 1px solid var(--hair); }
+.file-hist li:hover { background: var(--ui-2); }
+.file-hist .subj { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.file-hist code { font-family: var(--mono); color: var(--yellow); }
+.file-hist .meta { grid-column: 1 / -1; color: var(--ui-dim); }
+.file-hist .note { margin: 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); color: var(--ui-dim); }
+
+/* The blame gutter (Editor.tsx, blameGutter): author and date where a block of lines begins; in a narrow
+   editor the name column is shorter and the year is left out (the hover still says it all). */
+.ide-editor { container-type: inline-size; }
+.cm-blame-gutter { border-right: 1px solid var(--hair); background: color-mix(in srgb, var(--code-gutter) 88%, #000); }
+.cm-blame-gutter .cm-gutterElement { padding: 0 calc(10px * var(--sp)); font-family: var(--sans); }
+.cm-blame { display: flex; gap: calc(10px * var(--sp)); white-space: nowrap; color: var(--ui-dim); cursor: default; }
+.cm-blame .who { width: 15ch; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.cm-blame .when { width: 17ch; text-align: right; }
+.cm-blame .when .t::before { content: ", "; }
+.cm-blame.me .who { color: var(--yellow); }
+.cm-blame.new { color: var(--green); }
+.cm-blame:hover { color: var(--ui-text); }
+@container (max-width: 720px) {
+  .cm-blame-gutter .cm-gutterElement { padding: 0 calc(6px * var(--sp)); }
+  .cm-blame { gap: calc(6px * var(--sp)); }
+  .cm-blame .who { width: 8ch; }
+  .cm-blame .when { width: 11ch; }
+  .cm-blame .when .y { display: none; }
+  .cm-blame .when .t::before { content: " "; }
+}

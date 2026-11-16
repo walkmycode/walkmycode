@@ -173,7 +173,8 @@ describe("a course of any subject on disk", () => {
   it("builds the outline with every kind of lesson, and names the course from its README", () => {
     const o = loadOutline(root);
     assert.equal(o.name, "Modern history");
-    assert.deepEqual(o.units.map((u) => [u.title, u.lessons.map((l) => l.title)]), [["The great war", ["Europe in 1900", "Causes of the First World War", "Aftermath"]], ["Lessons", ["Between the wars"]]]);
+    // A course in part folders: a part that is only its README so far is a part of its own, not a loose "Lessons".
+    assert.deepEqual(o.units.map((u) => [u.title, u.lessons.map((l) => l.title)]), [["The great war", ["Europe in 1900", "Causes of the First World War", "Aftermath"]], ["Between the wars", ["Between the wars"]]]);
     assert.equal(o.units[0].lessons[1].exercises, 2);
   });
 

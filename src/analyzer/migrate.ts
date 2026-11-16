@@ -3,6 +3,8 @@
 // gets its `service`, and no id is ever rewritten. Called wherever a map
 // comes back from storage: store.ts, api/demo/route.ts, scripts/index.ts.
 // What the user told WalkMyCode ("Where does this point?", "Whose address is this?") rides along untouched.
+// A map also keeps what the analyzer could draw when it was made: drawnSince says what it could draw now.
+import { drawsLanguage } from "./config/files";
 import type { CodeMap, MapNode, RepoRef, ServiceDef } from "./types";
 
 /** "My Shop API" → "my-shop-api": the stable part of a ServiceDef.id. */
@@ -93,4 +95,14 @@ export function upgradeMap(raw: unknown, kind: RepoRef["kind"] = "local"): CodeM
 function firstAnchor(nodes: MapNode[]) {
   const n = nodes.find((x) => x.kind === "route" && x.file) ?? nodes.find((x) => x.file);
   return n?.file ? [{ file: n.file, line: n.line ?? 1, text: n.name, role: "code" as const }] : [];
+}
+
+/** The languages a map holds code in that it couldn't draw when it was made and the analyzer draws now
+ * (a Rust project mapped before Rust was on the map), most files first. [] when the map is up to date.
+ * Only mapping the folder again draws them: the map has no cards for that code. */
+export function drawnSince(map: Pick<CodeMap, "stats">): { name: string; files: number }[] {
+  return Object.entries(map.stats.otherCode ?? {})
+    .filter(([name, files]) => files > 0 && drawsLanguage(name))
+    .map(([name, files]) => ({ name, files }))
+    .sort((a, b) => b.files - a.files || a.name.localeCompare(b.name));
 }

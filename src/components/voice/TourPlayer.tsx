@@ -13,6 +13,7 @@ import type { Tour } from "@/lib/claude/tools";
 import type { FriendlyError } from "@/lib/providers/wire";
 import { getNarrator, VoiceError, type Scope } from "@/lib/voice/narrate";
 import type { Span } from "@/lib/voice/speech";
+import { useExploreMuted } from "@/lib/voice/mute";
 import { registerTour } from "@/lib/voice/tourBus";
 import { narratorInForce, unlockAudio, useVoiceView } from "@/lib/voice/view";
 
@@ -66,12 +67,13 @@ const openSettings = () => openSettingsPane("voice");
 
 export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) {
   const view = useVoiceView();
+  const muted = useExploreMuted();
   const inForce = view ? narratorInForce(view) : null;
   const narrator = useMemo(
-    () => (view && inForce ? getNarrator({ narrator: inForce.narrator, voiceId: inForce.narrator === view.narrator ? view.voiceId : null, speed: view.speed }) : null),
-    // The narrator changes only with the choice that makes it.
+    () => (view && inForce ? getNarrator({ narrator: inForce.narrator, voiceId: inForce.narrator === view.narrator ? view.voiceId : null, speed: view.speed, muted }) : null),
+    // The narrator changes only with the choice that makes it (and Explore's mute).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view?.narrator, view?.voiceId, view?.speed, inForce?.narrator],
+    [view?.narrator, view?.voiceId, view?.speed, inForce?.narrator, muted],
   );
   // The user pressed play (the tour reads on by itself until it ends or they pause).
   const [want, setWant] = useState(false);

@@ -28,8 +28,8 @@ Lecturers (listen + think + speak + functions + barge-in):
 | id | Think model | Price | Phase |
 |---|---|---|---|
 | `elevenagents` (default since 1 Oct) | ElevenAgents with `claude-haiku-4-5` (fast; not Opus, voice latency matters), speaking in the narration voice (Eldrin by default) | $0.08 / min + the model's tokens | 1 |
-| `deepgram-agent` · Fast (the cheaper choice) | Deepgram-managed `claude-haiku-4-5`, fallback chain → `claude-sonnet-5` | $0.075 / min (Standard; the LLM is included) | 1 |
-| `deepgram-agent` · Smarter | Deepgram-managed `claude-sonnet-5` | $0.163 / min (Advanced) | 1 |
+| `deepgram-agent` · Fast (the cheaper choice) | Deepgram-managed `claude-haiku-5-5`, fallback chain → `claude-haiku-4-5` | $0.075 / min (Standard; the LLM is included) | 1 |
+| `deepgram-agent` · Smarter | Deepgram-managed `claude-sonnet-5-5`, fallback chain → `claude-sonnet-5` | $0.163 / min (Advanced) | 1 |
 | `deepgram-agent` · Your Claude | `claude-opus-5-5` / `claude-sonnet-5-5` on the user's Anthropic key | $0.059 / min + tokens | 2, **untested** |
 
 Speech to text (`STTS`; Settings → Voice → "Speech to text", saved as `voice.stt`): how a spoken question becomes
@@ -51,9 +51,15 @@ the focus. Free voice uses the browser alone. Groq: `POST https://api.groq.com/o
 free tier (100 MB on Dev); WalkMyCode caps a clip at 6 MB. Failures become a `FriendlyError`: bad key (401/403), rate
 limit (429, and Groq's 498 flex capacity), file too large (413 or a "too large" body), retired model (404).
 
-Why Haiku by default: speed is the product's first rule and a voice reply must start fast; Haiku 4.5 is the fastest
-Claude, and the fallback chain keeps sessions working if Deepgram retires it (not before 15 Oct 2026). Opus 5.5 and
-Sonnet 5.5 are not managed by Deepgram; using them means our key inside the agent's Settings (phase 2, below).
+Why Haiku by default: speed is the product's first rule and a voice reply must start fast. Since 11 Nov 2026 Deepgram
+manages Haiku 5.5 and Sonnet 5.5 (its public list, `GET agent.deepgram.com/v1/agent/settings/think/models`), so Fast is
+Haiku 5.5 and Smarter is Sonnet 5.5, each falling back to the model it replaced. Deepgram's pricing table did not list
+the 5.5 models yet that day; the tiers (Haiku Standard, Sonnet Advanced) follow the earlier models. Opus 5.5 is not
+managed by Deepgram; using it means our key inside the agent's Settings (phase 2, below).
+
+**Voice style** (Settings → Voice, Deepgram lecturer only): Flux's `agent.speak.provider.expressivity`, -2 (calm) to +2
+(animated), 0 the voice as recorded (playground.deepgram.com, checked 11 Nov 2026). Calm -1, Natural 0 (not sent),
+Lively +1 (the default: a teacher who enjoys the subject), Excited +2.
 
 The Deepgram lecturer speaks with a Deepgram voice in phase 1 (`flux-colin-en`, British). An ElevenLabs voice inside
 Deepgram's agent needs the ElevenLabs key inside Settings, so it waits for the relay (phase 2). The ElevenLabs lecturer
@@ -129,8 +135,9 @@ One model for every way WalkMyCode talks, full app and WalkMyCode for Claude's p
 (`src/lib/voice/handsfree/conversation.ts`, pure): tap Talk once to start, tap again, Esc or "Tap to end" to end. Each
 utterance is one turn; nobody holds a key. Lite has no microphone: Talk stays hidden there.
 - **End of speech**: the lecturers stream the microphone the whole time and use their own turn detection: Deepgram
-  Flux with `eot_threshold: 0.7` (0.5–1.0, its default) and `eot_timeout_ms: 3000` (default 5000; shorter so a turn
-  never hangs), no eager end-of-turn (Deepgram "Configure the Voice Agent", checked 2 Oct 2026); ElevenAgents with its
+  Flux with `eot_threshold: 0.8` (0.5–1.0, default 0.7) and `eot_timeout_ms: 4000` (default 5000), tuned for
+  students on 11 Nov: someone learning pauses to think mid-question, so the lecturer waits rather than cutting in, and
+  a turn still never hangs; no eager end-of-turn (Deepgram "Configure the Voice Agent", checked 2 Oct 2026); ElevenAgents with its
   own turn detection, `turn.turn_eagerness: "normal"` set on the agent it makes (ElevenLabs "conversation flow",
   checked 2 Oct 2026). Talk through Claude and Free voice use a VAD (`handsfree/vad.ts`): 20 ms RMS frames from the
   `lantern-mic` worklet, a noise floor learnt from the room (the first 200 ms, then fast down / slow up), speech at 3.5×
@@ -140,7 +147,7 @@ utterance is one turn; nobody holds a key. Lite has no microphone: Talk stays hi
   began, goes as WAV to `/api/voice/transcribe` on the user's key (Groq, Deepgram or ElevenLabs).
 - **Barge-in**: speech while WalkMyCode speaks stops the voice and audio at once and listens. The microphone always has
   echoCancellation, noiseSuppression and autoGainControl. On speakers (the default) our own voice is not heard as the
-  user: Deepgram gets silent frames while the lecturer speaks (as iReliabee's mock interview does) and ElevenAgents'
+  user: Deepgram gets silent frames while the lecturer speaks and ElevenAgents'
   microphone is muted; the page watches the real level meanwhile and only energy well above the learnt echo (2.5×,
   held 160 ms) cuts in, then the real microphone flows again (with 300 ms of pre-roll on Deepgram). In Talk through
   Claude what the recognizer heard while the narration played is dropped unless the user cut in. "I'm using
@@ -155,10 +162,10 @@ utterance is one turn; nobody holds a key. Lite has no microphone: Talk stays hi
 
 ## 4d. Speech to text on this computer: Parakeet (11 Nov)
 A free, private choice under Settings → Voice → Speech to text, next to the browser and the transcribers on a key:
-"On this computer (Parakeet)". The audio never leaves the computer. English only. Design taken from iReliabee.
+"On this computer (Parakeet)". The audio never leaves the computer. English only.
 - **Model**: NVIDIA Parakeet-TDT 0.6B v2, the int8 sherpa-onnx conversion (`encoder.int8.onnx`, `decoder.int8.onnx`,
-  `joiner.int8.onnx`, `tokens.txt`; about 630 MB; CC-BY-4.0). `parakeet/model.ts`: a copy iReliabee already has
-  (`~/.local/share/ireliabee/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8`) is used where it lies when all four
+  `joiner.int8.onnx`, `tokens.txt`; about 630 MB; CC-BY-4.0). `parakeet/model.ts`: a copy another app on this computer already
+  downloaded (`WALKMYCODE_SHARED_MODELS_DIR` names its models folder) is used where it lies when all four
   files are there and not empty, and is never changed or removed. Otherwise WalkMyCode downloads its own into
   `~/.walkmycode/models/` from the sherpa-onnx release: streamed to a `.part` file with progress and cancel, after a
   free-space check (archive + files + 150 MB); the size (482,468,385 bytes) and SHA-256 are checked before anything is
@@ -166,10 +173,12 @@ A free, private choice under Settings → Voice → Speech to text, next to the 
   segment, a symbolic link or a hard link; the folder is moved into place in one rename. "Remove" deletes
   WalkMyCode's own copy only.
 - **Engine** (`parakeet/engine.ts`): the npm package `sherpa-onnx-node` (Apache-2.0), `OfflineRecognizer` with
-  `modelType: "nemo_transducer"`, CPU, `numThreads = max(1, min(4, cores - 1))`. Loaded lazily, once per server process
+  `modelType: "nemo_transducer"`, CPU, `numThreads = max(1, min(4, cores - 1))` (on an i7-1255U, 2 performance + 8
+  efficiency cores, 4 threads was fastest; 6 no faster, 8 up to half again slower). Loaded lazily, once per server process
   (about 3 s), preloaded when the pointer or the keyboard reaches a mic button (Talk, or the Learn professor's mic)
   with Parakeet chosen, and at the press if neither did: never with the page, since it holds about 700 MB of memory;
-  decodes run one at a time. It is a native module: kept out of the client bundle and out of Next's server
+  decodes run in two lanes, each one at a time: the final text's and the live previews'. A final never queues behind a
+  preview (one that has begun can't be stopped, so the two share the CPU for a moment). It is a native module: kept out of the client bundle and out of Next's server
   bundle (`serverExternalPackages`) and external to the MCP server's bundle, where it loads from `node_modules` when it
   is there. The packaged MCP server (npm, .mcpb) does not carry it yet: Settings says so there, and Talk falls back.
 - **Audio path**: `getUserMedia` → the `lantern-mic` AudioWorklet (16 kHz mono, 20 ms frames) → `parakeet/client.ts`
@@ -178,13 +187,30 @@ A free, private choice under Settings → Voice → Speech to text, next to the 
   `final`, `discard`, `notice`, `error`. It is a run of small posts and not a socket so that every piece passes the
   same guard as any local route (`guarded()`: loopback, same origin, JSON); a hosted WalkMyCode refuses. Nothing is
   written to disk.
-- **Behaviour** (`parakeet/detect.ts`, `previews.ts`, `session.ts`, all pure but for the engine):
+- **Behaviour** (`parakeet/detect.ts`, `pieces.ts`, `previews.ts`, `session.ts`, all pure but for the engine):
   speech is a 20 ms frame whose RMS is above 2.5× the room's learnt noise floor and never under 0.0015; an utterance
   starts after 0.15 s of it and ends after 1.2 s of silence; under 0.4 s of voiced audio it is skipped; past 60 s it
-  ends at the next pause (0.3 s), and at 75 s whatever is being said. While speaking, the last 8 s are decoded again
-  every 1.0 s as a live preview (from 0.8 s of voice; a tick is skipped while the last preview is still running); two
-  previews slower than 70% of the interval turn previews off for that talk, with the reason shown. Stop, or letting go
-  in hold to talk, drains and decodes what is left (0.15 s of voice is enough then), so a short dictation is not lost.
+  ends at the next pause (0.3 s), and at 75 s whatever is being said. Stop, or letting go in hold to talk, drains and
+  decodes what is left (0.15 s of voice is enough then), so a short dictation is not lost.
+- **Written down in pieces** (`pieces.ts`): Parakeet writes about 4 s of speech a second on an ordinary laptop CPU
+  (~0.25 s per second of audio), so a whole utterance decoded after it ends kept the user waiting 1.3–4.5 s, and a
+  preview of its last 8 s fell behind and turned itself off after ~6 s of talk. Instead, while the user speaks, the
+  utterance is cut at a 0.3 s pause once the piece is 1.5 s long (with no such pause by 5 s, in the longest pause it
+  has after its first second, else at its quietest frame), and each piece is decoded at once in the final lane. The
+  final text is the pieces' words; usually the last piece was cut as the closing silence began and is already done.
+  Words are the same as decoding the whole; a seam's comma can come back as a full stop, and `stitch()` mends the seams
+  the model marks as a continuation (a piece it began in lower case; a capitalised "The"/"and"/… after an open
+  sentence). The final event's `ms` is the time from the end of the utterance to its text.
+- **Live previews** (`previews.ts`): what was said since the last cut (so at most ~5 s) is decoded in the preview lane,
+  from 0.8 s of voice since the cut (just after one there may be only a breath, which the model makes a word of), at
+  most once a second, resting half as long as the last preview took, never while a piece is being written and only
+  when something new was said. The words shown are the pieces' (or, until a piece's own text is in, its last preview)
+  and the preview of the rest. Two previews slower than 2.5 s turn previews off for that talk, with the reason shown;
+  one that shared the CPU with a final is not counted.
+- **Measured** (i7-1255U, plugged in, the app's dev server, a SAPI voice streamed in 100 ms pieces, before and after
+  alternated three times under the same load): a 21.8 s talk got live words every ~1 s to its last second (before:
+  4–6 previews, then off at 6–8 s) and its final text 9–251 ms after the audio ended (before: 2.4–3.3 s); a 9.4 s
+  two-sentence clip, 7–9 ms (before: 0.6–1.6 s). Every word matched decoding the whole clip.
 - **English only**: when the browser's language is not English, or the model is not there yet, the choice made before
   Parakeet (`voice.sttBefore`) hears instead, and Talk says so.
 - **Where it is used**: Talk through Claude and Free voice on WalkMyCode for Claude's page (the hands-free Ear streams
@@ -197,9 +223,35 @@ A free, private choice under Settings → Voice → Speech to text, next to the 
   the download verifier and safe extraction on small made-up archives, the settings state, the stream client and the
   Ear; and, when the model is on the machine, the model's own test recording through the stream route.
 
+## 4e. Talking with the professor in Learn (owner, 12 Nov)
+
+A live, hands-free voice conversation with the professor in a lesson, "like a teacher and a student" (mockup
+`docs/design/learn-talk.html`). **🎙 Talk** in the lesson's controls opens it; the talk strip (`ProfessorTalk.tsx`,
+the Talk pill, the model, the clock and the cost, End) takes the controls' place until it ends.
+
+- **The session** is the Deepgram lecturer's (`lecturer/deepgram/session.ts`) with the professor's Settings:
+  `GET /api/voice/settings?room=learn` builds them on the server: `PROFESSOR_PERSONA`, `PROFESSOR_FUNCTIONS`
+  (`lecturer/professorFunctions.ts`), `PROFESSOR_GREETING` and Think Live. The page adds the lesson (`withLesson`,
+  `learn/lib/talk.ts` `lessonBrief`: the course, the student, the boards with the ones seen, the board on screen in
+  full, notes from this lesson) and the lesson's names as keyterms. When the board changes, he hears it
+  (`boardNote` through UpdatePrompt).
+- **His functions** run in the page (`runProfessorCall`): `next_board`, `previous_board`, `go_to_board`,
+  `read_board`, `open_example`, `start_quiz`, `explain_back`, `save_note`.
+- **Think Live** (`professorThinkLive`): one check-in after a long silence (12 s), frustration noticed;
+  backchannels ("mm-hmm", 0.35) only with headphones, since through speakers the echo guard would hide the student's
+  words while he made them. Field names from the Deepgram playground's code sample, 12 Nov 2026.
+- **The room** follows the talk: his face listens, thinks and speaks with it; his line (or the student's last one)
+  is the subtitle beside him; every turn lands in the lesson's conversation, marked 🎙 spoken. Space does not toggle
+  the board while talking (with hold to talk it is held to speak); Esc ends the talk.
+- **Measured** (12 Nov, Fast = Haiku 5.5, Lively, eot 0.8/4 s; a student's questions spoken by Aura-2 and streamed
+  in real time): Deepgram took the Settings with Think Live; he heard the questions exactly; first sound 1.8–2.5 s
+  after the student stopped (0.7 and eager end-of-turn were no faster); he asked the student to try first, used the
+  board's own analogy, asked for an explain-back before moving on, then called `next_board` and taught board 2; after
+  ~16 s of silence he asked "Are you still with me?".
+
 ## 5. Phase 2 (only when needed)
-A sidecar relay (`scripts/voice-relay.ts`, `ws` on 127.0.0.1:3010, started with `next dev` by `scripts/dev.mjs`; a
-port of iReliabee's relay) for: the user's own Claude as the thinker, an ElevenLabs voice inside the agent, and hosted
+A sidecar relay (`scripts/voice-relay.ts`, `ws` on 127.0.0.1:3010, started with `next dev` by `scripts/dev.mjs`)
+for: the user's own Claude as the thinker, an ElevenLabs voice inside the agent, and hosted
 credits (hold at session start, close code when credits run out). It fills the secret headers into `think.endpoint` /
 `speak.endpoint`, strips any client-sent `endpoint`, allowlists client message types after Settings, checks `Origin`
 plus a 30-second one-time ticket HMAC'd with a per-launch secret. Prove Opus 5.5 through Deepgram on a real key first
@@ -214,7 +266,7 @@ plus a 30-second one-time ticket HMAC'd with a per-launch secret. Prove Opus 5.5
   and privacy line; Groq's key row shown when it is missing), keys, prices, privacy line, a "Test voice" button.
   Settings → Privacy has a "Speech to text" row (the app, and WalkMyCode for Claude's page), and one for speech to
   text on this computer (nothing leaves). "On this computer (Parakeet)" shows where the model stands, a download with
-  progress and cancel, "already on this computer" for iReliabee's copy, Remove for WalkMyCode's own, and the model's
+  progress and cancel, "already on this computer" for another app's copy, Remove for WalkMyCode's own, and the model's
   credit line.
 
 ## 7. Tests without keys
@@ -228,8 +280,8 @@ for Aura's 2,000-char limit, the cost meter.
 ## 8. Risks
 - Billing by connection time: idle sessions cost money; close aggressively.
 - Speculative function calls: UI actions must be cheap to undo or deferred (`run_code`).
-- Haiku 4.5 retirement (≥ 15 Oct 2026): covered by the fallback chain; revisit the default when Deepgram adds a newer
-  managed Haiku.
+- Haiku 4.5 retirement (≥ 15 Oct 2026): Fast is Haiku 5.5 since 11 Nov, with Haiku 4.5 as its fallback; drop the
+  fallback when Deepgram retires it.
 - ElevenLabs default voices end 31 Dec 2026; the v4 promo ends 12 Oct; Deepgram documents only `eleven_turbo_v2_5`
   (deprecated) and `eleven_v3` for its agent.
 - Any website can open a WebSocket to localhost: the phase-2 relay must check Origin and a ticket.

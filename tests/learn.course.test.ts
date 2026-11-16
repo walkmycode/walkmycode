@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { brief, courseFromOutline, exerciseBoards, languageOfFile, leadingComment, lessonMaterial, naturalCompare, pairKey, readExercise, readLesson, readReadme, titleOfDir } from "../src/learn/lib/courseFolder";
 import { folderBoards, folderLessonPrompt, folderTalkBoards, type WrittenBoard } from "../src/learn/lib/professor";
-import { nextUntaught } from "../src/learn/lib/roadmap";
+import { courseNameFrom, nextUntaught } from "../src/learn/lib/roadmap";
 import { DEFAULT_PROFILE, type Lesson } from "../src/learn/lib/types";
 import { guarded } from "../src/lib/providers/guard";
 import { courseRoot, findLessons, learnCourseHandler, loadLesson, loadOutline } from "../src/lib/learnCourse";
@@ -353,5 +353,20 @@ describe("course folders: from the folder to a lesson", () => {
     assert.ok(!("exampleName" in boards[1]));
     // With no quiz to go before, the exercises come last.
     assert.deepEqual(folderBoards([talk("a"), talk("b")], l, exerciseBoards(l)).map((b) => b.kind), ["talk", "talk", "code", "code"]);
+  });
+});
+
+describe("a new course from the Learn home", () => {
+  it("is named after the subject asked for, without the asking", () => {
+    assert.equal(courseNameFrom("How HTTPS keeps a password safe?"), "How HTTPS keeps a password safe");
+    assert.equal(courseNameFrom("teach me SQL joins with a bakery example."), "SQL joins with a bakery example");
+    assert.equal(courseNameFrom("  phonetics  "), "Phonetics");
+  });
+
+  it("keeps a long subject to about sixty characters, at a word", () => {
+    const name = courseNameFrom("How a CPU runs a program, one instruction at a time, from the fetch to the write back");
+    assert.ok(name.length <= 61, name);
+    assert.ok(name.endsWith("…"), name);
+    assert.ok(!/\s…$/.test(name), name);
   });
 });

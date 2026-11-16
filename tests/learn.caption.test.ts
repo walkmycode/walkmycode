@@ -4,7 +4,8 @@
 // the professor's size setting (face.ts).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { captionParts, reckonedWord, SPEAKING_RATE, wordSpans } from "../src/learn/lib/caption";
+import { captionParts, reckonedWord, wordSpans } from "../src/learn/lib/caption";
+import { DEFAULT_PACE, forgetPaces, learnPace, spokenWeight, voicePace } from "../src/lib/voice/measure";
 import { FACE_SIZES, parseFaceSize, stepFaceSize } from "../src/learn/lib/face";
 import { followWords, type Saying } from "../src/learn/lib/voice";
 
@@ -19,23 +20,30 @@ describe("the transcript: which word is being spoken", () => {
 
   it("reckons the word from the time played: the first at once, later ones later, none after the end", () => {
     assert.equal(word(LINE, reckonedWord(LINE, 0)), "A");
-    assert.equal(word(LINE, reckonedWord(LINE, 250)), "reference");
+    assert.equal(word(LINE, reckonedWord(LINE, 450)), "reference");
     const heard = Array.from({ length: 80 }, (_, i) => word(LINE, reckonedWord(LINE, i * 100))).filter(Boolean) as string[];
     assert.deepEqual([...new Set(heard)], LINE.split(" "), "every word is reached, in order, none skipped");
     assert.equal(reckonedWord(LINE, 60_000), null);
     assert.equal(reckonedWord("", 0), null);
   });
 
-  it("takes about as long as the line takes to say, pauses at a full stop, and keeps up with a faster voice", () => {
-    const end = (speed: number) => {
+  it("takes as long as the voice really takes, pauses at a full stop, and keeps up with a faster voice", () => {
+    forgetPaces();
+    const end = (text: string, speed = 1) => {
       let ms = 0;
-      while (reckonedWord(LINE, ms, speed)) ms += 20;
+      while (reckonedWord(text, ms, speed)) ms += 20;
       return ms;
     };
-    const normal = end(1);
-    const expected = (LINE.length / SPEAKING_RATE) * 1000;
-    assert.ok(normal > expected && normal < expected * 1.6, `${normal} ms for a line of about ${Math.round(expected)} ms`);
-    assert.ok(end(1.2) < normal * 0.9);
+    // Measured 15 Nov 2026: Deepgram Aura-2 Draco said this line in 12.2 s; the old reckoning (15 characters a
+    // second) finished it in 10.1 s, lighting every word ahead of the voice, 2.5 s ahead by the end.
+    const DRACO = "rustc turns a correct main.rs into a program you can run again and again on its own, but if there is even one mistake it builds nothing at all.";
+    const said = end(DRACO);
+    assert.ok(said > 11_500 && said < 13_000, `${said} ms for a line Draco says in 12,200 ms`);
+    // Deepgram does not stretch speech in proportion to the speed setting: 0.7 made that line 15.6 s, 1.2 made it 10.0 s.
+    assert.ok(Math.abs(end(DRACO, 0.7) - 15_600) < 1_400, `${end(DRACO, 0.7)} ms at 0.7`);
+    assert.ok(Math.abs(end(DRACO, 1.2) - 10_000) < 1_000, `${end(DRACO, 1.2)} ms at 1.2`);
+    const normal = end(LINE);
+    assert.ok(end(LINE, 1.2) < normal * 0.92);
     // "value." holds a little longer than its letters.
     const during = (w: string) => Array.from({ length: 400 }, (_, i) => word(LINE, reckonedWord(LINE, i * 10))).filter((x) => x === w).length;
     assert.ok(during("value.") > during("reference") * 0.9, "six letters and a stop last about as long as nine letters");
@@ -111,7 +119,8 @@ describe("the transcript: following a line as it is spoken", () => {
     assert.equal(shown.length, 1, "nothing is lit before the sound begins");
     clock = 5000;
     words.started(LINE);
-    clock = 5300;
+    // The voice's own silence before its first word (0.17 s), then "A": the second word is heard about 0.4 s in.
+    clock = 5600;
     await wait(200);
     assert.equal(word(LINE, shown.at(-1)!.word), "reference");
     end();
@@ -147,5 +156,37 @@ describe("the professor's size", () => {
     assert.equal(stepFaceSize("medium", -1), "small");
     assert.equal(stepFaceSize("large", 1), "large");
     assert.equal(stepFaceSize("small", -1), "small");
+  });
+});
+
+describe("the transcript: how long a word takes to say", () => {
+  it("weighs a word by how it is said, not how it is spelled: code names' dots aloud, letters spelled out", () => {
+    // "main.rs" is said "main dot r s": far longer than its seven letters suggest, longer than "mains".
+    assert.ok(spokenWeight("main.rs") > spokenWeight("mains") * 2.5);
+    // A word with no vowel is spelled: "SQL" is three letters said one by one.
+    assert.ok(spokenWeight("SQL") >= 3);
+    // camelCase is said as its parts: "useEffect" is "use effect".
+    assert.ok(spokenWeight("useEffect") > spokenWeight("use"));
+    assert.ok(spokenWeight("a") >= 1);
+    assert.equal(spokenWeight("—"), 0.5);
+  });
+
+  it("learns the voice's own pace from each measured line, at its speed, and blends one line in gently", () => {
+    forgetPaces();
+    assert.deepEqual(voicePace(1), DEFAULT_PACE);
+    const text = "One two three four five six seven eight nine ten, eleven twelve.";
+    // Two stretches of sound, 2 s and 1 s, with a 0.6 s pause at the comma, after 0.3 s of silence.
+    learnPace(text, [{ start: 0.3, end: 2.3 }, { start: 2.9, end: 3.9 }], 1);
+    const p = voicePace(1);
+    assert.ok(Math.abs(p.lead - 0.3) < 1e-9);
+    assert.ok(Math.abs(p.pause - 0.6) < 1e-9);
+    // 3.6 s from the first word to the last, less the comma's 0.6 s pause: 3 s of words.
+    const weight = text.split(" ").reduce((s, w) => s + spokenWeight(w), 0);
+    assert.ok(Math.abs(p.perUnit - 3 / weight) < 1e-9);
+    // Another speed has its own pace; the first speed's is kept.
+    assert.notDeepEqual(voicePace(0.8), p);
+    learnPace(text, [{ start: 0.3, end: 4.3 }, { start: 4.9, end: 6.9 }], 1);
+    assert.ok(voicePace(1).perUnit > p.perUnit && voicePace(1).perUnit < (6 / weight), "blended, not replaced");
+    forgetPaces();
   });
 });

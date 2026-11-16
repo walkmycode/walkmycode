@@ -204,7 +204,8 @@ export function runTool(repo: RepoView, name: string, input: Record<string, unkn
       // Files read_file can open that aren't cards on the map (package.json and the other manifests):
       // listed too, or they look missing and get read some other way.
       const onMap = new Set(map.files.map((f) => f.path));
-      for (const path of Object.keys(files)) if (!onMap.has(path)) add(path, "  (not on the map; read_file opens it)");
+      // Files listed with no text (images, binaries, big documents): named, but there is nothing to read.
+      for (const path of Object.keys(files)) if (!onMap.has(path)) add(path, files[path] ? "  (not on the map; read_file opens it)" : "  (not read: an image, a binary or a big file)");
       // Several repos: the root is one folder per repo, and says so.
       const repos = map.repos?.length > 1 && !base ? map.repos : [];
       const label = (d: string) => {

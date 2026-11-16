@@ -5,6 +5,7 @@
 import { openSettings as openSettingsPane } from "@/lib/settingsNav";
 import { useEffect, useRef, useState } from "react";
 import type { FriendlyError } from "@/lib/providers/wire";
+import { exploreMuted } from "@/lib/voice/mute";
 import { loadVoiceView, narratorInForce, unlockAudio } from "@/lib/voice/view";
 
 // "Open settings" opens Settings → Voice.
@@ -32,7 +33,7 @@ export default function ReadAloud({ text }: { text: string }) {
       const [{ getNarrator, VoiceError }, { speakable }, view] = await Promise.all([import("@/lib/voice/narrate"), import("@/lib/voice/speech"), loadVoiceView()]);
       if (my !== reading.current) return;
       const { narrator } = narratorInForce(view);
-      const n = getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed });
+      const n = getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed, muted: exploreMuted() });
       stop.current = () => n.stop();
       try {
         await n.speak(speakable(text));

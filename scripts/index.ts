@@ -20,11 +20,12 @@ import { serviceId, upgradeMap } from "../src/analyzer/migrate";
 import { GRAMMAR_FILES, setGrammarLoader } from "../src/analyzer/parser";
 import { combineRepos, uniqueLabels } from "../src/lib/workspace";
 import type { Assertion } from "../src/analyzer/types";
-import { dataDirIn } from "../src/lib/dataDir";
+import { appDir, dataDirIn } from "../src/lib/dataDir";
 import { readDir } from "./readDir";
 
 // In Node the grammars are read straight out of node_modules.
-setGrammarLoader(async (name) => new Uint8Array(await readFile(join(process.cwd(), "node_modules", GRAMMAR_FILES[name]))));
+// The grammars sit in WalkMyCode's own node_modules (in the desktop app, its server folder's: docs/DESKTOP.md).
+setGrammarLoader(async (name) => new Uint8Array(await readFile(join(appDir(), "node_modules", GRAMMAR_FILES[name]))));
 
 /** An env name that holds another service's address (docs/SERVICES.md §5 name heuristic). */
 const URL_SETTING = /^(?:NEXT_PUBLIC_|VITE_|REACT_APP_|PUBLIC_)?([A-Z0-9]+?)_(?:SERVICE_|SVC_)?(?:URL|HOST|BASE_URL|BASEURL|ENDPOINT|API_URL|API|ADDR)$/;

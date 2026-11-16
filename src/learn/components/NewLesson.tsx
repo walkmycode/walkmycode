@@ -3,12 +3,15 @@
  *  step in one already running. */
 import { useEffect, useRef, useState } from "react";
 import { sampleMessage, type Sample } from "@/learn/lib/claude";
-import { exerciseBoards, type FolderLesson } from "@/learn/lib/courseFolder";
+import { codebaseAsked, diagramsAsked, groundingPart, groundOf, type CodebaseLookup } from "@/learn/lib/codebaseAsk";
+import { writeCodebaseLessonInSteps } from "@/learn/lib/codebaseLesson";
+import { exerciseBoards, titleOfDir, type FolderLesson } from "@/learn/lib/courseFolder";
 import { folderBoards, folderLessonPrompt, folderTalkBoards, lessonPrompt, writeFolderLessonInSteps, writeLesson, type StepProgress } from "@/learn/lib/professor";
 import { newId, now as clock } from "@/learn/lib/store";
 import type { Course, Lesson, Profile, RoadmapModule } from "@/learn/lib/types";
-import { nextModule, nextUntaught } from "@/learn/lib/roadmap";
+import { courseNameFrom, nextModule, nextUntaught } from "@/learn/lib/roadmap";
 import type { TeachRequest } from "@/learn/links";
+import type { Start } from "./Library";
 
 type Props = {
   sample: Sample | null;
@@ -19,6 +22,8 @@ type Props = {
   teach?: TeachRequest;
   /** A roadmap module to teach (from the roadmap's "Learn this now"). */
   module?: { stage: string; module: RoadmapModule };
+  /** From the Learn home: the subject, level and length already chosen; the lesson is written at once. */
+  start?: Start;
   roadmap?: Course;
   onRoadmap: (c: Course) => void;
   planRoadmap: (name: string, goal: string, level: string) => Promise<Course>;
@@ -32,6 +37,21 @@ async function readFolderLesson(path: string, lesson: string): Promise<FolderLes
   const body = (await res.json().catch(() => null)) as { lesson?: FolderLesson; error?: unknown } | null;
   if (!res.ok || !body?.lesson) throw { code: "folder", message: typeof body?.error === "string" ? body.error : "The lesson's folder could not be read." };
   return body.lesson;
+}
+
+/** The codebase a request names, found and read on this computer (src/lib/learnCodebase.ts). Where it cannot be
+ *  looked for (hosted WalkMyCode, the server unreachable), the lesson is told it was not found, never left to invent it. */
+async function findCodebase(request: string, signal: AbortSignal): Promise<CodebaseLookup> {
+  const missing = (why: string): CodebaseLookup => ({ missing: { phrase: codebaseAsked(request)?.phrase ?? request.slice(0, 60), looked: [], near: [], why } });
+  try {
+    const res = await fetch("/api/learn/codebase", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request }), signal });
+    const body = (await res.json().catch(() => null)) as CodebaseLookup | { error?: unknown } | null;
+    if (res.ok && body && ("found" in body || "missing" in body || "asked" in body)) return body;
+    return missing(res.status === 403 ? "this copy of WalkMyCode cannot read the folders on the student's computer" : "the folders on the student's computer could not be read just now");
+  } catch (e) {
+    if (signal.aborted) throw e;
+    return missing("the folders on the student's computer could not be read just now");
+  }
 }
 
 /** A lesson whose text is longer than this is written in steps, so all of it is read. */
@@ -51,16 +71,17 @@ ${t.snippet}`
     : `I met this in my own project${where}. Use examples like the code I am working on.`;
 }
 
-export default function NewLesson({ sample, profile, lessons, course, teach, module, roadmap, planRoadmap, onDone }: Props) {
+export default function NewLesson({ sample, profile, lessons, course, teach, module, start, roadmap, planRoadmap, onDone }: Props) {
   const courses = [...new Set(lessons.map((l) => l.course))];
-  const [pick, setPick] = useState(teach ? (courses.includes(FROM_CODE) ? FROM_CODE : NEW) : course ?? (courses.length ? courses[0] : NEW));
-  const [newCourse, setNewCourse] = useState(teach ? FROM_CODE : "");
-  const [topic, setTopic] = useState(teach?.topic ?? module?.module.title ?? "");
-  const [planRoad, setPlanRoad] = useState(!teach);
+  const [pick, setPick] = useState(teach ? (courses.includes(FROM_CODE) ? FROM_CODE : NEW) : start ? (start.course ?? NEW) : course ?? (courses.length ? courses[0] : NEW));
+  const [newCourse, setNewCourse] = useState(teach ? FROM_CODE : start && !start.course ? courseNameFrom(start.topic) : "");
+  const [topic, setTopic] = useState(teach?.topic ?? start?.topic ?? module?.module.title ?? "");
+  // Asked for from the Learn home, a new course starts with its lesson at once; its road can be planned from its card.
+  const [planRoad, setPlanRoad] = useState(!teach && !start);
   const [goal, setGoal] = useState("");
-  const [phase, setPhase] = useState<"road" | "lesson">("lesson");
-  const [level, setLevel] = useState(LEVELS[0]);
-  const [boards, setBoards] = useState(10);
+  const [phase, setPhase] = useState<"road" | "code" | "lesson">("lesson");
+  const [level, setLevel] = useState(start?.level ?? LEVELS[0]);
+  const [boards, setBoards] = useState(start?.boards ?? 10);
   const [notes, setNotes] = useState(teach ? teachNotes(teach) : "");
   const [busy, setBusy] = useState(false);
   const [written, setWritten] = useState(0);
@@ -78,11 +99,12 @@ export default function NewLesson({ sample, profile, lessons, course, teach, mod
   const fromFolder = roadmap?.folder ? (module ?? nextUntaught(roadmap, lessons) ?? nextModule(roadmap, lessons)) : null;
   const [planned, setPlanned] = useState(0);
   /** A long lesson being written in steps, for a provider that refused it whole. */
-  const [stepping, setStepping] = useState<StepProgress | null>(null);
+  const [stepping, setStepping] = useState<(StepProgress & { doing?: string }) | null>(null);
 
   const write = async () => {
     if (!sample || !ready) return;
-    ctl.current = new AbortController();
+    const mine = new AbortController();
+    ctl.current = mine;
     setBusy(true);
     setErr("");
     setWritten(0);
@@ -97,12 +119,12 @@ export default function NewLesson({ sample, profile, lessons, course, teach, mod
           // A long document (a textbook chapter, a deck of a hundred slides) is written part by part from the start:
           // asked for whole, its end would be cut off before the professor read it.
           if (material.readme.length > LONG_LESSON) throw { code: "prompt_too_large" };
-          out = await writeLesson(sample, folderLessonPrompt(material, courseName, profile, earlier), setWritten, ctl.current.signal);
+          out = await writeLesson(sample, folderLessonPrompt(material, courseName, profile, earlier), setWritten, mine.signal);
         } catch (e) {
           // Too much for this provider in one request (a free plan's per-minute limit): write it in steps.
           const code = (e as { code?: string })?.code;
           if (code !== "prompt_too_large" && code !== "rate_limited") throw e;
-          out = await writeFolderLessonInSteps(sample, material, courseName, profile, setStepping, ctl.current.signal);
+          out = await writeFolderLessonInSteps(sample, material, courseName, profile, setStepping, mine.signal);
         }
         if (!out) throw { code: "invalid_json" };
         const now = clock();
@@ -132,29 +154,54 @@ export default function NewLesson({ sample, profile, lessons, course, teach, mod
         setPhase("road");
         road = await planRoadmap(courseName, goal.trim(), level);
       }
+      // A request that names a codebase on this computer is taught from it, and one that names diagrams (UML…) gets them.
+      // "Teach me this" from Explore already carries its code.
+      const asked = teach ? topic : `${topic}\n${notes}`;
+      const diagrams = diagramsAsked(asked);
+      let lookup: CodebaseLookup | null = null;
+      if (!teach && codebaseAsked(asked)) {
+        setPhase("code");
+        lookup = await findCodebase(asked, mine.signal);
+      }
+      const found = lookup && "found" in lookup ? lookup.found : null;
+      // A new course asked for from the Learn home about a codebase is named after it, so its later lessons join it.
+      const name = found && start && !start.course && isNewCourse ? titleOfDir(found.name) : courseName;
+      const before = name === courseName ? earlier : lessons.filter((l) => l.course === name).sort((a, b) => a.number - b.number);
       setPhase("lesson");
       const target = module ?? (road && !topic.trim() ? nextModule(road, lessons) : null);
       const t = topic.trim() || target?.module.title || "the natural next step after the lessons already taught, chosen by you";
-      const prompt = lessonPrompt(
+      // Asked for whole: what the request asked for beyond its subject (diagrams, or a codebase that was not found).
+      const context = found ? "" : groundingPart(lookup, diagrams, boards - 2);
+      const prompt = () => lessonPrompt(
         {
           topic: t,
-          course: courseName,
+          course: name,
           level,
           boards,
           notes: notes.trim(),
           ...(road ? { roadmap: road } : {}),
           ...(target ? { module: { stage: target.stage, title: target.module.title, summary: target.module.summary, topics: target.module.topics } } : {}),
+          ...(context ? { context } : {}),
         },
         profile,
-        earlier,
+        before,
       );
-      const out = await writeLesson(sample, prompt, setWritten, ctl.current.signal);
+      const ground = groundOf(lookup, diagrams);
+      setStepping(null);
+      // A lesson from a codebase is written in steps (codebaseLesson.ts): asked for whole, with its files, a model that
+      // thinks first used its room up thinking and the lesson came back cut off.
+      const out = found
+        ? await writeCodebaseLessonInSteps(sample, found, { request: asked.trim(), course: name, level, talks: Math.max(3, boards - 2), earlier: before, diagrams }, profile, setStepping, mine.signal, {
+            // Each diagram is read by the board's own Mermaid as it comes in: one that would not draw is asked for again.
+            check: (src) => import("./Diagram").then((m) => m.diagramError(src)).catch(() => null),
+          })
+        : await writeLesson(sample, prompt(), setWritten, mine.signal);
       if (!out) throw { code: "invalid_json" };
       const now = clock();
       onDone({
         id: newId(),
-        course: courseName,
-        number: (earlier.at(-1)?.number ?? 0) + 1,
+        course: name,
+        number: (before.at(-1)?.number ?? 0) + 1,
         title: out.title,
         subject: topic.trim() || courseName,
         summary: out.summary,
@@ -164,13 +211,26 @@ export default function NewLesson({ sample, profile, lessons, course, teach, mod
         at: 0,
         seen: [0],
         ...(target ? { moduleId: target.module.id } : {}),
+        ...(ground ? { ground } : {}),
         ...(teach?.file ? { source: { file: teach.file, ...(teach.start ? { start: teach.start } : {}), ...(teach.end ? { end: teach.end } : {}) } } : {}),
       }, out.cards);
     } catch (e) {
+      // A writing that was stopped and replaced (the Learn home's start, run twice in development) says nothing.
+      if (ctl.current !== mine) return;
       setErr((e as { code?: string }).code === "folder" ? (e as { message: string }).message : sampleMessage(e));
       setBusy(false);
     }
   };
+
+  // From the Learn home the choices are already made: the professor starts writing at once. Stop then
+  // leaves this form, filled in, to change and send again. On mount only, just after it: React's
+  // development remount clears the first timer, so the lesson is asked for once.
+  useEffect(() => {
+    if (!start || !ready) return;
+    const t = setTimeout(() => void write(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, with what the Learn home chose
+  }, []);
 
   return (
     <div className="hall">
@@ -178,14 +238,18 @@ export default function NewLesson({ sample, profile, lessons, course, teach, mod
         <section className="board">
           {busy ? (
             <div className="writing" role="status">
-              <h2>{phase === "road" ? "The professor is planning your road to mastery…" : "The professor is preparing the boards…"}</h2>
+              <h2>{phase === "road" ? "The professor is planning your road to mastery…" : phase === "code" ? "The professor is finding your codebase…" : "The professor is preparing the boards…"}</h2>
               <p className="lines">
                 {stepping
                   ? stepping.waiting
                     ? `Part ${stepping.step} of ${stepping.steps}: waiting ${stepping.waiting} seconds for the provider's per-minute limit, then carrying on.`
+                    : stepping.doing
+                    ? `${stepping.doing}. Step ${stepping.step} of ${stepping.steps}; ${stepping.boards} board${stepping.boards === 1 ? "" : "s"} written so far.`
                     : `This lesson is long for the provider in use, so it is being written in ${stepping.steps} smaller parts. Part ${stepping.step} of ${stepping.steps}; ${stepping.boards} board${stepping.boards === 1 ? "" : "s"} so far.`
                   : phase === "road"
                   ? "Five stages, from the foundations to expert work. Then the first lesson."
+                  : phase === "code"
+                  ? "Looking on this computer for the project you named, and reading the files that matter for this lesson. Read only; secrets are never read."
                   : written > 0
                     ? `Board ${Math.min(written, planned || boards)} of ${planned || boards} written.`
                     : "Thinking about how to teach it. This takes up to a couple of minutes."}

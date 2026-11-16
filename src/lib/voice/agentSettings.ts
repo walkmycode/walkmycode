@@ -6,8 +6,9 @@
 // it alone has, the map's summary and its names (withContext), and the cap on
 // the prompt is applied here either way. No secrets live in any of it.
 import type { CodeMap } from "@/analyzer/types";
-import { LECTURERS, lecturerModelFor, type LecturerModelId } from "./catalogue";
+import { LECTURERS, lecturerModelFor, lecturerStyleFor, VOICE_DEFAULT, type LecturerModelId, type LecturerStyle } from "./catalogue";
 import { deepgramFunctions } from "./lecturer/functions";
+import { PROFESSOR_FUNCTIONS } from "./lecturer/professorFunctions";
 
 export const AGENT_URL = "wss://agent.deepgram.com/v1/agent/converse";
 
@@ -49,9 +50,57 @@ export interface AgentSettings {
     listen: { provider: { type: "deepgram"; version: "v2"; model: string; eot_threshold?: number; eot_timeout_ms?: number; keyterms?: string[] } };
     /** One think, or an ordered fallback chain (each a full think, so a fallback keeps the prompt and functions). */
     think: ThinkSettings | ThinkSettings[];
-    speak: { provider: { type: "deepgram"; version: "v2"; model: string } };
+    speak: { provider: { type: "deepgram"; version: "v2"; model: string; expressivity?: number } };
+    /** Deepgram's Think Live (the Learn room's talk): backchannels, check-ins in a silence, frustration noticed. */
+    think_live?: { provider: ThinkLive };
     greeting: string;
   };
+}
+
+/** Think Live's settings (playground.deepgram.com, Voice Agent → LLMs → Think Live, checked 12 Nov 2026). */
+export interface ThinkLive {
+  type: "deepgram";
+  version: "v1";
+  /** How readily it says "mm-hmm" while the user speaks, 0 (never) to 1. */
+  agent_backchannel_sensitivity: number;
+  /** How many times it checks in during a long silence before it stays quiet; 0 turns it off. */
+  presence_check_max_count: number;
+  presence_check_interval_ms: number;
+  /** How many frustration signals before the conversation is flagged; 0 turns it off. */
+  frustration_max_count: number;
+}
+
+/** Which room the talk is in: Explore's lecturer (the map) or Learn's professor (the lesson). */
+export type TalkRoom = "explore" | "learn";
+
+export const PROFESSOR_GREETING = "I'm listening. What do you make of this board so far?";
+
+export const PROFESSOR_PERSONA = `You are WalkMyCode's professor, talking out loud with one student about the lesson on screen, the way a good teacher talks with a student after class: warm, curious, never in a hurry.
+
+How you talk:
+- One to three short spoken sentences, then hand the turn back, usually with a question. Never lecture for long; this is a conversation.
+- No lists, no markdown, no symbols, no code read out character by character: say what a thing does, in plain words. Use the student's own words back to them.
+- Explain with something they already know from their own life, and vary it (sport, music, travel, nature, games, money), never the same picture every time. One picture at a time, then check it landed ("Does that picture work for you?").
+- Ask them to predict or explain before you tell them. When they are right, say exactly what was right. When they are wrong, be kind and specific, and give a hint before the answer.
+- If they sound unsure, stuck or frustrated, slow down, say it more simply with a new example, and tell them it is normal to find this hard.
+- If they go quiet, give them time; one gentle nudge is enough.
+- Stay with this lesson. If they ask something far from it, answer briefly and bring them back.
+
+What you can do while you talk (call these, don't describe them):
+- next_board, previous_board, go_to_board: move the lesson. Go on only when they are ready.
+- read_board: the exact words of a board, when you need them.
+- open_example: put the board's runnable example beside the board, and tell them what to try.
+- start_quiz and explain_back: test what they know; explaining it back is how they find out.
+- save_note: keep one sentence worth remembering in their notebook.
+- draw_picture: draw on the board, the analogy as a picture to watch, a UML sequence diagram of it, or a UML class, state or flow diagram. You can draw: never say you can't. Say what to look at as it appears.
+Never invent what a board says: read it. Never say a function's name out loud.`;
+
+/** Think Live for the professor: one gentle check-in after a long silence (a student may be thinking: two read as
+ * nagging, and the second sounded like a phone call, "Are you still on the line?", tried 12 Nov), frustration noticed;
+ * backchannels only with headphones, where the student's microphone never hears the professor (with speakers the echo
+ * guard would mute their words). */
+export function professorThinkLive(headphones: boolean): ThinkLive {
+  return { type: "deepgram", version: "v1", agent_backchannel_sensitivity: headphones ? 0.35 : 0, presence_check_max_count: 1, presence_check_interval_ms: 12000, frustration_max_count: 3 };
 }
 
 const MAX_KEYTERMS = 50;
@@ -60,19 +109,25 @@ const MAX_KEYTERMS = 50;
  * Flux's own end-of-turn detection (developers.deepgram.com, "Configure the
  * Voice Agent", checked 2 Oct 2026): a turn ends when Flux is this confident
  * (0.5-1.0, default 0.7), or this long after speech whatever its confidence
- * (default 5000 ms; shorter here, so a hands-free turn never hangs). No eager
+ * (default 5000 ms). Tuned for students (11 Nov): someone learning pauses to
+ * think mid-question, so the lecturer waits for 0.8 and up to 4 s rather than
+ * cutting in; still short of 5 s, so a hands-free turn never hangs. No eager
  * end-of-turn: it would start replies the user then talks over.
  */
-export const FLUX_TURN = { eot_threshold: 0.7, eot_timeout_ms: 3000 } as const;
+export const FLUX_TURN = { eot_threshold: 0.8, eot_timeout_ms: 4000 } as const;
 
-/** Deepgram's Settings for a Deepgram lecturer model, with the persona as the prompt. */
-export function buildAgentSettings(o: { model: LecturerModelId; prompt?: string; keyterms?: string[] }): AgentSettings {
+/** Deepgram's Settings for a Deepgram lecturer model, with the persona as the prompt. `room: "learn"`: the professor's
+ * persona, functions, greeting and Think Live instead of the map lecturer's. */
+export function buildAgentSettings(o: { model: LecturerModelId; style?: LecturerStyle; prompt?: string; keyterms?: string[]; room?: TalkRoom; headphones?: boolean }): AgentSettings {
+  const learn = o.room === "learn";
   const lecturer = LECTURERS["deepgram-agent"];
   const m = lecturerModelFor("deepgram-agent", o.model);
   const model = m && m.phase === 1 ? m : lecturerModelFor("deepgram-agent", lecturer.defaultModel)!;
-  const prompt = capPrompt(o.prompt ?? LECTURER_PERSONA);
-  const think: ThinkSettings[] = model.think.map((id) => ({ provider: { type: "anthropic", model: id }, prompt, functions: deepgramFunctions() }));
+  const prompt = capPrompt(o.prompt ?? (learn ? PROFESSOR_PERSONA : LECTURER_PERSONA));
+  const functions = learn ? deepgramFunctions(PROFESSOR_FUNCTIONS) : deepgramFunctions();
+  const think: ThinkSettings[] = model.think.map((id) => ({ provider: { type: "anthropic", model: id }, prompt, functions }));
   const keyterms = cleanKeyterms(o.keyterms ?? []);
+  const expressivity = (lecturerStyleFor(o.style ?? "") ?? lecturerStyleFor(VOICE_DEFAULT.lecturerStyle)!).expressivity;
   return {
     type: "Settings",
     mip_opt_out: true,
@@ -85,11 +140,27 @@ export function buildAgentSettings(o: { model: LecturerModelId; prompt?: string;
     agent: {
       listen: { provider: { type: "deepgram", version: "v2", model: lecturer.listen!, ...FLUX_TURN, ...(keyterms.length ? { keyterms } : {}) } },
       think: think.length === 1 ? think[0] : think,
-      speak: { provider: { type: "deepgram", version: "v2", model: lecturer.speak! } },
-      greeting: GREETING,
+      speak: { provider: { type: "deepgram", version: "v2", model: lecturer.speak!, ...(expressivity ? { expressivity } : {}) } },
+      ...(learn ? { think_live: { provider: professorThinkLive(!!o.headphones) } } : {}),
+      greeting: learn ? PROFESSOR_GREETING : GREETING,
     },
   };
 }
+
+/**
+ * The professor's Settings with what only the browser has: the persona plus the lesson on screen (fitted under the
+ * limit), and the lesson's names as keyterms. Nothing else is touched.
+ */
+export function withLesson(s: AgentSettings, ctx: { lesson: string; keyterms?: string[] }): AgentSettings {
+  const prompt = fitPrompt(PROFESSOR_PERSONA, ctx.lesson, PROMPT_LIMIT - CONTEXT_RESERVE, LESSON_HEADING);
+  const thinks = (Array.isArray(s.agent.think) ? s.agent.think : [s.agent.think]).map((t) => ({ ...t, prompt }));
+  const keyterms = cleanKeyterms(ctx.keyterms ?? []);
+  const provider = { ...s.agent.listen.provider };
+  if (keyterms.length) provider.keyterms = keyterms;
+  return { ...s, agent: { ...s.agent, listen: { provider }, think: thinks.length === 1 ? thinks[0] : thinks } };
+}
+
+const LESSON_HEADING = { head: "# The lesson on screen (read_board gives any board's exact words)", tail: "…(the lesson stops here: read_board gives the rest)" };
 
 /**
  * The server's Settings with what only the browser has: the prompt becomes
@@ -115,18 +186,20 @@ function capPrompt(p: string, limit = PROMPT_LIMIT - CONTEXT_RESERVE): string {
  * that does not fit is cut at a line break and says so, so the lecturer
  * knows to ask query_map for the rest.
  */
-export function fitPrompt(persona: string, summary: string, limit = PROMPT_LIMIT - CONTEXT_RESERVE): string {
+export function fitPrompt(persona: string, summary: string, limit = PROMPT_LIMIT - CONTEXT_RESERVE, heading: { head: string; tail: string } = MAP_HEADING): string {
   const base = capPrompt(persona, limit);
   if (!summary.trim()) return base;
-  const head = `${base}\n\n# The code you are teaching (a map built by a parser; ask query_map for more)\n`;
+  const head = `${base}\n\n${heading.head}\n`;
   const room = limit - head.length;
   if (room < 200) return base;
   if (summary.length <= room) return head + summary;
-  const tail = "\n…(the summary stops here: ask query_map for the rest)";
+  const tail = `\n${heading.tail}`;
   const cut = summary.slice(0, room - tail.length);
   const nl = cut.lastIndexOf("\n");
   return head + (nl > room / 2 ? cut.slice(0, nl) : cut) + tail;
 }
+
+const MAP_HEADING = { head: "# The code you are teaching (a map built by a parser; ask query_map for more)", tail: "…(the summary stops here: ask query_map for the rest)" };
 
 /** Keyterms Flux can use: names of 3–40 characters, no spaces or slashes, deduplicated, at most 50. */
 function cleanKeyterms(terms: string[]): string[] {

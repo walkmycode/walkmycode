@@ -130,11 +130,14 @@ describe("the output's one store", () => {
 });
 
 describe("the Output dock panel", () => {
-  function fakeDock(ids: string[], active?: string) {
+  function fakeDock(ids: string[], active?: string, hidden: string[] = []) {
     const added: { id: string; component: string; position?: unknown }[] = [];
     const closed: string[] = [];
     const activated: string[] = [];
-    const panel = (id: string) => ({ id, api: { close: () => closed.push(id), setActive: () => activated.push(id) } });
+    const shown: string[] = [];
+    // Each panel in its own group; a group the tool strip hid is in `hidden`.
+    const group = (id: string) => ({ api: { location: { type: "grid" }, get isVisible() { return !hidden.includes(id); }, setVisible: (v: boolean) => { if (v) { shown.push(id); hidden.splice(hidden.indexOf(id), 1); } } } });
+    const panel = (id: string) => ({ id, group: group(id), api: { close: () => closed.push(id), setActive: () => activated.push(id) } });
     const api = {
       get panels() {
         return ids.map(panel);
@@ -149,7 +152,7 @@ describe("the Output dock panel", () => {
         return panel(o.id);
       },
     } as unknown as OutputDockApi;
-    return { api, added, closed, activated };
+    return { api, added, closed, activated, shown };
   }
   it("is in the registry, restorable from a saved layout, with its own shortcut", () => {
     assert.equal(PANELS[OUTPUT_ID].renderer, "always");
@@ -172,5 +175,15 @@ describe("the Output dock panel", () => {
     assert.deepEqual(d.activated, ["output"]);
     host.dockBack();
     assert.deepEqual(d.closed, ["output"]);
+  });
+  it("brings back the sidebar it sits in when the tool strip hid it, so the Terminal button shows a terminal", () => {
+    const d = fakeDock(["code:home", OUTPUT_ID], undefined, [OUTPUT_ID]);
+    outputHost(d.api).popOut();
+    assert.deepEqual(d.shown, [OUTPUT_ID], "the hidden group is shown first");
+    assert.deepEqual(d.activated, [OUTPUT_ID]);
+    assert.equal(d.added.length, 0);
+    const v = fakeDock(["code:home", OUTPUT_ID]);
+    outputHost(v.api).popOut();
+    assert.deepEqual(v.shown, [], "a group already in view is left as it is");
   });
 });

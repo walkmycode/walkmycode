@@ -15,8 +15,9 @@ import type { FriendlyError } from "@/lib/providers/wire";
 import { AudioCache, audioKey, idbAudioStore, type CachedAudio, type Scope } from "./audioCache";
 import { NARRATORS, type NarratorId } from "./catalogue";
 import { routeError, UNREACHABLE, VoiceError } from "./errors";
-import { measureWords, wordHeardAt } from "./measure";
+import { MEASURE_VERSION, measureWords, wordHeardAt } from "./measure";
 import { sentenceSpans, wordSpanAt, wordTimings, type Alignment, type Span, type SpokenWord } from "./speech";
+import { readTime } from "./mute";
 import { sharedAudio } from "./view";
 
 export type { Scope };
@@ -335,7 +336,7 @@ export interface ServerNarratorOptions {
   fetch?: typeof fetch;
   audio?: () => HTMLAudioElement;
   /** Times the words of a text against its audio, for a narrator that sends no timings (measure.ts). */
-  measure?: (text: string, bytes: Uint8Array) => Promise<SpokenWord[]>;
+  measure?: (text: string, bytes: Uint8Array, speed?: number) => Promise<SpokenWord[]>;
 }
 
 /** ElevenLabs or Deepgram, read through /api/voice/speak. */
@@ -415,9 +416,11 @@ export class ServerNarrator implements Narrator {
 
   /** The audio with its words timed: as the narrator sent them, else measured from the sound. */
   private async timed(text: string, v: CachedAudio): Promise<CachedAudio> {
-    if (v.words.length || !v.bytes.byteLength) return v;
-    const words = await (this.o.measure ?? measureWords)(text, v.bytes);
-    return words.length ? { ...v, words } : v;
+    if (!v.bytes.byteLength) return v;
+    // Timings the narrator gave are kept; measured ones are kept only if the current measurement made them.
+    if (v.words.length && (this.marks || v.measured === MEASURE_VERSION)) return v;
+    const words = await (this.o.measure ?? measureWords)(text, v.bytes, this.o.speed);
+    return words.length ? { ...v, words, measured: MEASURE_VERSION } : v;
   }
 
   async speak(text: string, opts: SpeakOptions = {}): Promise<SpeakEnd> {
@@ -584,14 +587,69 @@ function sharedCache(): AudioCache {
   return cache;
 }
 
+/**
+ * Explore muted (lib/voice/mute.ts): reads nothing aloud but takes as long as a
+ * reading would, so whatever waits for it (a tour moving on, a fly-through's hop)
+ * keeps its pace. Pause, resume and stop behave as a real narrator's.
+ */
+export class SilentNarrator implements Narrator {
+  readonly marks = false;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private done: ((e: SpeakEnd) => void) | null = null;
+  private left = 0;
+  private since = 0;
+  private held = false;
+  constructor(readonly id: NarratorId) {}
+  get paused(): boolean {
+    return this.held;
+  }
+  speak(text: string, o: SpeakOptions = {}): Promise<SpeakEnd> {
+    this.stop();
+    o.onStart?.();
+    return new Promise<SpeakEnd>((resolve) => {
+      this.done = resolve;
+      this.left = readTime(text);
+      this.arm();
+    });
+  }
+  private arm(): void {
+    this.since = Date.now();
+    this.timer = setTimeout(() => this.finish("ended"), this.left);
+  }
+  private finish(e: SpeakEnd): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.held = false;
+    const d = this.done;
+    this.done = null;
+    d?.(e);
+  }
+  async prefetch(): Promise<void> {}
+  pause(): void {
+    if (!this.timer) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.left = Math.max(0, this.left - (Date.now() - this.since));
+    this.held = true;
+  }
+  resume(): void {
+    if (!this.held || !this.done) return;
+    this.held = false;
+    this.arm();
+  }
+  stop(): void {
+    if (this.done) this.finish("stopped");
+  }
+}
+
 let current: { sig: string; n: Narrator } | null = null;
 
-/** The narrator for a choice. One at a time: asking for another stops the one reading now. */
-export function getNarrator(c: { narrator: NarratorId; voiceId: string | null; speed: number }): Narrator {
-  const sig = `${c.narrator}|${c.voiceId ?? ""}|${c.speed}`;
+/** The narrator for a choice. One at a time: asking for another stops the one reading now. `muted`: Explore's mute is on. */
+export function getNarrator(c: { narrator: NarratorId; voiceId: string | null; speed: number; muted?: boolean }): Narrator {
+  const sig = `${c.narrator}|${c.voiceId ?? ""}|${c.speed}|${c.muted ? "muted" : ""}`;
   if (current?.sig === sig) return current.n;
   current?.n.stop();
-  const n: Narrator = c.narrator === "browser" ? new BrowserNarrator({ voiceId: c.voiceId, speed: c.speed }) : new ServerNarrator(c.narrator, { voiceId: c.voiceId, speed: c.speed });
+  const n: Narrator = c.muted ? new SilentNarrator(c.narrator) : c.narrator === "browser" ? new BrowserNarrator({ voiceId: c.voiceId, speed: c.speed }) : new ServerNarrator(c.narrator, { voiceId: c.voiceId, speed: c.speed });
   current = { sig, n };
   return n;
 }

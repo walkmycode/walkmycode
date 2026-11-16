@@ -36,6 +36,8 @@ export interface RunEvents {
 
 export interface RunHandle {
   stop(): void;
+  /** A line the user typed for the program (stdin); `end` closes its input (end of file). Not every run takes input (a setup step doesn't). */
+  input?(text: string, end?: boolean): void;
 }
 
 /** Output kept per run, so a runaway print loop cannot flood the page. */
@@ -81,7 +83,7 @@ function sameText(file: string, code: string): boolean {
 }
 
 export function startRun(req: RunRequest, tool: Toolchain | undefined, located: Located | null, timeoutS: number, ev: RunEvents): RunHandle {
-  const none: RunHandle = { stop() {} };
+  const none: RunHandle = { stop() {}, input() {} };
   if (!tool?.path) {
     ev.fail(`${LANGS[req.lang].label} is not installed on this computer (or not on PATH). ${tool?.note ? `${tool.note} ` : ""}${LANGS[req.lang].install}`);
     return none;
@@ -162,7 +164,12 @@ export function startRun(req: RunRequest, tool: Toolchain | undefined, located: 
   const step = (i: number) => {
     const s = plan.steps[i];
     try {
-      child = spawnTracked(s.file, s.args, { cwd: runCwd, env, stdio: ["ignore", "pipe", "pipe"] });
+      // The program's input is open (the page types into it): a guessing game waits for its guess rather
+      // than reading end-of-file in a loop. A compile step gets none.
+      child = spawnTracked(s.file, s.args, { cwd: runCwd, env, stdio: [i + 1 === plan.steps.length ? "pipe" : "ignore", "pipe", "pipe"] });
+      child.stdin?.on("error", () => {
+        // The program ended or closed its input: what was typed has nowhere to go.
+      });
     } catch (e) {
       ev.out("err", `Could not start ${s.file}: ${(e as Error).message}\n`);
       return finish(null, null);
@@ -185,6 +192,12 @@ export function startRun(req: RunRequest, tool: Toolchain | undefined, located: 
       if (ended) return;
       stopped = true;
       kill();
+    },
+    input(text, end) {
+      const w = (child as ReturnType<typeof spawnTracked> | null)?.stdin;
+      if (ended || !w || w.destroyed || w.writableEnded) return;
+      if (text) w.write(text);
+      if (end) w.end();
     },
   };
 }

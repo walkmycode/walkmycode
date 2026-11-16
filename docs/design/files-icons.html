@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Files: the right drawing for every file (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!--
+  The Files panel in Explore, with the drawings set (src/lib/drawings) as its icons (owner, 14 Nov: "can some of
+  these same icons be used to represent the file section of the app, with the right icon for the right file").
+  Written by a script from the real drawings, so what is here is what the app would draw.
+
+  A file finds its drawing by what it is, not only by its extension: a Dockerfile is the container, a workflow
+  in .github/workflows the CI conveyor, anything under tests/ the checklist, a lock file the chain, README the
+  book, LICENSE the certificate, .env the padlock. Code is one drawing, tinted by its language (Rust orange,
+  TypeScript blue, Python steel blue…): no language logos, which belong to others. Folders with a job (tests,
+  docs, scripts, migrations, public, .github/workflows) wear that job's drawing; the rest are the folder.
+
+  In the tree a drawing is small (18 px, no ground shadow), so the row stays calm; where there is room it is
+  drawn whole: the open file's header, search results, the hover card.
+-->
+<style>
+/* The colours and states of a drawing (src/lib/drawings). A drawing's own colour is --t, a person's
+   skin --sk and hair --hr; a face is glad or .sad, a checker passes or says .stop. */
+svg.art { --t: #8e929c; --sk: #f1c9a5; --hr: #4a3728; flex: none; display: block; overflow: visible; }
+.art .d-t { fill: var(--t); }
+.art .d-t2 { fill: color-mix(in srgb, var(--t) 74%, #000); }
+.art .d-t3 { fill: color-mix(in srgb, var(--t) 62%, #fff); }
+.art .d-t2c { fill: color-mix(in srgb, var(--t) 78%, #5f86b3); }
+.art .d-sk { fill: var(--sk); }
+.art .d-sk2 { fill: color-mix(in srgb, var(--sk) 80%, #6b3f24); }
+.art .d-hr { fill: var(--hr); }
+.art .d-ink { fill: #17181b; }
+.art .d-w { fill: #f4f5f7; }
+.art .d-w2 { fill: #c9cbd1; }
+.art .d-w3 { fill: #e3e5e9; }
+.art .d-cream { fill: #efe3cc; }
+.art .d-wood { fill: #8a6a4a; }
+.art .d-y { fill: #f3d77a; }
+.art .d-y2 { fill: #d4b65a; }
+.art .d-pk { fill: #ee8f86; }
+.art .d-rd { fill: #d9534f; }
+.art .d-bl { fill: #7fbfe6; }
+.art .d-bl2 { fill: #4f7fb0; }
+.art .d-gr { fill: #7fd08a; }
+.art .d-gr2 { fill: #4e9f63; }
+.art .d-pu { fill: #b79cf0; }
+.art .d-or { fill: #f0a94b; }
+.art .d-sky { fill: #bfe3f5; }
+.art .d-dk { fill: #3b3e45; }
+.art .d-dk2 { fill: #2c2f35; }
+.art .d-blush { fill: #ee8f86; opacity: .45; }
+.art .d-sh { fill: #000; opacity: .22; }
+.art .d-line { fill: none; stroke: #17181b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.art .d-line.thin { stroke-width: 1.3; }
+.art .d-line.thin2 { stroke: #c9cbd1; stroke-width: 1.5; }
+.art .d-line.thick { stroke-width: 3.2; }
+.art .d-line.white { stroke: #fff; stroke-width: 2.6; }
+.art .d-line.net { stroke: #7fbfe6; stroke-width: 1.8; }
+.art .d-line.tint { stroke: var(--t); }
+.art .d-line.grey { stroke: #c9cbd1; }
+.art .d-line.yel { stroke: #f3d77a; }
+/* A line in a drawing a model made itself (model.ts, Shape): its colour by name. */
+.art .d-ln { fill: none; stroke: var(--t); stroke-width: 2.6; stroke-linecap: round; }
+.art .c-dark { stroke: color-mix(in srgb, var(--t) 74%, #000); }
+.art .c-light { stroke: color-mix(in srgb, var(--t) 62%, #fff); }
+.art .c-white { stroke: #f4f5f7; }
+.art .c-grey { stroke: #c9cbd1; }
+.art .c-ink { stroke: #17181b; }
+.art .c-yellow { stroke: #f3d77a; }
+.art .c-pink { stroke: #ee8f86; }
+.art .c-red { stroke: #d9534f; }
+.art .c-blue { stroke: #7fbfe6; }
+.art .c-green { stroke: #7fd08a; }
+.art .c-purple { stroke: #b79cf0; }
+.art .c-orange { stroke: #f0a94b; }
+.art .c-brown { stroke: #8a6a4a; }
+.art .c-sky { stroke: #bfe3f5; }
+.art .c-cream { stroke: #efe3cc; }
+.art .c-skin { stroke: var(--sk); }
+.art .d-glass { fill: rgba(255,255,255,.28); stroke: #17181b; stroke-width: 1.5; }
+.art .d-dash { fill: none; stroke: var(--t); stroke-width: 1.8; stroke-dasharray: 3 3.5; }
+.art .h-b, .art .h-c, .art.v-b .h-a, .art.v-c .h-a { display: none; }
+.art.v-b .h-b, .art.v-c .h-c { display: inline; }
+.art .frown, .art .no, .art.sad .smile, .art.stop .ok { display: none; }
+.art.sad .frown, .art.stop .no { display: inline; }
+
+:root{
+  --wall:#1e1f22; --wall-2:#232428; --board:#1b1c1f; --board-2:#26282c;
+  --ui:#2b2d30; --ui-2:#35373c; --ui-line:#43454a; --ui-raise:#3c3f44;
+  --ui-text:#dfe1e5; --ui-dim:#9da0a8; --ui-faint:#6f737a; --out:#17181a;
+  --hair:rgba(255,255,255,.06); --hair-2:rgba(255,255,255,.11); --hair-3:rgba(255,255,255,.2);
+  --yellow:#f3d77a; --yellow-dim:rgba(243,215,122,.55); --yellow-wash:rgba(243,215,122,.10);
+  --green:#a8e0a0; --blue:#9fd3f0; --pink:#f2a7a0; --purple:#c9a8e0; --orange:#e9b27a;
+  --text:13px; --ics:18px; --row:calc(var(--ics) + 7px);
+  --sans:Inter,"Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+  --m:1; --t-tap:calc(120ms*var(--m)); --t-dim:calc(250ms*var(--m)); --t-move:calc(320ms*var(--m));
+  --ease-settle:cubic-bezier(.22,1,.36,1); --ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+:root.still{--m:0}
+*{box-sizing:border-box;border-radius:0}
+html,body{margin:0;background:#111214;color:var(--ui-text);font:var(--text)/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+body{padding:22px clamp(16px,2vw,32px) 48px}
+button,input{font:inherit;color:inherit}
+h1{font:700 18px/1.3 var(--sans);margin:0}
+.lead{color:var(--ui-dim);margin:6px 0 0;max-width:110ch}
+.wrap{max-width:2200px;margin:0 auto;display:grid;gap:16px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--ui-line)}
+.seg button{height:28px;padding:0 12px;border:0;background:transparent;color:var(--ui-dim);cursor:pointer;font-weight:600}
+.seg button[aria-pressed=true]{background:var(--ui-2);color:var(--ui-text);box-shadow:inset 0 -2px 0 var(--yellow)}
+.controls label{display:inline-flex;gap:6px;align-items:center;color:var(--ui-dim)}
+.controls .lbl{color:var(--ui-faint);font-size:12px}
+.btn{height:28px;padding:0 11px;border:1px solid var(--ui-line);background:var(--ui);cursor:pointer}
+
+.app{display:grid;grid-template-columns:340px minmax(0,1fr) 400px;height:min(78vh,860px);min-height:560px;border:1px solid var(--hair-3);box-shadow:0 18px 60px rgba(0,0,0,.55);background:var(--wall)}
+.pane{display:flex;flex-direction:column;min-height:0;background:var(--board);border-right:1px solid var(--ui-line)}
+.pane>header,.code>header,.rules>header{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;background:var(--ui);border-bottom:1px solid var(--hair-2);font-weight:600;flex:none}
+.pane>header .count{margin-left:auto;font:500 12px var(--mono);color:var(--ui-faint)}
+.search{padding:8px 8px 6px;border-bottom:1px solid var(--hair);flex:none}
+.field{display:flex;align-items:center;height:30px;border:1px solid var(--ui-line);background:var(--out)}
+.field:focus-within{border-color:var(--yellow-dim);box-shadow:0 0 0 3px var(--yellow-wash)}
+.field svg.mag{flex:none;margin:0 6px 0 8px;color:var(--ui-faint)}
+.field input{flex:1;min-width:0;height:100%;border:0;outline:0;background:none;font:var(--text) var(--mono)}
+.field input::placeholder{color:var(--ui-faint);font-family:var(--sans)}
+.field kbd{margin-right:6px;font:500 11px/1 var(--mono);padding:3px 5px;border:1px solid var(--ui-line);color:var(--ui-faint)}
+
+.list{flex:1;overflow:auto;padding:4px 0;font:var(--text) var(--mono)}
+.row{position:relative;display:flex;align-items:center;gap:7px;width:100%;height:var(--row);padding:0 10px 0 calc(8px + var(--d,0) * 15px);border:0;background:none;color:var(--ui-dim);text-align:left;white-space:nowrap;cursor:pointer}
+.row:hover{background:var(--hair);color:var(--ui-text)}
+.row .glyph{width:1ch;color:var(--ui-faint);display:inline-block;transition:transform var(--t-tap) var(--ease-spring);flex:none}
+.row.file .glyph{visibility:hidden}
+.row.dir{color:var(--ui-text);font-weight:600}
+.row.dir.open .glyph{transform:rotate(90deg)}
+.row .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.row .hint{position:absolute;right:0;top:0;bottom:0;display:flex;align-items:center;max-width:62%;padding:0 10px 0 18px;font:500 11px var(--sans);color:var(--ui-dim);background:linear-gradient(90deg,transparent,var(--board-2) 14px);opacity:0;pointer-events:none;transition:opacity var(--t-tap);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row:hover .hint{opacity:1}
+.row.on{background:var(--yellow-wash);color:var(--ui-text)}
+.row.on::before{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--yellow)}
+.row.enter{animation:rise var(--t-dim) var(--ease-settle) both;animation-delay:calc(var(--k) * 12ms * var(--m))}
+@keyframes rise{from{opacity:0;transform:translateY(-4px)}}
+
+/* The drawing as an icon: a small one keeps its shapes and drops its ground shadow. */
+.ic{width:var(--ics);height:var(--ics);flex:none;display:grid;place-items:center}
+.ic svg.art{width:100%;height:100%}
+.ic.mini svg.art .d-sh{display:none}
+.ic.mini svg.art{transition:transform var(--t-tap) var(--ease-spring)}
+.row:hover .ic.mini svg.art{transform:scale(1.12)}
+/* Today's icon, to compare: the outlined page in its kind's colour. */
+.old{width:14px;height:14px;flex:none;display:grid;place-items:center}
+.old i{width:9px;height:11px;border:1.5px solid currentColor;clip-path:polygon(0 0,62% 0,100% 32%,100% 100%,0 100%)}
+.old.code{color:var(--blue)} .old.doc{color:var(--green)} .old.config{color:var(--orange)} .old.image{color:var(--purple)} .old.other{color:var(--ui-faint)} .old.dir{color:var(--yellow-dim)}
+
+.res{display:grid;grid-template-columns:30px 1fr;gap:1px 10px;width:100%;padding:6px 10px;border:0;background:none;text-align:left;cursor:pointer;color:var(--ui-text);font:var(--text) var(--mono);position:relative;
+  animation:res-in var(--t-move) var(--ease-settle) both;animation-delay:calc(var(--k) * 22ms * var(--m))}
+@keyframes res-in{from{opacity:0;transform:translateY(6px)}}
+.res .ic{grid-row:span 2;width:30px;height:30px}
+.res .file{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res .dir{color:var(--ui-faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.res mark{background:none;color:var(--yellow);font-weight:600}
+.res:hover{background:var(--hair)}
+.empty{padding:28px 16px;text-align:center;color:var(--ui-faint)}
+
+.code{display:flex;flex-direction:column;min-width:0;background:var(--wall);border-right:1px solid var(--ui-line)}
+.code>header{font:var(--text) var(--mono);color:var(--ui-dim);font-weight:400}
+.code>header b{color:var(--ui-text);font-weight:500}
+.hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--hair);background:linear-gradient(180deg,var(--wall-2),var(--wall));animation:fade .3s ease-out}
+.hero .ic{width:72px;height:72px}
+.hero .ic svg.art{animation:pop calc(.5s*var(--m)) var(--ease-spring) both}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+.hero h2{margin:0;font:600 18px/1.3 var(--mono);overflow-wrap:anywhere}
+.hero p{margin:4px 0 0;color:var(--ui-dim)}
+.hero .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.hero .chip{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 8px;border:1px solid var(--hair-2);color:var(--ui-dim);font-size:12px}
+.hero .chip i{width:9px;height:9px;display:inline-block}
+@keyframes fade{from{opacity:0}}
+.body{flex:1;overflow:auto;padding:12px 0;font:var(--text)/1.65 var(--mono);color:var(--ui-dim)}
+.body .ln{display:flex;gap:14px;padding:0 14px;white-space:pre}
+.body .ln span:first-child{color:var(--ui-faint);width:2ch;text-align:right;flex:none}
+.body .h{color:var(--yellow)} .body .s{color:var(--green)} .body .c{color:var(--ui-faint)} .body .k{color:var(--blue)}
+.secret{margin:18px;padding:14px 16px;border:1px dashed var(--ui-line);color:var(--ui-dim);display:flex;gap:12px;align-items:center}
+.secret .ic{width:36px;height:36px}
+
+.rules{display:flex;flex-direction:column;min-height:0;background:var(--board)}
+.rules .scroll{overflow:auto;padding:10px 12px 16px;display:flex;flex-direction:column;gap:14px}
+.rules h3{margin:0 0 6px;font:600 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--ui-faint)}
+.rule{display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 10px;align-items:center;padding:5px 6px;border-left:2px solid transparent;cursor:pointer}
+.rule:hover{background:var(--hair)}
+.rule.hit{border-left-color:var(--yellow);background:var(--yellow-wash)}
+.rule .ic{width:28px;height:28px;grid-row:span 2}
+.rule b{font-weight:600}
+.rule small{color:var(--ui-faint);font:12px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.langs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+.lang{display:flex;gap:8px;align-items:center;padding:4px 6px;font-size:12px;color:var(--ui-dim)}
+.lang .ic{width:24px;height:24px}
+
+.spec{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.spec div{padding:12px 14px;border:1px solid var(--hair-2);background:var(--wall-2);color:var(--ui-dim)}
+.spec b{display:block;color:var(--ui-text);margin-bottom:4px}
+@media (max-width:1200px){.app{grid-template-columns:320px minmax(0,1fr)}.rules{display:none}}
+@media (max-width:720px){.app{grid-template-columns:1fr;height:auto}.code{min-height:300px}.list{max-height:460px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <h1>Files: the right drawing for every file</h1>
+    <p class="lead">The Files panel with the drawings set as its icons. A file finds its drawing by what it is: the Dockerfile is the container, a workflow the CI conveyor, a test the checklist, a lock file the chain, README the book, LICENSE the certificate, .env the padlock. Code is one drawing in its language's colour. Small in the tree, whole where there is room: the open file's header and search results. Click any file; type to search; compare with today's icons.</p>
+  </div>
+  <div class="controls">
+    <span class="lbl">Icons</span>
+    <div class="seg" role="group" aria-label="Icons"><button type="button" id="mNew" aria-pressed="true">Drawings</button><button type="button" id="mOld" aria-pressed="false">Today</button></div>
+    <span class="lbl">Size in the tree</span>
+    <div class="seg" role="group" aria-label="Icon size"><button type="button" data-s="16">16</button><button type="button" data-s="18" aria-pressed="true">18</button><button type="button" data-s="20">20</button></div>
+    <button class="btn" type="button" data-q="test">Type “test”</button>
+    <button class="btn" type="button" data-q="dock">Type “dock”</button>
+    <button class="btn" type="button" data-q="">Clear</button>
+    <label><input type="checkbox" id="still"> Motion off</label>
+  </div>
+
+  <div class="app">
+    <section class="pane">
+      <header>Files <span class="count" id="count"></span></header>
+      <div class="search"><div class="field">
+        <svg class="mag" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.6"/><path d="M10.5 10.5L14 14"/></svg>
+        <input id="q" placeholder="Search files" aria-label="Search files" autocomplete="off" spellcheck="false"><kbd>Ctrl P</kbd>
+      </div></div>
+      <div class="list" id="list" role="tree" aria-label="Files"></div>
+    </section>
+    <section class="code">
+      <header><span id="hic"></span><b id="path"></b></header>
+      <div class="hero" id="hero"></div>
+      <div class="body" id="body"></div>
+    </section>
+    <aside class="rules">
+      <header>How a file finds its drawing</header>
+      <div class="scroll" id="rules"></div>
+    </aside>
+  </div>
+
+  <div class="spec">
+    <div><b>By what the file is, then its extension</b>A name or a folder says more than an extension: <code>Dockerfile</code>, <code>.github/workflows/*</code>, <code>tests/</code>, <code>*.lock</code>, <code>README</code>, <code>LICENSE</code>, <code>.env*</code> come first; then the extension; anything else is the plain page.</div>
+    <div><b>Code wears its language's colour</b>One <code>code</code> drawing, tinted: Rust orange, TypeScript blue, JavaScript yellow, Python steel blue, Go teal, C# purple… The drawing can be recoloured by design, and no language's logo is borrowed.</div>
+    <div><b>Folders with a job show it</b><code>tests</code>, <code>docs</code>, <code>scripts</code>, <code>migrations</code>, <code>public</code> and <code>.github/workflows</code> wear their drawing; every other folder is the folder.</div>
+    <div><b>Small and calm in the tree</b>18 px by default (16 and 20 to try), without the ground shadow; a row's drawing lifts a little on hover. The whole drawing, 72 px, heads the open file, and 30 px leads each search result.</div>
+    <div><b>In the app</b><code>fileIcon(path)</code> beside <code>fileKind</code> in <code>src/lib/fileTree.ts</code>, tested like the drawings; <code>FileTree.tsx</code> draws it with the <code>Drawing</code> component; the kind chips keep working as they are.</div>
+  </div>
+</div>
+
+<script>
+const ART = {"container":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"57.5\" rx=\"29\" ry=\"2\"/><rect class=\"d-t\" x=\"4\" y=\"16\" width=\"56\" height=\"38\" rx=\"2\"/><path class=\"d-t2\" d=\"M9 22h2.5v26h-2.5zM15 22h2.5v26h-2.5zM21 22h2.5v26h-2.5zM27 22h2.5v26h-2.5zM33 22h2.5v26h-2.5zM39 22h2.5v26h-2.5zM44 20h1.5v30h-1.5z\"/><rect class=\"d-t3\" x=\"4\" y=\"16\" width=\"56\" height=\"4\"/><rect class=\"d-t2\" x=\"4\" y=\"50\" width=\"56\" height=\"4\"/><path class=\"d-w2\" d=\"M48.5 20h2v30h-2zM54.5 20h2v30h-2z\"/><path class=\"d-w\" d=\"M47 32h5v2.5h-5zM53 37h5v2.5h-5z\"/><path class=\"d-dk\" d=\"M4 16h4v4h-4zM56 16h4v4h-4zM4 50h4v4h-4zM56 50h4v4h-4z\"/>","tint":"#f0a94b"},"conveyor":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"28\" ry=\"2\"/><rect class=\"d-w2\" x=\"11\" y=\"46\" width=\"4\" height=\"12\"/><rect class=\"d-w2\" x=\"49\" y=\"46\" width=\"4\" height=\"12\"/><rect class=\"d-dk\" x=\"3\" y=\"36\" width=\"58\" height=\"12\" rx=\"6\"/><circle class=\"d-w2\" cx=\"9\" cy=\"42\" r=\"3.6\"/><circle class=\"d-dk2\" cx=\"9\" cy=\"42\" r=\"1.3\"/><circle class=\"d-w2\" cx=\"20.5\" cy=\"42\" r=\"3.6\"/><circle class=\"d-dk2\" cx=\"20.5\" cy=\"42\" r=\"1.3\"/><circle class=\"d-w2\" cx=\"32\" cy=\"42\" r=\"3.6\"/><circle class=\"d-dk2\" cx=\"32\" cy=\"42\" r=\"1.3\"/><circle class=\"d-w2\" cx=\"43.5\" cy=\"42\" r=\"3.6\"/><circle class=\"d-dk2\" cx=\"43.5\" cy=\"42\" r=\"1.3\"/><circle class=\"d-w2\" cx=\"55\" cy=\"42\" r=\"3.6\"/><circle class=\"d-dk2\" cx=\"55\" cy=\"42\" r=\"1.3\"/><rect class=\"d-t\" x=\"6\" y=\"22\" width=\"14\" height=\"14\" rx=\"1.5\"/><rect class=\"d-t2\" x=\"6\" y=\"22\" width=\"14\" height=\"3.5\" rx=\"1.5\"/><rect class=\"d-t3\" x=\"11.5\" y=\"22\" width=\"3\" height=\"14\"/><rect class=\"d-t\" x=\"25\" y=\"19\" width=\"14\" height=\"17\" rx=\"1.5\"/><rect class=\"d-t2\" x=\"25\" y=\"19\" width=\"14\" height=\"3.5\" rx=\"1.5\"/><rect class=\"d-t3\" x=\"30.5\" y=\"19\" width=\"3\" height=\"17\"/><rect class=\"d-t\" x=\"44\" y=\"22\" width=\"14\" height=\"14\" rx=\"1.5\"/><rect class=\"d-t2\" x=\"44\" y=\"22\" width=\"14\" height=\"3.5\" rx=\"1.5\"/><rect class=\"d-t3\" x=\"49.5\" y=\"22\" width=\"3\" height=\"14\"/><path class=\"d-line thick tint\" d=\"M22 9h20m-5-4.5l5 4.5-5 4.5\"/>","tint":"#f0a94b"},"checklist":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58.5\" rx=\"20\" ry=\"2\"/><rect class=\"d-t\" x=\"11\" y=\"7\" width=\"42\" height=\"51\" rx=\"4\"/><rect class=\"d-w\" x=\"15\" y=\"13\" width=\"34\" height=\"41\" rx=\"2\"/><rect class=\"d-w2\" x=\"23\" y=\"4\" width=\"18\" height=\"9\" rx=\"2.5\"/><rect class=\"d-dk\" x=\"28\" y=\"6\" width=\"8\" height=\"2.5\" rx=\"1.2\"/><rect class=\"d-gr2\" x=\"19\" y=\"19\" width=\"8\" height=\"8\" rx=\"2\"/><path class=\"d-line white\" d=\"M20.8 23.2l2 2 3.4-3.8\"/><rect class=\"d-w2\" x=\"30\" y=\"21.5\" width=\"15\" height=\"3\" rx=\"1.5\"/><rect class=\"d-gr2\" x=\"19\" y=\"30\" width=\"8\" height=\"8\" rx=\"2\"/><path class=\"d-line white\" d=\"M20.8 34.2l2 2 3.4-3.8\"/><rect class=\"d-w2\" x=\"30\" y=\"32.5\" width=\"15\" height=\"3\" rx=\"1.5\"/><rect class=\"d-gr2\" x=\"19\" y=\"41\" width=\"8\" height=\"8\" rx=\"2\"/><path class=\"d-line white\" d=\"M20.8 45.2l2 2 3.4-3.8\"/><rect class=\"d-w2\" x=\"30\" y=\"43.5\" width=\"15\" height=\"3\" rx=\"1.5\"/>","tint":"#c9935b"},"chain":{"svg":"<g transform=\"rotate(-35 32 32)\"><rect class=\"d-t2\" x=\"19\" y=\"28.5\" width=\"26\" height=\"7\" rx=\"3.5\"/><rect class=\"d-t3\" x=\"22\" y=\"29.5\" width=\"20\" height=\"1.8\" rx=\".9\"/><path class=\"d-t\" d=\"M9 24h11a8 8 0 0 1 0 16h-11a8 8 0 0 1 0-16zM9.5 29.5a2.5 2.5 0 0 0 0 5h10a2.5 2.5 0 0 0 0-5zM44 24h11a8 8 0 0 1 0 16h-11a8 8 0 0 1 0-16zM44.5 29.5a2.5 2.5 0 0 0 0 5h10a2.5 2.5 0 0 0 0-5z\"/><rect class=\"d-t3\" x=\"8\" y=\"25.5\" width=\"13\" height=\"2\" rx=\"1\"/><rect class=\"d-t3\" x=\"43\" y=\"25.5\" width=\"13\" height=\"2\" rx=\"1\"/></g>","tint":"#8e929c"},"package":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58.5\" rx=\"26\" ry=\"2\"/><path class=\"d-t3\" d=\"M6 26l6-12h40l6 12z\"/><rect class=\"d-t\" x=\"6\" y=\"26\" width=\"52\" height=\"31\" rx=\"2\"/><rect class=\"d-t2\" x=\"6\" y=\"26\" width=\"52\" height=\"3.5\"/><path class=\"d-y\" d=\"M29 14h6l1.5 12h-9z\"/><rect class=\"d-y\" x=\"27.5\" y=\"26\" width=\"9\" height=\"9\"/><path class=\"d-y2\" d=\"M27.5 35l2.2-2 2.3 2 2.3-2 2.2 2z\"/><path class=\"d-w\" d=\"M32 38l6.5 3.5-6.5 3.5-6.5-3.5z\"/><path class=\"d-w2\" d=\"M25.5 41.5l6.5 3.5v7.5l-6.5-3.5z\"/><path class=\"d-w3\" d=\"M38.5 41.5l-6.5 3.5v7.5l6.5-3.5z\"/>","tint":"#c58d57"},"book":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"22\" ry=\"2\"/><rect class=\"d-t2\" x=\"11\" y=\"7\" width=\"42\" height=\"51\" rx=\"3.5\"/><rect class=\"d-w\" x=\"16\" y=\"50\" width=\"35\" height=\"5.5\" rx=\"1\"/><rect class=\"d-w2\" x=\"16\" y=\"52.2\" width=\"35\" height=\"1.2\"/><path class=\"d-t\" d=\"M17 7h32.5q3.5 0 3.5 3.5v39.5h-36z\"/><rect class=\"d-t3\" x=\"23\" y=\"15\" width=\"24\" height=\"13\" rx=\"1.5\"/><rect class=\"d-w\" x=\"26.5\" y=\"19\" width=\"17\" height=\"2.2\" rx=\"1.1\"/><rect class=\"d-w\" x=\"29.5\" y=\"23\" width=\"11\" height=\"2.2\" rx=\"1.1\"/><path class=\"d-rd\" d=\"M41 50h5v9l-2.5-2.5-2.5 2.5z\"/>","tint":"#5f9e8f"},"certificate":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"24\" ry=\"2\"/><rect class=\"d-cream\" x=\"4\" y=\"4\" width=\"56\" height=\"40\" rx=\"2.5\"/><rect class=\"d-line thin2\" x=\"8\" y=\"8\" width=\"48\" height=\"32\" rx=\"1\"/><rect class=\"d-bl2\" x=\"17\" y=\"13\" width=\"30\" height=\"4.5\" rx=\"2.2\"/><path class=\"d-w2\" d=\"M13 22h38v2.5h-38zM13 27.5h24v2.5h-24z\"/><path class=\"d-rd\" d=\"M41 42l-3.5 14 4.5-2.5 3 4 2-14zM51 42l3.5 14-4.5-2.5-3 4-2-14z\"/><g class=\"d-t\"><circle cx=\"54\" cy=\"38\" r=\"2.8\"/><circle cx=\"52.5\" cy=\"42.7\" r=\"2.8\"/><circle cx=\"48.5\" cy=\"45.6\" r=\"2.8\"/><circle cx=\"43.5\" cy=\"45.6\" r=\"2.8\"/><circle cx=\"39.5\" cy=\"42.7\" r=\"2.8\"/><circle cx=\"38\" cy=\"38\" r=\"2.8\"/><circle cx=\"39.5\" cy=\"33.3\" r=\"2.8\"/><circle cx=\"43.5\" cy=\"30.4\" r=\"2.8\"/><circle cx=\"48.5\" cy=\"30.4\" r=\"2.8\"/><circle cx=\"52.5\" cy=\"33.3\" r=\"2.8\"/><circle cx=\"46\" cy=\"38\" r=\"8\"/></g><circle class=\"d-t2\" cx=\"46\" cy=\"38\" r=\"5.5\"/><circle class=\"d-t3\" cx=\"46\" cy=\"38\" r=\"3\"/>","tint":"#f3c14b"},"tag":{"svg":"<path class=\"d-line grey\" d=\"M21.4 21.4c-6-2-9-6-10-12-.5-3 2-5.5 5-4.5\"/><g transform=\"rotate(45 32 32)\"><path class=\"d-t\" d=\"M18 21h34q4 0 4 4v14q0 4-4 4h-34l-11-11zM17 29a3 3 0 1 0 0 6a3 3 0 1 0 0-6z\"/><path class=\"d-t3\" d=\"M17 27.4a4.6 4.6 0 1 1 0 9.2a4.6 4.6 0 1 1 0-9.2zM17 29a3 3 0 1 0 0 6a3 3 0 1 0 0-6z\"/><rect class=\"d-t2\" x=\"26\" y=\"26.5\" width=\"23\" height=\"4\" rx=\"2\"/><rect class=\"d-t2\" x=\"26\" y=\"33.5\" width=\"15\" height=\"4\" rx=\"2\"/></g>","tint":"#f3c14b"},"branch":{"svg":"<path class=\"d-line thick net\" d=\"M5 42h54\"/><path class=\"d-line thick tint\" d=\"M15 42q0-20 20-20h24\"/><circle class=\"d-bl2\" cx=\"15\" cy=\"42\" r=\"5.5\"/><circle class=\"d-w\" cx=\"15\" cy=\"42\" r=\"2.2\"/><circle class=\"d-bl2\" cx=\"33\" cy=\"42\" r=\"5.5\"/><circle class=\"d-w\" cx=\"33\" cy=\"42\" r=\"2.2\"/><circle class=\"d-bl2\" cx=\"51\" cy=\"42\" r=\"5.5\"/><circle class=\"d-w\" cx=\"51\" cy=\"42\" r=\"2.2\"/><circle class=\"d-t\" cx=\"39\" cy=\"22\" r=\"5.5\"/><circle class=\"d-w\" cx=\"39\" cy=\"22\" r=\"2.2\"/><circle class=\"d-t\" cx=\"53\" cy=\"22\" r=\"5.5\"/><circle class=\"d-w\" cx=\"53\" cy=\"22\" r=\"2.2\"/>","tint":"#f0a94b"},"padlock":{"svg":"<path class=\"d-w2\" d=\"M18 31v-10a14 14 0 0 1 28 0v10h-6.5v-10a7.5 7.5 0 0 0-15 0v10z\"/><path class=\"d-w\" d=\"M18 21a14 14 0 0 1 14-14v3a11 11 0 0 0-11 11v10h-3z\"/><rect class=\"d-t\" x=\"11\" y=\"28\" width=\"42\" height=\"31\" rx=\"5.5\"/><path class=\"d-t2\" d=\"M11 49h42v4.5q0 5.5-5.5 5.5h-31q-5.5 0-5.5-5.5z\"/><rect class=\"d-t3\" x=\"15\" y=\"31\" width=\"34\" height=\"3.5\" rx=\"1.7\"/><circle class=\"d-ink\" cx=\"32\" cy=\"41\" r=\"4\"/><path class=\"d-ink\" d=\"M30.3 42h3.4l1.3 8.5h-6z\"/>","tint":"#f0b54a"},"toolbox":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58\" rx=\"25\" ry=\"2.2\"/><path class=\"d-line grey thick\" d=\"M22 23v-7q0-5 5-5h10q5 0 5 5v7\"/><rect class=\"d-t\" x=\"5\" y=\"21\" width=\"54\" height=\"35\" rx=\"4\"/><rect class=\"d-t3\" x=\"5\" y=\"21\" width=\"54\" height=\"5\" rx=\"2.5\"/><rect class=\"d-t2\" x=\"5\" y=\"33\" width=\"54\" height=\"4.5\"/><rect class=\"d-y\" x=\"13\" y=\"30\" width=\"8\" height=\"10\" rx=\"1.5\"/><rect class=\"d-y\" x=\"43\" y=\"30\" width=\"8\" height=\"10\" rx=\"1.5\"/><rect class=\"d-t2\" x=\"5\" y=\"51\" width=\"54\" height=\"5\" rx=\"2.5\"/>","tint":"#d9534f"},"router":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"57\" rx=\"27\" ry=\"2\"/><path class=\"d-line yel\" d=\"M27 22a7 7 0 0 1 10 0M23.5 17.5a12 12 0 0 1 17 0\"/><rect class=\"d-t\" x=\"15\" y=\"8\" width=\"5\" height=\"30\" rx=\"2.5\" transform=\"rotate(-10 17.5 38)\"/><rect class=\"d-t\" x=\"44\" y=\"8\" width=\"5\" height=\"30\" rx=\"2.5\" transform=\"rotate(10 46.5 38)\"/><path class=\"d-dk2\" d=\"M10 52h8v4h-8zM46 52h8v4h-8z\"/><rect class=\"d-t\" x=\"5\" y=\"32\" width=\"54\" height=\"21\" rx=\"5\"/><path class=\"d-t3\" d=\"M5 37q0-5 5-5h44q5 0 5 5z\"/><path class=\"d-t2\" d=\"M5 47h54v1q0 5-5 5h-44q-5 0-5-5z\"/><circle class=\"d-gr\" cx=\"13\" cy=\"42\" r=\"2\"/><circle class=\"d-gr\" cx=\"20\" cy=\"42\" r=\"2\"/><circle class=\"d-y\" cx=\"27\" cy=\"42\" r=\"2\"/><circle class=\"d-gr\" cx=\"34\" cy=\"42\" r=\"2\"/><path class=\"d-dk\" d=\"M41 40.5h13v3h-13z\"/>","tint":"#555a66"},"database":{"svg":"<path class=\"d-t\" d=\"M10 42v10a22 7 0 0 0 44 0v-10z\"/><path class=\"d-t2\" d=\"M54 42v10a22 7 0 0 1-10 5.9v-10a22 7 0 0 0 10-5.9z\"/><ellipse class=\"d-t3\" cx=\"32\" cy=\"42\" rx=\"22\" ry=\"7\"/><circle class=\"d-gr\" cx=\"17\" cy=\"52.5\" r=\"1.8\"/><path class=\"d-t\" d=\"M10 28v10a22 7 0 0 0 44 0v-10z\"/><path class=\"d-t2\" d=\"M54 28v10a22 7 0 0 1-10 5.9v-10a22 7 0 0 0 10-5.9z\"/><ellipse class=\"d-t3\" cx=\"32\" cy=\"28\" rx=\"22\" ry=\"7\"/><circle class=\"d-gr\" cx=\"17\" cy=\"38.5\" r=\"1.8\"/><path class=\"d-t\" d=\"M10 14v10a22 7 0 0 0 44 0v-10z\"/><path class=\"d-t2\" d=\"M54 14v10a22 7 0 0 1-10 5.9v-10a22 7 0 0 0 10-5.9z\"/><ellipse class=\"d-t3\" cx=\"32\" cy=\"14\" rx=\"22\" ry=\"7\"/><circle class=\"d-gr\" cx=\"17\" cy=\"24.5\" r=\"1.8\"/>","tint":"#5f86b3"},"code":{"svg":"<ellipse class=\"d-sh\" cx=\"31\" cy=\"58.5\" rx=\"21\" ry=\"2\"/><path class=\"d-w\" d=\"M12 6h29l12 12v36q0 3-3 3h-38q-3 0-3-3v-45q0-3 3-3z\"/><path class=\"d-t\" d=\"M41 6l12 12h-9q-3 0-3-3z\"/><path class=\"d-line thick tint\" d=\"M23.5 21.5l-9 9.5 9 9.5M38.5 21.5l9 9.5-9 9.5M34 18.5l-6 25\"/><path class=\"d-t\" d=\"M9 47h44v7q0 3-3 3h-38q-3 0-3-3z\"/>","tint":"#5f86b3"},"browser":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"26\" ry=\"2\"/><path class=\"d-t2\" d=\"M29 16l2-7q.5-1.5 2-1.5h13q1.5 0 2 1.5l2 7z\"/><path class=\"d-t\" d=\"M7 16l2-7q.5-1.5 2-1.5h13q1.5 0 2 1.5l2 7z\"/><rect class=\"d-t\" x=\"4\" y=\"14\" width=\"56\" height=\"43\" rx=\"4\"/><circle class=\"d-t3\" cx=\"10\" cy=\"21.5\" r=\"2.5\"/><rect class=\"d-w\" x=\"16\" y=\"18\" width=\"40\" height=\"7\" rx=\"3.5\"/><circle class=\"d-gr\" cx=\"20.5\" cy=\"21.5\" r=\"1.6\"/><rect class=\"d-w2\" x=\"24\" y=\"20.5\" width=\"18\" height=\"2\" rx=\"1\"/><rect class=\"d-w\" x=\"8\" y=\"29\" width=\"48\" height=\"24\" rx=\"1.5\"/><rect class=\"d-sky\" x=\"12\" y=\"33\" width=\"40\" height=\"9\" rx=\"1.5\"/><path class=\"d-w2\" d=\"M12 45h26v3h-26zM12 49.5h18v2h-18z\"/>","tint":"#5aa7e0"},"palette":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"24\" ry=\"2\"/><path class=\"d-t2\" d=\"M32 10c-15 0-27 10-27 23s11 23 25 23c5 0 7-3 6-7-1-4 2-7 6-7h6c7 0 11-4 11-10C59 20 47 10 32 10z\"/><path class=\"d-t\" d=\"M32 8c-15 0-27 10-27 23s11 22 25 22c5 0 7-3 6-7-1-4 2-7 6-7h6c7 0 11-4 11-10C59 18 47 8 32 8z\"/><ellipse class=\"d-t2\" cx=\"17\" cy=\"40\" rx=\"4.5\" ry=\"4\"/><path class=\"d-t3\" d=\"M16 14q8-4 16-4v3q-8 0-14 3z\"/><circle class=\"d-rd\" cx=\"15\" cy=\"27\" r=\"4.5\"/><circle class=\"d-y\" cx=\"24\" cy=\"18.5\" r=\"4.5\"/><circle class=\"d-bl\" cx=\"36\" cy=\"16\" r=\"4.5\"/><circle class=\"d-gr\" cx=\"47\" cy=\"21\" r=\"4.5\"/><g transform=\"rotate(-45 44 44)\"><rect class=\"d-wood\" x=\"42\" y=\"40\" width=\"4\" height=\"22\" rx=\"2\"/><rect class=\"d-w2\" x=\"41.5\" y=\"34\" width=\"5\" height=\"7\" rx=\"1\"/><path class=\"d-pu\" d=\"M41.5 34q0-6 2.5-10 2.5 4 2.5 10z\"/></g>","tint":"#c9935b"},"json":{"svg":"<path class=\"d-line thick tint\" d=\"M19 7q-6 0-6 6v11q0 8-7 8 7 0 7 8v11q0 6 6 6M45 7q6 0 6 6v11q0 8 7 8-7 0-7 8v11q0 6-6 6\"/><rect class=\"d-bl\" x=\"21\" y=\"17\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-y\" x=\"33\" y=\"17\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-bl\" x=\"21\" y=\"26.5\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-gr\" x=\"33\" y=\"26.5\" width=\"6\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-bl\" x=\"21\" y=\"36\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-pk\" x=\"33\" y=\"36\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-bl\" x=\"21\" y=\"45.5\" width=\"9\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-y\" x=\"33\" y=\"45.5\" width=\"5\" height=\"4.5\" rx=\"2.2\"/>","tint":"#f0a94b"},"gear":{"svg":"<g class=\"d-t\"><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(0 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(45 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(90 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(135 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(180 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(225 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(270 32 32)\"/><rect x=\"26.5\" y=\"4\" width=\"11\" height=\"12\" rx=\"2.5\" transform=\"rotate(315 32 32)\"/><path d=\"M32 12a20 20 0 1 1 0 40a20 20 0 1 1 0-40zM32 25a7 7 0 1 0 0 14a7 7 0 1 0 0-14z\"/></g><path class=\"d-t2\" d=\"M32 19.5a12.5 12.5 0 1 1 0 25a12.5 12.5 0 1 1 0-25zM32 25a7 7 0 1 0 0 14a7 7 0 1 0 0-14z\"/><path class=\"d-t3\" d=\"M17.5 26a15.5 15.5 0 0 1 8.5-8.5l1 2.5a13 13 0 0 0-7 7z\"/>","tint":"#8e929c"},"page":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58\" rx=\"19\" ry=\"2\"/><path class=\"d-w\" d=\"M13 6h27l11 11v36q0 3-3 3h-35q-3 0-3-3v-44q0-3 3-3z\"/><path class=\"d-w2\" d=\"M40 6l11 11h-8q-3 0-3-3z\"/><rect class=\"d-t\" x=\"17\" y=\"14\" width=\"18\" height=\"6\" rx=\"1.5\"/><rect class=\"d-w2\" x=\"17\" y=\"26\" width=\"29\" height=\"3\" rx=\"1.5\"/><rect class=\"d-w2\" x=\"17\" y=\"33\" width=\"29\" height=\"3\" rx=\"1.5\"/><rect class=\"d-w2\" x=\"17\" y=\"40\" width=\"19\" height=\"3\" rx=\"1.5\"/>","tint":"#7fbfe6"},"terminal":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58.5\" rx=\"26\" ry=\"2\"/><rect class=\"d-t\" x=\"4\" y=\"8\" width=\"56\" height=\"48\" rx=\"5\"/><rect class=\"d-dk2\" x=\"8\" y=\"17\" width=\"48\" height=\"35\" rx=\"2\"/><circle class=\"d-pk\" cx=\"10.5\" cy=\"12.5\" r=\"1.8\"/><circle class=\"d-y\" cx=\"16\" cy=\"12.5\" r=\"1.8\"/><circle class=\"d-gr\" cx=\"21.5\" cy=\"12.5\" r=\"1.8\"/><path class=\"d-gr\" d=\"M14 26.5l3-3 10.5 10.5-10.5 10.5-3-3 7.5-7.5z\"/><rect class=\"d-gr\" x=\"30\" y=\"40.5\" width=\"14\" height=\"4\" rx=\"1\"/>","tint":"#4b4f58"},"camera":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"57.5\" rx=\"27\" ry=\"2\"/><path class=\"d-t\" d=\"M20 18l3-6q1-2 3-2h12q2 0 3 2l3 6z\"/><rect class=\"d-w2\" x=\"45\" y=\"12\" width=\"9\" height=\"5\" rx=\"1.5\"/><rect class=\"d-t\" x=\"4\" y=\"16\" width=\"56\" height=\"38\" rx=\"5\"/><rect class=\"d-t3\" x=\"4\" y=\"16\" width=\"56\" height=\"5\" rx=\"2.5\"/><rect class=\"d-t2\" x=\"4\" y=\"46\" width=\"56\" height=\"8\" rx=\"4\"/><rect class=\"d-y\" x=\"9.5\" y=\"24\" width=\"8\" height=\"5\" rx=\"1.2\"/><circle class=\"d-w2\" cx=\"32\" cy=\"35\" r=\"15\"/><circle class=\"d-dk\" cx=\"32\" cy=\"35\" r=\"12\"/><circle class=\"d-bl2\" cx=\"32\" cy=\"35\" r=\"7.5\"/><circle class=\"d-dk2\" cx=\"32\" cy=\"35\" r=\"3.5\"/><circle class=\"d-w\" cx=\"28.5\" cy=\"31.5\" r=\"2\"/>","tint":"#555a66"},"music":{"svg":"<path class=\"d-t2\" d=\"M23.5 16l29.5-6v8l-29.5 6z\"/><rect class=\"d-t\" x=\"23.5\" y=\"16\" width=\"3.5\" height=\"33\"/><rect class=\"d-t\" x=\"49.5\" y=\"10\" width=\"3.5\" height=\"33\"/><path class=\"d-t\" d=\"M23.5 16l29.5-6v4l-29.5 6z\"/><ellipse class=\"d-t\" cx=\"19\" cy=\"49\" rx=\"8\" ry=\"6\" transform=\"rotate(-20 19 49)\"/><ellipse class=\"d-t\" cx=\"45\" cy=\"43\" rx=\"8\" ry=\"6\" transform=\"rotate(-20 45 43)\"/><ellipse class=\"d-t3\" cx=\"16.5\" cy=\"47.5\" rx=\"3\" ry=\"1.8\" transform=\"rotate(-20 16.5 47.5)\"/><ellipse class=\"d-t3\" cx=\"42.5\" cy=\"41.5\" rx=\"3\" ry=\"1.8\" transform=\"rotate(-20 42.5 41.5)\"/>","tint":"#b79cf0"},"barchart":{"svg":"<rect class=\"d-t2\" x=\"13\" y=\"40\" width=\"9\" height=\"15\" rx=\"1.5\"/><rect class=\"d-t\" x=\"25\" y=\"31\" width=\"9\" height=\"24\" rx=\"1.5\"/><rect class=\"d-t3\" x=\"37\" y=\"22\" width=\"9\" height=\"33\" rx=\"1.5\"/><rect class=\"d-y\" x=\"49\" y=\"11\" width=\"9\" height=\"44\" rx=\"1.5\"/><path class=\"d-line grey\" d=\"M7 8v48h52\"/>","tint":"#7fbfe6"},"logs":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"59\" rx=\"22\" ry=\"2\"/><rect class=\"d-cream\" x=\"10\" y=\"8\" width=\"44\" height=\"50\" rx=\"3\"/><path class=\"d-t\" d=\"M10 11q0-3 3-3h38q3 0 3 3v6h-44z\"/><path class=\"d-line thick grey\" d=\"M16 5v7M24 5v7M32 5v7M40 5v7M48 5v7\"/><circle class=\"d-gr\" cx=\"15.5\" cy=\"24.5\" r=\"1.8\"/><circle class=\"d-gr\" cx=\"15.5\" cy=\"31.5\" r=\"1.8\"/><circle class=\"d-y\" cx=\"15.5\" cy=\"38.5\" r=\"1.8\"/><circle class=\"d-rd\" cx=\"15.5\" cy=\"45.5\" r=\"1.8\"/><circle class=\"d-gr\" cx=\"15.5\" cy=\"52.5\" r=\"1.8\"/><path class=\"d-t\" d=\"M19 23h9v3h-9zM19 30h9v3h-9zM19 37h9v3h-9zM19 44h9v3h-9zM19 51h9v3h-9z\"/><path class=\"d-w2\" d=\"M31 23h19v3h-19zM31 30h14v3h-14zM31 37h17v3h-17zM31 44h12v3h-12zM31 51h16v3h-16z\"/>","tint":"#4e8f7a"},"pencil":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"58.5\" rx=\"19\" ry=\"2\"/><g transform=\"rotate(45 32 32)\"><rect class=\"d-pk\" x=\"26\" y=\"4\" width=\"12\" height=\"9\" rx=\"2.5\"/><rect class=\"d-w2\" x=\"26\" y=\"11\" width=\"12\" height=\"6\"/><rect class=\"d-w\" x=\"26\" y=\"13\" width=\"12\" height=\"1.2\"/><rect class=\"d-t3\" x=\"26\" y=\"17\" width=\"4\" height=\"27\"/><rect class=\"d-t\" x=\"30\" y=\"17\" width=\"4\" height=\"27\"/><rect class=\"d-t2\" x=\"34\" y=\"17\" width=\"4\" height=\"27\"/><path class=\"d-cream\" d=\"M26 44h12l-6 13z\"/><path class=\"d-dk\" d=\"M29.7 52h4.6L32 57z\"/></g>","tint":"#f3c14b"},"box":{"svg":"<path class=\"d-t2\" d=\"M11 30l4-17h34l4 17z\"/><circle class=\"d-pk\" cx=\"22\" cy=\"26\" r=\"8\"/><path class=\"d-w\" d=\"M14.5 24q7.5-4 15 0v3q-7.5-4-15 0z\"/><rect class=\"d-bl\" x=\"33\" y=\"17\" width=\"13\" height=\"13\" rx=\"1.5\" transform=\"rotate(12 39.5 23.5)\"/><path class=\"d-y\" d=\"M30 13l1.8 3.8 4.2.5-3.1 2.9.8 4.1-3.7-2-3.7 2 .8-4.1-3.1-2.9 4.2-.5z\"/><rect class=\"d-t\" x=\"8\" y=\"30\" width=\"48\" height=\"27\" rx=\"2.5\"/><rect class=\"d-t2\" x=\"8\" y=\"40\" width=\"48\" height=\"4.5\"/><rect class=\"d-y\" x=\"28.5\" y=\"36\" width=\"7\" height=\"11\" rx=\"1.5\"/><circle class=\"d-ink\" cx=\"32\" cy=\"42.5\" r=\"1.3\"/>","tint":"#c9935b"},"api":{"svg":"<ellipse class=\"d-sh\" cx=\"38\" cy=\"59.5\" rx=\"21\" ry=\"2\"/><rect class=\"d-t\" x=\"18\" y=\"6\" width=\"40\" height=\"51\" rx=\"5\"/><path class=\"d-t2\" d=\"M48 6h5q5 0 5 5v41q0 5-5 5h-5z\"/><rect class=\"d-dk2\" x=\"24\" y=\"12\" width=\"28\" height=\"36\" rx=\"3\"/><path class=\"d-w2\" d=\"M38 16h10v2.5h-10zM38 21h7v2.5h-7z\"/><rect class=\"d-t3\" x=\"21\" y=\"46\" width=\"34\" height=\"5\" rx=\"2.5\"/><path class=\"d-y\" d=\"M4 16h20v-5l10 9-10 9v-5h-20z\"/><path class=\"d-gr\" d=\"M44 32h-30v-5l-10 9 10 9v-5h30z\"/>","tint":"#5f86b3"},"linechart":{"svg":"<path class=\"d-line thin2\" d=\"M9 20h50M9 32h50M9 44h50\" opacity=\".5\"/><path class=\"d-t3\" d=\"M12 45L22 36l10 4 10-13L53 13V55H12z\" opacity=\".45\"/><path class=\"d-line grey\" d=\"M7 6v50h52\"/><path class=\"d-line thick tint\" d=\"M12 45L22 36l10 4 10-13L53 13\"/><circle class=\"d-t\" cx=\"12\" cy=\"45\" r=\"3.4\"/><circle class=\"d-w\" cx=\"12\" cy=\"45\" r=\"1.5\"/><circle class=\"d-t\" cx=\"22\" cy=\"36\" r=\"3.4\"/><circle class=\"d-w\" cx=\"22\" cy=\"36\" r=\"1.5\"/><circle class=\"d-t\" cx=\"32\" cy=\"40\" r=\"3.4\"/><circle class=\"d-w\" cx=\"32\" cy=\"40\" r=\"1.5\"/><circle class=\"d-t\" cx=\"42\" cy=\"27\" r=\"3.4\"/><circle class=\"d-w\" cx=\"42\" cy=\"27\" r=\"1.5\"/><circle class=\"d-t\" cx=\"53\" cy=\"13\" r=\"3.4\"/><circle class=\"d-w\" cx=\"53\" cy=\"13\" r=\"1.5\"/>","tint":"#63c2a2"},"chip":{"svg":"<path class=\"d-line grey thick\" d=\"M20 6v8M28 6v8M36 6v8M44 6v8M20 50v8M28 50v8M36 50v8M44 50v8M6 20h8M6 28h8M6 36h8M6 44h8M50 20h8M50 28h8M50 36h8M50 44h8\"/><rect class=\"d-t\" x=\"11\" y=\"11\" width=\"42\" height=\"42\" rx=\"5\"/><rect class=\"d-t3\" x=\"11\" y=\"11\" width=\"42\" height=\"5\" rx=\"2.5\"/><rect class=\"d-t2\" x=\"20\" y=\"21\" width=\"24\" height=\"24\" rx=\"3\"/><rect class=\"d-t3\" x=\"26\" y=\"27\" width=\"12\" height=\"12\" rx=\"2\"/><circle class=\"d-y\" cx=\"16.5\" cy=\"21\" r=\"1.8\"/>","tint":"#4e8f7a"},"folder":{"svg":"<ellipse class=\"d-sh\" cx=\"32\" cy=\"57\" rx=\"25\" ry=\"2.2\"/><path class=\"d-t2\" d=\"M6 14q0-3 3-3h14l5 6h27q3 0 3 3v30q0 3-3 3h-46q-3 0-3-3z\"/><rect class=\"d-w\" x=\"12\" y=\"19\" width=\"40\" height=\"20\" rx=\"2\"/><rect class=\"d-w2\" x=\"16\" y=\"22\" width=\"18\" height=\"2.5\" rx=\"1.2\"/><path class=\"d-t\" d=\"M6 28q0-3 3-3h46q3 0 3 3v23q0 3-3 3h-46q-3 0-3-3z\"/><rect class=\"d-t3\" x=\"6\" y=\"25\" width=\"52\" height=\"4.5\" rx=\"2.2\"/><rect class=\"d-t3\" x=\"12\" y=\"44\" width=\"16\" height=\"4\" rx=\"2\"/>","tint":"#f0b84b"}};
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+const svgOf = (name, tint) => { const a = ART[name]; return `<svg class="art" viewBox="0 0 64 64" style="--t:${tint ?? a.tint}" aria-hidden="true">${a.svg}</svg>`; };
+const icon = (d, cls = "") => `<span class="ic ${cls}" title="${esc(d.what)}">${svgOf(d.name, d.tint)}</span>`;
+
+/* ── The rule: what a file is, then its extension ── */
+const LANG = { rs: ["Rust", "#f0a94b"], ts: ["TypeScript", "#7fbfe6"], tsx: ["TypeScript (React)", "#7fbfe6"], js: ["JavaScript", "#f3d77a"], jsx: ["JavaScript (React)", "#f3d77a"], mjs: ["JavaScript", "#f3d77a"],
+  py: ["Python", "#6aa5c9"], go: ["Go", "#63c2a2"], java: ["Java", "#e07f73"], kt: ["Kotlin", "#b79cf0"], cs: ["C#", "#9a7fe0"], cpp: ["C++", "#5f86b3"], c: ["C", "#8e929c"], rb: ["Ruby", "#e0564f"], php: ["PHP", "#8d6bc7"], swift: ["Swift", "#f0844b"] };
+const EXT = [
+  [["html", "htm"], "browser", "A web page"], [["css", "scss", "sass", "less"], "palette", "Styles: colours and layout"], [["json", "jsonc"], "json", "Data, as JSON"],
+  [["yml", "yaml", "toml", "ini", "conf", "cfg", "xml"], "gear", "Settings"], [["md", "mdx", "txt", "rst", "pdf"], "page", "Writing: notes and docs"],
+  [["sh", "bash", "zsh", "ps1", "bat", "cmd"], "terminal", "A script you run in a terminal"], [["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "mp4", "mov", "webm"], "camera", "An image or a video"],
+  [["mp3", "wav", "ogg", "flac"], "music", "A sound"], [["csv", "tsv", "xlsx", "xls"], "barchart", "A table of data"], [["log"], "logs", "A log of what happened"],
+  [["ttf", "otf", "woff", "woff2"], "pencil", "A font"], [["zip", "tar", "gz", "tgz", "7z", "rar"], "box", "An archive"], [["proto", "graphql", "gql"], "api", "An API's contract"],
+  [["ipynb"], "linechart", "A notebook of experiments"], [["wasm", "exe", "dll", "so", "dylib"], "chip", "A compiled program"],
+];
+function fileIcon(path) {
+  const name = path.split("/").pop(), lower = name.toLowerCase(), ext = lower.includes(".") ? lower.split(".").pop() : "";
+  const dirs = path.toLowerCase().split("/").slice(0, -1);
+  const is = (n, what, tint) => ({ name: n, what, tint });
+  if (/^(dockerfile|containerfile)$|\.dockerfile$|^(docker-)?compose\.ya?ml$|^docker-compose/.test(lower)) return is("container", "Packs the app into a container");
+  if (dirs.includes("workflows") || lower === ".gitlab-ci.yml" || lower === "jenkinsfile" || lower === "azure-pipelines.yml") return is("conveyor", "A CI pipeline: builds and tests every change");
+  if (/(^|[._-])(test|spec)s?\.[a-z]+$|_test\.[a-z]+$|^test_/.test(lower) || dirs.some((d) => ["tests", "test", "__tests__", "spec"].includes(d))) return is("checklist", "Tests: checks the code does what it should");
+  if (/\.lock$|-lock\.(json|ya?ml)$|^yarn\.lock$|^go\.sum$/.test(lower)) return is("chain", "Pins every dependency to an exact version");
+  if (["package.json", "cargo.toml", "pyproject.toml", "go.mod", "requirements.txt", "gemfile", "composer.json", "pom.xml", "build.gradle", "setup.py"].includes(lower) || ext === "csproj") return is("package", "Lists the packages the project needs");
+  if (/^readme/.test(lower)) return is("book", "The project's front page");
+  if (/^(license|licence|copying)/.test(lower)) return is("certificate", "Who may use the code, and how");
+  if (/^(changelog|changes|history)\b/.test(lower)) return is("tag", "What changed in each version");
+  if (/^\.git(ignore|attributes|modules)$/.test(lower)) return is("branch", "Tells git what to leave out");
+  if (/^\.env|\.(pem|key|p12|pfx)$|secret/.test(lower)) return is("padlock", "Secrets: WalkMyCode never shows or sends a real one");
+  if (/^(makefile|justfile|taskfile\.ya?ml|rakefile)$/.test(lower)) return is("toolbox", "Shortcuts for the jobs you run often");
+  if (lower === "nginx.conf" || lower === "caddyfile" || dirs.includes("nginx")) return is("router", "Routes web traffic to the app");
+  if (dirs.includes("migrations") || ["sql", "sqlite", "db"].includes(ext)) return is("database", "The database: its tables and data");
+  if (LANG[ext]) return is("code", `${LANG[ext][0]} code`, LANG[ext][1]);
+  for (const [exts, n, what] of EXT) if (exts.includes(ext)) return is(n, what);
+  return is("page", "A file");
+}
+const FOLDER = { tests: "checklist", test: "checklist", __tests__: "checklist", docs: "book", doc: "book", scripts: "terminal", bin: "terminal", migrations: "database", public: "palette", assets: "palette", static: "palette", workflows: "conveyor", logs: "logs", config: "gear" };
+const folderIcon = (name) => ({ name: FOLDER[name.toLowerCase()] ?? "folder", what: FOLDER[name.toLowerCase()] ? `The ${name} folder` : "A folder" });
+const oldKind = (path) => { const e = path.split(".").pop().toLowerCase(); if (LANG[e]) return "code"; if (["md", "txt"].includes(e) || /readme|license|changelog/i.test(path)) return "doc"; if (["json", "toml", "yml", "yaml", "lock", "conf"].includes(e) || /dockerfile|makefile|\.env|\.git/i.test(path)) return "config"; if (["png", "svg", "jpg"].includes(e)) return "image"; return "other"; };
+
+/* ── A project with a bit of everything ── */
+const FILES = [".github/workflows/ci.yml", ".github/workflows/release.yml", "api/Cargo.toml", "api/Cargo.lock", "api/Dockerfile", "api/migrations/001_create_orders.sql", "api/src/main.rs", "api/src/routes.rs", "api/src/db.rs",
+  "api/tests/orders_test.rs", "web/package.json", "web/package-lock.json", "web/tsconfig.json", "web/index.html", "web/src/App.tsx", "web/src/api.ts", "web/src/styles.css", "web/src/components/Cart.tsx",
+  "web/public/logo.svg", "web/public/fonts/Inter.woff2", "web/tests/cart.test.ts", "scripts/deploy.sh", "scripts/seed.py", "docs/architecture.md", "docs/schema.graphql", "data/orders.csv", "logs/server.log",
+  "nginx.conf", "docker-compose.yml", "Makefile", ".env", ".gitignore", "CHANGELOG.md", "LICENSE", "README.md"];
+const SAMPLE = {
+  "api/Dockerfile": ["<span class=c># Build the API, then run it in a small image</span>", "<span class=k>FROM</span> rust:1.82 <span class=k>AS</span> build", "<span class=k>WORKDIR</span> /app", "<span class=k>COPY</span> . .", "<span class=k>RUN</span> cargo build --release", "", "<span class=k>FROM</span> debian:bookworm-slim", "<span class=k>COPY</span> --from=build /app/target/release/api /usr/local/bin/api", "<span class=k>EXPOSE</span> 8080", "<span class=k>CMD</span> [<span class=s>\"api\"</span>]"],
+  ".github/workflows/ci.yml": ["<span class=k>name</span>: CI", "<span class=k>on</span>: [push, pull_request]", "<span class=k>jobs</span>:", "  <span class=k>test</span>:", "    <span class=k>runs-on</span>: ubuntu-latest", "    <span class=k>steps</span>:", "      - <span class=k>uses</span>: actions/checkout@v4", "      - <span class=k>run</span>: cargo test --manifest-path api/Cargo.toml", "      - <span class=k>run</span>: npm ci && npm test --prefix web"],
+  "api/src/main.rs": ["<span class=k>mod</span> db;", "<span class=k>mod</span> routes;", "", "<span class=h>#[tokio::main]</span>", "<span class=k>async fn</span> main() {", "    <span class=k>let</span> pool = db::connect().<span class=k>await</span>;", "    <span class=k>let</span> app = routes::router(pool);", "    axum::serve(listener, app).<span class=k>await</span>.unwrap();", "}"],
+  "web/src/App.tsx": ["<span class=k>import</span> { Cart } <span class=k>from</span> <span class=s>\"./components/Cart\"</span>;", "", "<span class=k>export default function</span> App() {", "  <span class=k>return</span> (", "    &lt;main&gt;", "      &lt;h1&gt;Shop&lt;/h1&gt;", "      &lt;Cart /&gt;", "    &lt;/main&gt;", "  );", "}"],
+  "README.md": ["<span class=h># Shop</span>", "", "An online shop: a Rust API, a React web app, and Postgres.", "", "<span class=h>## Run it</span>", "", "    docker compose up", "", "Then open http://localhost:8080."],
+  "api/tests/orders_test.rs": ["<span class=h>#[tokio::test]</span>", "<span class=k>async fn</span> places_an_order() {", "    <span class=k>let</span> app = test_app().<span class=k>await</span>;", "    <span class=k>let</span> res = app.post(<span class=s>\"/orders\"</span>).json(&amp;order()).send().<span class=k>await</span>;", "    assert_eq!(res.status(), 201);", "}"],
+};
+const fallback = (p) => [`<span class=c>// ${esc(p)}</span>`, "", "<span class=c>(the file's text)</span>"];
+
+/* ── The tree ── */
+let mode = "new", cur = "api/Dockerfile", q = "";
+const open = new Set([".github", ".github/workflows", "api", "api/src", "api/tests", "api/migrations", "web", "web/src", "scripts"]);
+function tree() {
+  const root = { dirs: {}, files: [] };
+  for (const f of FILES) { const parts = f.split("/"); let d = root, p = ""; for (const part of parts.slice(0, -1)) { p = p ? `${p}/${part}` : part; d = d.dirs[part] ??= { dirs: {}, files: [], path: p, name: part }; } d.files.push(f); }
+  const rows = [];
+  const walk = (d, depth) => {
+    for (const k of Object.keys(d.dirs).sort((a, b) => a.localeCompare(b))) { const c = d.dirs[k]; rows.push({ dir: true, path: c.path, name: c.name, depth }); if (open.has(c.path)) walk(c, depth + 1); }
+    for (const f of d.files.sort((a, b) => a.split("/").pop().localeCompare(b.split("/").pop()))) rows.push({ dir: false, path: f, name: f.split("/").pop(), depth });
+  };
+  walk(root, 0);
+  return rows;
+}
+function iconHtml(r) {
+  if (mode === "old") return `<span class="old ${r.dir ? "dir" : oldKind(r.path)}"><i></i></span>`;
+  return icon(r.dir ? folderIcon(r.name) : fileIcon(r.path), "mini");
+}
+function render(enter) {
+  const list = $("list");
+  $("count").textContent = `${FILES.length} files`;
+  if (q) {
+    const ql = q.toLowerCase();
+    const hits = FILES.map((f) => ({ f, i: f.toLowerCase().indexOf(ql) })).filter((x) => x.i >= 0 || fuzzy(x.f, ql)).slice(0, 14);
+    list.innerHTML = hits.length ? hits.map(({ f }, k) => {
+      const name = f.split("/").pop(), dir = f.slice(0, -name.length - 1) || "/";
+      const at = name.toLowerCase().indexOf(ql), shown = at >= 0 ? `${esc(name.slice(0, at))}<mark>${esc(name.slice(at, at + q.length))}</mark>${esc(name.slice(at + q.length))}` : esc(name);
+      return `<button class="res" style="--k:${k}" data-p="${esc(f)}">${mode === "old" ? `<span class="old ${oldKind(f)}"><i></i></span>` : icon(fileIcon(f))}<span class="file">${shown}</span><span class="dir">${esc(dir)}</span></button>`;
+    }).join("") : `<div class="empty">Nothing matches “${esc(q)}”.</div>`;
+  } else {
+    list.innerHTML = tree().map((r, k) => {
+      const what = r.dir ? "" : fileIcon(r.path).what;
+      return `<button class="row ${r.dir ? "dir" : "file"}${r.dir && open.has(r.path) ? " open" : ""}${r.path === cur ? " on" : ""}${enter ? " enter" : ""}" style="--d:${r.depth};--k:${k}" data-p="${esc(r.path)}" data-dir="${r.dir ? 1 : ""}">` +
+        `<span class="glyph">›</span>${iconHtml(r)}<span class="name">${esc(r.name)}</span>${what && mode === "new" ? `<span class="hint">${esc(what)}</span>` : ""}</button>`;
+    }).join("");
+  }
+}
+const fuzzy = (s, ql) => { let i = 0; for (const ch of s.toLowerCase()) if (ch === ql[i]) i++; return i === ql.length; };
+function openFile(p) {
+  cur = p;
+  const d = fileIcon(p);
+  $("path").textContent = p;
+  $("hic").innerHTML = mode === "old" ? `<span class="old ${oldKind(p)}"><i></i></span>` : icon(d, "mini");
+  const lang = LANG[p.split(".").pop().toLowerCase()];
+  $("hero").innerHTML = `${icon(d)}<div><h2>${esc(p.split("/").pop())}</h2><p>${esc(d.what)}</p><div class="chips">` +
+    `${lang ? `<span class="chip"><i style="background:${lang[1]}"></i>${lang[0]}</span>` : ""}<span class="chip">${esc(p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "the project's root")}</span><span class="chip">drawing: ${d.name}</span></div></div>`;
+  $("body").innerHTML = d.name === "padlock"
+    ? `<div class="secret">${icon(d)}<div><b>WalkMyCode never shows a real .env.</b><br>Its keys stay on this computer; the map knows it is there and that is all.</div></div>`
+    : (SAMPLE[p] ?? fallback(p)).map((l, i) => `<div class="ln"><span>${i + 1}</span><span>${l}</span></div>`).join("");
+  for (const r of document.querySelectorAll(".rule")) r.classList.toggle("hit", r.dataset.n === d.name && (!r.dataset.t || r.dataset.t === (d.tint ?? "")));
+  render(false);
+}
+
+/* ── The rules, drawn ── */
+const GROUPS = [
+  ["Build and ship", [["container", "Dockerfile, compose.yml", "Packs the app into a container"], ["conveyor", ".github/workflows/*", "A CI pipeline"], ["toolbox", "Makefile, justfile", "Shortcuts for common jobs"], ["package", "package.json, Cargo.toml, pyproject.toml", "The packages it needs"], ["chain", "*.lock, package-lock.json", "Pinned versions"]]],
+  ["Quality", [["checklist", "tests/, *.test.ts, *_test.rs", "Tests"], ["logs", "*.log, logs/", "What happened"]]],
+  ["Words", [["book", "README", "The front page"], ["certificate", "LICENSE", "Who may use it"], ["tag", "CHANGELOG", "What changed"], ["page", "*.md, *.txt, *.pdf", "Notes and docs"]]],
+  ["Settings and secrets", [["padlock", ".env, *.pem, *.key", "Secrets"], ["gear", "*.yml, *.toml, *.ini", "Settings"], ["branch", ".gitignore", "What git leaves out"], ["router", "nginx.conf", "Routes traffic"]]],
+  ["Data", [["database", "*.sql, migrations/", "Tables"], ["json", "*.json", "Data"], ["barchart", "*.csv, *.xlsx", "Rows of data"], ["api", "*.graphql, *.proto", "An API's contract"]]],
+  ["The web and media", [["browser", "*.html", "A page"], ["palette", "*.css, public/", "Styles"], ["camera", "*.png, *.svg, *.mp4", "Images and video"], ["music", "*.mp3, *.wav", "Sounds"], ["pencil", "*.woff2, *.ttf", "Fonts"], ["box", "*.zip, *.tar.gz", "Archives"]]],
+];
+function rules() {
+  const html = GROUPS.map(([title, rs]) => `<section><h3>${title}</h3>${rs.map(([n, ex, what]) => `<div class="rule" data-n="${n}">${icon({ name: n, what })}<b>${what}</b><small>${esc(ex)}</small></div>`).join("")}</section>`).join("");
+  const langs = `<section><h3>Code, in its language's colour</h3><div class="langs">${Object.entries(LANG).filter(([e]) => !["tsx", "jsx", "mjs"].includes(e)).map(([e, [l, t]]) => `<div class="lang rule" data-n="code" data-t="${t}">${icon({ name: "code", what: l, tint: t })}${l} <small>.${e}</small></div>`).join("")}</div></section>`;
+  $("rules").innerHTML = html + langs;
+}
+
+/* ── Wiring ── */
+$("list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-p]"); if (!b) return;
+  if (b.dataset.dir) { open.has(b.dataset.p) ? open.delete(b.dataset.p) : open.add(b.dataset.p); render(false); return; }
+  if (q) { q = ""; $("q").value = ""; }
+  openFile(b.dataset.p);
+});
+$("q").addEventListener("input", (e) => { q = e.target.value; render(true); });
+for (const b of document.querySelectorAll("[data-q]")) b.onclick = () => { q = b.dataset.q; $("q").value = q; render(true); };
+$("mNew").onclick = () => { mode = "new"; $("mNew").setAttribute("aria-pressed", "true"); $("mOld").setAttribute("aria-pressed", "false"); openFile(cur); };
+$("mOld").onclick = () => { mode = "old"; $("mOld").setAttribute("aria-pressed", "true"); $("mNew").setAttribute("aria-pressed", "false"); openFile(cur); };
+for (const b of document.querySelectorAll("[data-s]")) b.onclick = () => { document.documentElement.style.setProperty("--ics", `${b.dataset.s}px`); for (const x of document.querySelectorAll("[data-s]")) x.setAttribute("aria-pressed", String(x === b)); };
+$("still").onchange = (e) => document.documentElement.classList.toggle("still", e.target.checked);
+rules();
+openFile(cur);
+render(true);
+</script>
+</body>
+</html>

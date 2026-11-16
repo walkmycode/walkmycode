@@ -31,6 +31,9 @@ export interface DictationDeps {
   stream?: (on: ConstructorParameters<typeof ParakeetStream>[0]) => ParakeetLike;
 }
 
+/** How long stop() waits for the last words to be written down before ending with the words shown. */
+export const FLUSH_GRACE_MS = 4000;
+
 const tidy = (parts: string[]) => parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 
 /** Start a dictation. Call inside a click, so the browser lets the audio run. Null when this browser has no microphone API. */
@@ -83,11 +86,26 @@ export function dictate(o: DictationEvents, deps: DictationDeps = {}): Dictation
       if (over) return;
       over = true;
       mic?.close();
-      // What was said since the last pause is still on its way.
-      void stream.flush().then(() => {
+      // What was said since the last pause is still on its way; a server that never answers the flush
+      // ends it after a few seconds with the words already shown, so the mic is never stuck on.
+      let ended = false;
+      const finish = (words: string) => {
+        if (ended) return;
+        ended = true;
         stream.close();
-        o.onDone(tidy(done));
-      });
+        o.onDone(words);
+      };
+      const wait = setTimeout(() => finish(text()), FLUSH_GRACE_MS);
+      void stream.flush().then(
+        () => {
+          clearTimeout(wait);
+          finish(tidy(done));
+        },
+        () => {
+          clearTimeout(wait);
+          finish(text());
+        },
+      );
     },
     cancel() {
       if (over) return;

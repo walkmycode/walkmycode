@@ -26,6 +26,10 @@ const eslintConfig = defineConfig([
     "public/py/micropython.mjs",
     "public/sql/**",
     "public/wasm/**",
+    // The desktop app's build output and the server folder staged into it (docs/DESKTOP.md).
+    "src-tauri/target/**",
+    "src-tauri/gen/**",
+    "src-tauri/server/**",
     // Temporary git worktrees made for background builds.
     ".claude/**",
   ]),

@@ -10,13 +10,16 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { loadLocalRun, loadSetupRoots, saveLocalRun, saveSetupRoot, type LocalRunSettings } from "./consent";
-import { createGit, type Git, type GitBranch, type GitCommit, type GitStatus } from "./git";
+import { createGit, type Git, type GitBlameHunk, type GitBranch, type GitCommit, type GitFileCommit, type GitStatus } from "./git";
 import { findServiceDirs, planSetup, publicPlan, refreshPath, runSetupStep, type PlannedService, type PlannedStep } from "./setup";
 import { defaultParent, planNew, publicStep, starterList } from "./starters";
 import { HOSTED_REFUSAL, type LocalRunStatus, type ServerMsg } from "./protocol";
-import { startRun, type Located, type RunHandle } from "./run";
+import { locateIn, startRun, type Located, type RunHandle } from "./run";
 import { findShells, gitBash, loadPty, openTerminal, ptyProblem, type Shell, type TerminalSession } from "./terminal";
 import { detectToolchains, LOCAL_LANGS, type Env, type LocalLang, type Toolchain } from "./toolchains";
+import { adapterFor, adapterReady, ADAPTERS, offerOf } from "./debug/adapters";
+import { installAdapter } from "./debug/install";
+import { startDebug, type DebugHandle } from "./debug/session";
 
 export interface LocalRunOptions {
   /** .walkmycode/config.json (read on every call: tests and Settings change it). */
@@ -53,6 +56,7 @@ export interface Connection {
 }
 
 const MAX_RUNS = 4;
+const MAX_DEBUGS = 2;
 const MAX_TERMINALS = 8;
 const DETECT_TTL_MS = 5 * 60_000;
 
@@ -68,6 +72,7 @@ const NewAsk = z.object({
 const Msg = z.discriminatedUnion("type", [
   z.object({ type: z.literal("run"), id: Id, lang: z.enum(LOCAL_LANGS as [LocalLang, ...LocalLang[]]), code: z.string().max(1_000_000), path: z.string().max(1000).nullish(), timeout_s: z.number().int().min(1).max(3600).optional(), test: z.boolean().optional() }),
   z.object({ type: z.literal("stop"), id: Id }),
+  z.object({ type: z.literal("input"), id: Id, text: z.string().max(65_536), end: z.boolean().optional() }),
   z.object({ type: z.literal("term-open"), id: Id, shell: z.string().max(40).optional(), cols: z.number().int().min(1).max(500), rows: z.number().int().min(1).max(300) }),
   z.object({ type: z.literal("term-in"), id: Id, data: z.string().max(65_536) }),
   z.object({ type: z.literal("term-resize"), id: Id, cols: z.number().int().min(1).max(500), rows: z.number().int().min(1).max(300) }),
@@ -77,10 +82,16 @@ const Msg = z.discriminatedUnion("type", [
   z.object({ type: z.literal("new-plan"), id: Id, create: NewAsk }),
   z.object({ type: z.literal("new-open"), id: Id, root: z.string().min(1).max(1200), name: z.string().min(1).max(64) }),
   z.object({ type: z.literal("setup-root"), id: Id, workspace: z.string().min(1).max(200), path: z.string().min(1).max(1000) }),
+  z.object({ type: z.literal("debug-start"), id: Id, lang: z.enum(LOCAL_LANGS as [LocalLang, ...LocalLang[]]), code: z.string().max(1_000_000), path: z.string().max(1000).nullish(), breakpoints: z.array(z.number().int().min(1).max(10_000_000)).max(500), workspace: z.string().min(1).max(200).optional() }),
+  z.object({ type: z.literal("debug-cmd"), id: Id, cmd: z.enum(["continue", "next", "stepIn", "stepOut", "pause"]) }),
+  z.object({ type: z.literal("debug-stop"), id: Id }),
+  z.object({ type: z.literal("debug-bps"), id: Id, lines: z.array(z.number().int().min(1).max(10_000_000)).max(500) }),
+  z.object({ type: z.literal("debug-vars"), id: Id, req: Id, ref: z.number().int().min(0).optional(), frame: z.number().int().min(0).max(1000).optional() }),
+  z.object({ type: z.literal("debug-install"), id: Id, adapter: z.string().min(1).max(40) }),
   z.object({
     type: z.literal("git"),
     id: Id,
-    op: z.enum(["status", "diff", "draft", "commit", "discard", "push", "pull", "branches", "switch", "log", "resolve", "finish"]),
+    op: z.enum(["status", "diff", "draft", "commit", "discard", "push", "pull", "branches", "switch", "log", "resolve", "finish", "blame", "file-log"]),
     workspace: z.string().min(1).max(200).optional(),
     path: z.string().min(1).max(1000).optional(),
     paths: z.array(z.string().min(1).max(1000)).max(2000).optional(),
@@ -192,6 +203,7 @@ export function createLocalRun(o: LocalRunOptions) {
       if (!allowed()) return null;
       links.add(link);
       const runs = new Map<string, RunHandle>();
+      const debugs = new Map<string, DebugHandle>();
       const terms = new Map<string, TerminalSession>();
       let gone = false;
       const send = (m: ServerMsg) => {
@@ -204,8 +216,10 @@ export function createLocalRun(o: LocalRunOptions) {
         gone = true;
         links.delete(link);
         for (const r of runs.values()) r.stop();
+        for (const d of debugs.values()) d.stop();
         for (const t of terms.values()) t.kill();
         runs.clear();
+        debugs.clear();
         terms.clear();
       };
 
@@ -252,6 +266,71 @@ export function createLocalRun(o: LocalRunOptions) {
           case "stop":
             runs.get(m.id)?.stop();
             return;
+          case "input":
+            (runs.get(m.id) ?? debugs.get(m.id))?.input?.(m.text, m.end);
+            return;
+          case "debug-start": {
+            if (debugs.has(m.id)) return send({ type: "debug-fail", id: m.id, message: "That debug is already going." });
+            if (debugs.size >= MAX_DEBUGS) return send({ type: "debug-fail", id: m.id, message: `${MAX_DEBUGS} debugs are going already: stop one first.` });
+            const adapter = adapterFor(m.lang);
+            if (!adapter) return send({ type: "debug-fail", id: m.id, message: `Debugging ${m.lang} on this computer isn't ready yet: Rust is, more languages are coming.` });
+            if (!adapterReady(adapter)) {
+              const offer = offerOf(adapter);
+              return send(offer ? { type: "debug-need", id: m.id, offer } : { type: "debug-fail", id: m.id, message: `${adapter.label} has no build for this computer.` });
+            }
+            void toolchains().then((tools) => {
+              if (gone) return;
+              let located: Located | null = null;
+              try {
+                // WalkMyCode for Claude knows its folders; the full app, the one the user named for the workspace.
+                const roots = !o.locate && m.workspace ? rootsFor(m.workspace) : [];
+                located = !m.path ? null : o.locate ? o.locate(m.path) : roots.length === 1 ? locateIn(roots, [], m.path) : null;
+              } catch {
+                located = null;
+              }
+              const handle = startDebug({ lang: m.lang, code: m.code, path: m.path, breakpoints: m.breakpoints }, tools.find((t) => t.lang === m.lang), located, {
+                start: (i) => send({ type: "debug-start", id: m.id, ...i }),
+                out: (stream, text) => send({ type: "debug-out", id: m.id, stream, text }),
+                paused: (view) => send({ type: "debug-paused", id: m.id, view }),
+                running: () => send({ type: "debug-running", id: m.id }),
+                exit: (i) => {
+                  debugs.delete(m.id);
+                  send({ type: "debug-exit", id: m.id, ...i });
+                },
+                fail: (message) => {
+                  debugs.delete(m.id);
+                  send({ type: "debug-fail", id: m.id, message });
+                },
+              });
+              if (!gone) debugs.set(m.id, handle);
+              else handle.stop();
+            });
+            return;
+          }
+          case "debug-cmd":
+            debugs.get(m.id)?.command(m.cmd);
+            return;
+          case "debug-stop":
+            debugs.get(m.id)?.stop();
+            return;
+          case "debug-bps":
+            debugs.get(m.id)?.breakpoints(m.lines);
+            return;
+          case "debug-vars": {
+            const d = debugs.get(m.id);
+            if (!d) return send({ type: "debug-vars", id: m.id, req: m.req, vars: [] });
+            void (m.frame !== undefined ? d.frame(m.frame) : d.vars(m.ref ?? 0)).then((vars) => send({ type: "debug-vars", id: m.id, req: m.req, vars }));
+            return;
+          }
+          case "debug-install": {
+            const adapter = ADAPTERS.find((a) => a.id === m.adapter);
+            if (!adapter) return send({ type: "debug-install-done", id: m.id, ok: false, message: "WalkMyCode doesn't know that debugger." });
+            void installAdapter(adapter, (p) => send({ type: "debug-install-progress", id: m.id, ...p })).then(
+              () => send({ type: "debug-install-done", id: m.id, ok: true }),
+              (e: unknown) => send({ type: "debug-install-done", id: m.id, ok: false, message: (e as Error).message }),
+            );
+            return;
+          }
           case "term-open": {
             if (terms.has(m.id)) return;
             if (terms.size >= MAX_TERMINALS) return send({ type: "error", id: m.id, message: `${MAX_TERMINALS} terminals are open already: close one first.` });
@@ -358,9 +437,17 @@ export function createLocalRun(o: LocalRunOptions) {
           }
           case "git": {
             const roots = rootsFor(m.workspace);
-            type Extra = { ok: boolean; status: GitStatus | null; output?: string; branches?: GitBranch[]; log?: GitCommit[] };
+            type Extra = { ok: boolean; status: GitStatus | null; output?: string; branches?: GitBranch[]; log?: GitCommit[]; blame?: GitBlameHunk[]; me?: string; history?: GitFileCommit[] };
             const reply = (r: Extra) => send({ type: "git-result", id: m.id, op: m.op, located: roots.length > 0, ...r });
             void (async () => {
+              // One file's history: the repo it is in, which may be any of the workspace's folders.
+              if (m.op === "blame" || m.op === "file-log") {
+                const at = m.path ? await git.locate(roots, m.path) : null;
+                if (!at) return reply({ ok: false, status: null, output: roots.length ? `${m.path ?? "That file"} isn't in a git repo in this project's folder.` : "" });
+                if (m.op === "file-log") return reply({ ok: true, status: null, history: await git.fileLog(at.top, at.rel) });
+                const b = await git.blame(at.top, at.rel);
+                return reply(b.ok ? { ok: true, status: null, blame: b.hunks, me: b.me } : { ok: false, status: null, output: b.output });
+              }
               const top = await git.topOf(roots);
               if (!top) return reply({ ok: m.op === "status", status: null });
               const named = (v: string | undefined) => v ?? "";

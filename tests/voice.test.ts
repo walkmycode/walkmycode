@@ -17,6 +17,7 @@ import {
   lectureCost,
   lecturerModelFor,
   LECTURERS,
+  LECTURER_STYLES,
   narrationCost,
   NARRATORS,
   narratorFor,
@@ -65,9 +66,9 @@ describe("voice catalogue", () => {
     assert.equal(NARRATORS.elevenlabs.lite, false);
 
     const fast = lecturerModelFor("deepgram-agent", "fast")!;
-    assert.deepEqual(fast.think, ["claude-haiku-4-5", "claude-sonnet-5"]);
+    assert.deepEqual(fast.think, ["claude-haiku-5-5", "claude-haiku-4-5"]);
     assert.equal(fast.pricePerMin, 0.075);
-    assert.deepEqual(lecturerModelFor("deepgram-agent", "smarter")!.think, ["claude-sonnet-5"]);
+    assert.deepEqual(lecturerModelFor("deepgram-agent", "smarter")!.think, ["claude-sonnet-5-5", "claude-sonnet-5"]);
     assert.equal(lecturerModelFor("deepgram-agent", "smarter")!.pricePerMin, 0.163);
     assert.equal(lecturerModelFor("deepgram-agent", "your-claude")!.phase, 2);
     assert.equal(LECTURERS["deepgram-agent"].speak, "flux-colin-en");
@@ -127,7 +128,7 @@ describe("voice keys", () => {
 
 describe("voice config", () => {
   it("resolves to the defaults when nothing is saved", () => {
-    assert.deepEqual(resolveVoice(), { narrator: "elevenlabs", voiceId: null, speed: 1, lecturer: "elevenagents", lecturerModel: "haiku", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
+    assert.deepEqual(resolveVoice(), { narrator: "elevenlabs", voiceId: null, speed: 1, lecturer: "elevenagents", lecturerModel: "haiku", lecturerStyle: "lively", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
   });
 
   it("saves under voice without touching the model choice, and the model choice without touching voice", () => {
@@ -140,7 +141,7 @@ describe("voice config", () => {
     saveConfig({ provider: "openai", model: "gpt-6.1-sol" });
     raw = JSON.parse(readFileSync(configPath(), "utf8")) as Record<string, unknown>;
     assert.deepEqual(raw.voice, { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 1.1 });
-    assert.deepEqual(resolveVoice(), { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 1.1, lecturer: "elevenagents", lecturerModel: "haiku", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
+    assert.deepEqual(resolveVoice(), { narrator: "deepgram", voiceId: "aura-2-pandora-en", speed: 1.1, lecturer: "elevenagents", lecturerModel: "haiku", lecturerStyle: "lively", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
   });
 
   it("drops the saved voice when the narrator changes, and the model when the lecturer changes", () => {
@@ -174,7 +175,7 @@ describe("voice config", () => {
 
   it("ignores a saved choice that no longer fits (hand-edited config.json)", () => {
     writeFileSync(configPath(), JSON.stringify({ voice: { narrator: "deepgram", voiceId: "aura-2-zeus-en", speed: 9, lecturer: "deepgram-agent", lecturerModel: "your-claude" } }));
-    assert.deepEqual(resolveVoice(), { narrator: "deepgram", voiceId: "aura-2-draco-en", speed: 1, lecturer: "deepgram-agent", lecturerModel: "fast", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
+    assert.deepEqual(resolveVoice(), { narrator: "deepgram", voiceId: "aura-2-draco-en", speed: 1, lecturer: "deepgram-agent", lecturerModel: "fast", lecturerStyle: "lively", input: "hands-free", headphones: false, stt: "browser", sttBefore: "browser" });
   });
 
   it("keeps the ElevenLabs agent's record in the voice block and leaves the rest alone", () => {
@@ -211,7 +212,7 @@ describe("voice errors", () => {
   it("classifies upstream answers, reading ElevenLabs' quota body before its 401", () => {
     assert.equal(classifyVoice("elevenlabs", 401, '{"detail":{"status":"quota_exceeded"}}').code, "out_of_credits");
     assert.equal(classifyVoice("elevenlabs", 401, '{"detail":{"status":"invalid_api_key"}}').code, "invalid_key");
-    assert.equal(classifyVoice("deepgram", 403, "").title, "Deepgram refused the key");
+    assert.equal(classifyVoice("deepgram", 403, "").title, "Your Deepgram key can't start Talk");
     assert.equal(classifyVoice("deepgram", 402, "").code, "out_of_credits");
     assert.equal(classifyVoice("deepgram", 429, "").action, "retry");
     assert.equal(classifyVoice("elevenlabs", 404, "").code, "model_unavailable");
@@ -323,7 +324,9 @@ function assertSafe(s: AgentSettings) {
   assert.deepEqual(s.agent.listen.provider.type, "deepgram");
   assert.equal(s.agent.listen.provider.model, "flux-general-en");
   assert.equal(s.agent.listen.provider.version, "v2");
-  assert.deepEqual(s.agent.speak, { provider: { type: "deepgram", version: "v2", model: "flux-colin-en" } });
+  const { expressivity, ...speak } = s.agent.speak.provider;
+  assert.deepEqual(speak, { type: "deepgram", version: "v2", model: "flux-colin-en" });
+  assert.ok(expressivity === undefined || (Number.isInteger(expressivity) && expressivity >= -2 && expressivity <= 2), "expressivity within Flux's -2..2");
   for (const t of Array.isArray(s.agent.think) ? s.agent.think : [s.agent.think]) {
     assert.ok(t.prompt.length <= PROMPT_LIMIT, "prompt within Deepgram's limit");
     assert.deepEqual(t.functions.map((f) => f.name), FUNCTION_NAMES);
@@ -332,30 +335,48 @@ function assertSafe(s: AgentSettings) {
 }
 
 describe("agent Settings", () => {
-  it("Fast: Haiku 4.5 with Sonnet 5 as the fallback, each a full think", () => {
+  it("Fast: Haiku 5.5 with Haiku 4.5 as the fallback, each a full think", () => {
     const s = buildAgentSettings({ model: "fast" });
     assertSafe(s);
     assert.ok(Array.isArray(s.agent.think));
     const thinks = s.agent.think as Exclude<AgentSettings["agent"]["think"], { provider: unknown }>;
-    assert.deepEqual(thinks.map((t) => t.provider.model), ["claude-haiku-4-5", "claude-sonnet-5"]);
+    assert.deepEqual(thinks.map((t) => t.provider.model), ["claude-haiku-5-5", "claude-haiku-4-5"]);
     assert.equal(thinks[0].prompt, thinks[1].prompt);
     assert.equal(s.type, "Settings");
     assert.deepEqual(s.tags, ["walkmycode"]);
     assert.ok(s.agent.greeting.length > 0);
   });
 
-  it("Smarter: Sonnet 5 alone", () => {
+  it("Smarter: Sonnet 5.5 with Sonnet 5 as the fallback", () => {
     const s = buildAgentSettings({ model: "smarter" });
     assertSafe(s);
-    assert.ok(!Array.isArray(s.agent.think));
-    assert.deepEqual((s.agent.think as { provider: unknown }).provider, { type: "anthropic", model: "claude-sonnet-5" });
+    assert.deepEqual((s.agent.think as { provider: { model: string } }[]).map((t) => t.provider.model), ["claude-sonnet-5-5", "claude-sonnet-5"]);
+  });
+
+  it("speaks in the chosen style: Flux expressivity from calm (-1) to excited (+2), lively by default", () => {
+    const expr = (style?: Parameters<typeof buildAgentSettings>[0]["style"]) => buildAgentSettings({ model: "fast", style }).agent.speak.provider.expressivity;
+    assert.equal(expr(), 1);
+    assert.equal(expr("calm"), -1);
+    assert.equal(expr("natural"), undefined, "natural sends no expressivity: the voice as recorded");
+    assert.equal(expr("lively"), 1);
+    assert.equal(expr("excited"), 2);
+    assert.equal(expr("shouty" as never), 1, "an unknown style falls back to the default");
+    for (const st of LECTURER_STYLES) assert.ok(st.expressivity >= -2 && st.expressivity <= 2, st.id);
+  });
+
+  it("saves the style, refuses one it doesn't know, and resolves a missing or stale one to lively", () => {
+    assert.deepEqual(validateVoice({ lecturerStyle: "excited" }, {}), { lecturerStyle: "excited" });
+    assert.throws(() => validateVoice({ lecturerStyle: "shouty" as never }, {}), /not shouty/);
+    assert.equal(resolveVoice({}).lecturerStyle, "lively");
+    assert.equal(resolveVoice({ lecturerStyle: "calm" }).lecturerStyle, "calm");
+    assert.equal(resolveVoice({ lecturerStyle: "nope" as never }).lecturerStyle, "lively");
   });
 
   it("never builds the relay's model (or a stranger's) into Settings", () => {
     for (const model of ["your-claude", "haiku"] as const) {
       const s = buildAgentSettings({ model });
       assertSafe(s);
-      assert.deepEqual((s.agent.think as { provider: { model: string } }[]).map((t) => t.provider.model), ["claude-haiku-4-5", "claude-sonnet-5"]);
+      assert.deepEqual((s.agent.think as { provider: { model: string } }[]).map((t) => t.provider.model), ["claude-haiku-5-5", "claude-haiku-4-5"]);
     }
   });
 

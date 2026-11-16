@@ -1,5 +1,5 @@
 // The look of every diagram the Guide and the Professor draw (docs/design/diagram-blueprint.html,
-// after the Ahofe "how it works" page): cards with a coloured edge and an icon, links that flow in
+// after a "how it works" explainer page): cards with a coloured edge and an icon, links that flow in
 // the colour of where they start, pill labels, dashed amber groups. Colours are the map's layers:
 // pages & components, API routes, logic, database, outside services. Mermaid draws the diagram;
 // styleSvg() dresses it once it is in the page (it measures text, so it needs the live DOM).
@@ -18,6 +18,8 @@ const ORDER: Lane[] = ["ui", "api", "logic", "data", "external"];
 
 /** The surfaces on the chalkboard: a card a shade darker than the board, chalk lines and text. */
 export const INK = { card: "#172c24", line: "rgba(241,239,230,.24)", ink: "#F1EFE6", dim: "#c9c3b3", amber: "#F5B820" };
+/** The card as drawn: the theme's own (--dg-card, globals.css), so a card on the graphite board isn't green. */
+const CARD = `var(--dg-card, ${INK.card})`;
 
 /** A box's lane from its words, when the map can't tell (the Professor, or a name not in the map). */
 export function guessLane(text: string): Lane {
@@ -111,7 +113,7 @@ function num(e: Element, a: string): number {
 function dressBox(box: Element, lane: Lane, text: string, b: { x: number; y: number; w: number; h: number }, icon = true) {
   const doc = box.ownerDocument;
   const c = LANES[lane].color;
-  setStyle(box, { fill: INK.card, stroke: c, "stroke-width": "1.2px" });
+  setStyle(box, { fill: CARD, stroke: c, "stroke-width": "1.2px" });
   box.setAttribute("rx", "0");
   box.setAttribute("ry", "12");
   const bar = el(doc, "rect", { x: b.x, y: b.y, width: 5, height: b.h, rx: 0, fill: c, class: "dg-bar-edge" });
@@ -209,7 +211,7 @@ function pillOnLink(label: SVGGElement, path: SVGPathElement | null, color: stri
   label.setAttribute("transform", `translate(${x}, ${y})`);
   taken.push(at(x + ix + bb.x + bb.width / 2, y + iy + bb.y + bb.height / 2));
   const pill = el(label.ownerDocument, "rect", { x: bb.x - 9, y: bb.y + bb.height / 2 - h / 2, width: bb.width + 18, height: h, rx: 0, class: "dg-pill" });
-  setStyle(pill, { fill: INK.card, stroke: color, "stroke-opacity": ".55", "stroke-width": "1px" });
+  setStyle(pill, { fill: CARD, stroke: color, "stroke-opacity": ".55", "stroke-width": "1px" });
   text.before(pill);
 }
 
@@ -235,7 +237,9 @@ function flowOver(path: SVGPathElement, lane: Lane) {
  * Idempotent (a second call does nothing). Returns the lanes it used, in the map's order, for the legend.
  */
 export function styleSvg(svg: SVGSVGElement, laneOf: (text: string) => Lane | null = () => null): Lane[] {
-  if (svg.dataset.dressed) return (svg.dataset.dressed || "").split(",").filter(Boolean) as Lane[];
+  // Dressed already (drawn again, as when the board comes back): its lanes as kept. A diagram with none is kept as " ",
+  // which must read back as no lanes, not a lane called " " (the legend has no colour for it, and crashed).
+  if (svg.dataset.dressed) return svg.dataset.dressed.split(",").map((l) => l.trim()).filter((l): l is Lane => l in LANES);
   const used = new Set<Lane>();
   const lane = (text: string): Lane => {
     const l = laneOf(text) ?? guessLane(text);
@@ -258,7 +262,7 @@ export function styleSvg(svg: SVGSVGElement, laneOf: (text: string) => Lane | nu
         dressBox(shape, l, text, b, b.w >= 120);
         if (b.w >= 120 && label) fitBeside(label as SVGGraphicsElement, b);
       } else {
-        for (const s of node.querySelectorAll(":scope > path, :scope > polygon, :scope > circle, :scope > ellipse")) setStyle(s, { fill: INK.card, stroke: LANES[l].color, "stroke-width": "1.2px" });
+        for (const s of node.querySelectorAll(":scope > path, :scope > polygon, :scope > circle, :scope > ellipse")) setStyle(s, { fill: CARD, stroke: LANES[l].color, "stroke-width": "1.2px" });
       }
     }
     const ids = [...nodeLane.keys()].sort((a, b) => b.length - a.length);
@@ -296,13 +300,21 @@ export function styleSvg(svg: SVGSVGElement, laneOf: (text: string) => Lane | nu
     // Each participant: its lane from its name; the messages it sends take its colour.
     const at = new Map<number, Lane>();
     for (const box of svg.querySelectorAll<SVGRectElement>("rect.actor")) {
-      const text = box.parentElement?.querySelector("text")?.textContent?.trim() || box.getAttribute("name") || "";
+      // A name of two lines ("Server<br/>hatch") is one <text> per line: they move beside the icon
+      // together, the first bold, the rest quieter, as a card's file line is in a flowchart.
+      const lines = [...(box.parentElement?.querySelectorAll<SVGTextElement>(":scope > text") ?? [])];
+      const text = lines[0]?.textContent?.trim() || box.getAttribute("name") || "";
       const l = lane(text);
       const b = { x: num(box, "x"), y: num(box, "y"), w: num(box, "width"), h: num(box, "height") };
       at.set(Math.round(b.x + b.w / 2), l);
       dressBox(box, l, text, b, b.w >= 120);
-      const label = box.parentElement?.querySelector("text");
-      if (label && b.w >= 120) fitBeside(label as SVGGraphicsElement, b);
+      for (const t of lines.slice(1)) for (const s of [t, ...t.querySelectorAll("tspan")]) setStyle(s, { "font-weight": "500", fill: "var(--chalk-dim)" });
+      if (lines.length && b.w >= 120) {
+        const label = el(box.ownerDocument, "g", { class: "dg-name" }) as SVGGElement;
+        lines[0].before(label);
+        label.append(...lines);
+        fitBeside(label, b);
+      }
     }
     for (const stick of svg.querySelectorAll("g.actor-man")) {
       // A stick figure is a person, whatever the map calls a table of the same name.
@@ -329,7 +341,7 @@ export function styleSvg(svg: SVGSVGElement, laneOf: (text: string) => Lane | nu
     for (const l of svg.querySelectorAll("line.loopLine")) setStyle(l, { stroke: INK.amber, "stroke-dasharray": "6 6", opacity: ".7", "stroke-width": "1.2px" });
     for (const p of svg.querySelectorAll("polygon.labelBox")) setStyle(p, { fill: "none", stroke: "none" });
     for (const n of svg.querySelectorAll("rect.note")) {
-      setStyle(n, { fill: INK.card, stroke: INK.line });
+      setStyle(n, { fill: CARD, stroke: INK.line });
       n.setAttribute("rx", "0");
     }
   } else {
@@ -337,7 +349,7 @@ export function styleSvg(svg: SVGSVGElement, laneOf: (text: string) => Lane | nu
     for (const box of svg.querySelectorAll("g.node > rect, g.node > path, rect.er.entityBox, g.classGroup > rect, g.stateGroup > rect")) {
       const text = box.parentElement?.textContent?.trim() ?? "";
       const l = role === "er" ? (used.add("data"), "data" as Lane) : lane(text);
-      setStyle(box, { fill: INK.card, stroke: LANES[l].color, "stroke-width": "1.2px" });
+      setStyle(box, { fill: CARD, stroke: LANES[l].color, "stroke-width": "1.2px" });
       if (box.tagName === "rect") box.setAttribute("rx", "0");
     }
   }

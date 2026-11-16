@@ -7,29 +7,30 @@ import type { Sample, SampleOptions } from "./claude";
 import { plain } from "./markup";
 import { lessonMaterial, type FolderLesson } from "./courseFolder";
 import type { Board, Course, Feedback, Lesson, Profile, QuizItem, RoadmapStage } from "./types";
+import { usedPictures, varietyNote } from "./worlds";
 
 export const PERSONA = `You are the Professor: 40 years teaching at university level, famous for making hard ideas feel simple.
 How you teach:
 - Very simple, basic English. Short sentences. One idea at a time. British spelling.
-- Every new term is explained the moment it appears, with an everyday example (shops, buses, cooking, football, phones).
-- Examples and analogies are set in the United Kingdom: British first names (Emily, Jack, Olivia, Harry), pounds and pence, miles, a queue at a bus stop, a London bus, the corner shop, the NHS, a cup of tea, the school run. Never another country's names, money or places, unless the lesson itself is about them.
+- Every new term is explained the moment it appears, with an everyday example from the student's world, never the same kind of example every time.
+- Examples and analogies are set in the United Kingdom today: pounds and pence, miles, places in Britain, and people whose first names are as varied as Britain's own. Never another country's money or places, unless the lesson itself is about them.
 - Build from what the student already knows. Never show off. Be warm and encouraging, but honest.
 - Numbers, formulas and code only when they help, and always explained in words too.
 - The picture comes before the rule: an everyday analogy a child would understand, then the precise idea, so the picture sticks and the detail hangs on it.`;
 
 /** What makes an analogy teach (docs/LEARNING.md, "Use analogy"). The Rust course's ownership lesson is the bar. */
 export const ANALOGY_RULES = `A good analogy, every time:
-  - Concrete everyday things a ten-year-old has touched: toys, a coat and its cloakroom ticket, a library book, plates, a football. Never another technical idea.
+  - Concrete everyday things a ten-year-old has seen or touched, from any part of life (sport, music, travel, nature, games, work, home). Never another technical idea.
   - One idea per analogy. If the board has two ideas, the analogy is about the main one.
-  - It says what stands for what, in the sentence itself: the toy is the value, the child is the variable, handing it over is the move.
+  - It says what stands for what, in the sentence itself: this thing is the value, that person is the variable, handing it over is the move.
   - It is true to the code: check it against what the code or the compiler really does, and change the picture if they disagree.
   - It does not overreach: when the picture would mislead if carried further, the words you say aloud name where it stops.`;
 
 /** When a board gets a diagram, and what it must show. */
-export const DIAGRAM_RULES = `A diagram is for a concept with structure, flow or ownership (a move, a borrow, stack and heap, a call, a state that changes, parts that connect), never for decoration and never for plain syntax or naming. When a board has both an analogy and a diagram, the diagram backs the analogy: each box's first line is the real name and its second line (after <br/>) is the analogy's word for it, such as "s1<br/>Emily" and "the text hello<br/>the toy", so one picture shows the everyday scene and the real mechanism together. It must match the code on the board exactly.`;
+export const DIAGRAM_RULES = `A diagram is for a concept with structure, flow or ownership (a move, a borrow, stack and heap, a call, a state that changes, parts that connect), never for decoration and never for plain syntax or naming. When a board has both an analogy and a diagram, the diagram backs the analogy: each box's first line is the real name and its second line (after <br/>) is the analogy's word for it, such as "s1<br/>" then the picture's word for s1, so one picture shows the everyday scene and the real mechanism together. It must match the code on the board exactly.`;
 
 /** How a lesson is built (docs/LEARNING.md): the picture first, then the rule, then the student tries it. */
-export const TEACHING = `- Every talk board carries an "analogy": one everyday picture a ten-year-old would understand (toys, plates, a cloakroom, a library book, a football team), in one to three plain sentences, no markup. The first board gives one big picture for the whole lesson; later boards extend that same picture wherever they can, and use a new one only when it does not fit. The last talk board's analogy is the whole lesson in one sentence for a child.
+export const TEACHING = `- Every talk board carries an "analogy": one everyday picture a ten-year-old would understand, in one to three plain sentences, no markup. The first board gives one big picture for the whole lesson; later boards extend that same picture wherever they can, and use a new one only when it does not fit. The last talk board's analogy is the whole lesson in one sentence for a child.
 - ${ANALOGY_RULES}
 - ${DIAGRAM_RULES}
 - Connect ideas: when a board builds on an earlier board or an earlier lesson, say so in what you say aloud.
@@ -54,6 +55,8 @@ export type LessonRequest = {
   /** The roadmap module this lesson teaches, and the whole roadmap for context. */
   module?: { stage: string; title: string; summary: string; topics: string[] };
   roadmap?: Course;
+  /** What the request asked for beyond its subject: a codebase to teach from, or diagrams by name (codebaseAsk.ts, groundingPart). */
+  context?: string;
 };
 
 const roadmapOutline = (c: Course) =>
@@ -96,8 +99,9 @@ Rules:
 - A line may carry a "diagram": Mermaid source, when a picture explains better than words (how parts connect, a process, a sequence of messages, states, a data model, a hierarchy). Use flowchart LR/TD, sequenceDiagram, stateDiagram-v2, classDiagram, erDiagram or mindmap. At most 12 nodes, short plain labels (no styling, no colours, no click; a box may have a short second line after <br/>), a title first (---, title: what it shows, ---), and newlines written as \\n in the JSON string. At most one diagram per board.
 - Use one worked example that runs through the lesson.
 ${TEACHING}
+${varietyNote(`${req.course}#${earlier.length + 1}:${req.topic}`, usedPictures(earlier), "lesson")}
 - If the topic can be practised in code (programming, software engineering, data, databases, statistics, machine learning, maths that can be computed), make exactly one talk board just before the quiz a "code" board instead: one line introducing it, a "language" (python, javascript, typescript, sql or rust: the one this course is about, else python), a "task" in plain words (what to write and what they should see), "starter" code in that language with helpful comments and one or two clearly marked TODOs for the student, and "expect": what a correct run roughly prints. ${CODE_ENV}${PYTHON_ENV} Otherwise, no code board.
-
+${req.context ? `\n${req.context}\n` : ""}
 Reply with only this JSON:
 {"title": "…", "summary": "two sentences: what the student can now do", "cards": [{"q": "…", "a": "…"}], "boards": [
  {"title": "…", "kind": "talk", "analogy": "…", "lines": [{"w": "…", "s": "…"}]},
@@ -192,6 +196,8 @@ Rules:
 - Every talk board carries an "analogy": one to three plain sentences, no markup. Where the README has a 💡 analogy for that section, use the author's own picture, in their words, shortened only if long. Where it has none, write one in the same playful picture as the rest. The recap board's analogy is the lesson in one sentence for a child.
 - ${ANALOGY_RULES}
 - ${DIAGRAM_RULES}
+- Where the author gives no picture of their own:
+${varietyNote(`${course}#${l.id}`, usedPictures(earlier), "lesson", "  ")}
 - A line may carry a small "table" ({"head": [...], "rows": [[...]]}, at most 6 rows) or a "diagram" (Mermaid source: flowchart LR/TD, sequenceDiagram or stateDiagram-v2, at most 10 nodes, short plain labels, newlines as \\n) when the README shows a table or a picture there. At most one of each per board.
 ${l.examples.length ? `- When a board teaches what one of the runnable examples shows, give that board "example": the file's exact name (one of: ${l.examples.map((e) => e.name).join(", ")}). The student runs it from the board. Use each example at most once, and as many of them as fit.` : `- Show code in ${language} on the board itself where it teaches the idea.`}
 - After the talk boards: one "quiz" board (one line introducing it, and 3 multiple-choice questions of 3 or 4 options testing understanding, each with a one-sentence "why"), then one "explain" board (one line, and 3 "questions" the student answers in their own words).${l.exercises.length ? ` Do not write exercises: the course's own ${l.exercises.length} come between your talk boards and the quiz.` : ""}

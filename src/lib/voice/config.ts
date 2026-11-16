@@ -14,6 +14,8 @@ import {
   builtModels,
   lecturerFor,
   lecturerModelFor,
+  lecturerStyleFor,
+  LECTURER_STYLES,
   LECTURERS,
   NARRATORS,
   narratorFor,
@@ -24,6 +26,7 @@ import {
   type LecturerId,
   type InputMode,
   type LecturerModelId,
+  type LecturerStyle,
   type NarratorId,
   type SttId,
   type SttKeyEnv,
@@ -50,6 +53,8 @@ export interface VoiceSaved {
   speed?: number;
   lecturer?: LecturerId;
   lecturerModel?: LecturerModelId;
+  /** How lively the Deepgram lecturer sounds (Flux expressivity). */
+  lecturerStyle?: LecturerStyle;
   /** How Talk listens: hands-free (the default) or hold to talk (noisy rooms). */
   input?: InputMode;
   /** The user wears headphones: the real microphone goes to the lecturer even while it speaks (the best barge-in). */
@@ -68,6 +73,7 @@ export interface VoiceChoice {
   speed: number;
   lecturer: LecturerId;
   lecturerModel: LecturerModelId;
+  lecturerStyle: LecturerStyle;
   input: InputMode;
   headphones: boolean;
   stt: SttId;
@@ -150,6 +156,11 @@ export function validateVoice(patch: VoiceSaved, current: VoiceSaved = loadVoice
     if (m.phase !== 1) throw new HttpError(400, `${m.label} needs the voice relay, which is not built yet. Pick ${builtModels(lecturer).map((x) => x.label).join(" or ")}.`);
     out.lecturerModel = m.id;
   }
+  if (patch.lecturerStyle !== undefined) {
+    const st = lecturerStyleFor(String(patch.lecturerStyle));
+    if (!st) throw new HttpError(400, `The lecturer sounds ${LECTURER_STYLES.map((x) => x.label.toLowerCase()).join(", ")}, not ${String(patch.lecturerStyle).slice(0, 40)}.`);
+    out.lecturerStyle = st.id;
+  }
   if (patch.input !== undefined) {
     if (patch.input !== "hands-free" && patch.input !== "push-to-talk") throw new HttpError(400, `Talk listens hands-free or push-to-talk, not ${String(patch.input).slice(0, 40)}.`);
     out.input = patch.input;
@@ -205,11 +216,12 @@ export function resolveVoice(saved: VoiceSaved = loadVoice()): VoiceChoice {
   const model = lecturerModelFor(lecturer, saved.lecturerModel ?? "");
   const lecturerModel = model && model.phase === 1 ? model.id : LECTURERS[lecturer].defaultModel;
   const voiceId = typeof saved.voiceId === "string" && saved.voiceId && voiceFits(narrator, saved.voiceId) ? saved.voiceId : NARRATORS[narrator].defaultVoice;
+  const lecturerStyle = lecturerStyleFor(saved.lecturerStyle ?? "")?.id ?? VOICE_DEFAULT.lecturerStyle;
   const input: InputMode = saved.input === "push-to-talk" || saved.input === "hands-free" ? saved.input : VOICE_DEFAULT.input;
   const stt = sttFor(saved.stt ?? "")?.id ?? VOICE_DEFAULT.stt;
   const before = sttFor(saved.sttBefore ?? "")?.id;
   const sttBefore = before && before !== "parakeet" ? before : VOICE_DEFAULT.stt;
-  return { narrator, voiceId, speed: clampSpeed(saved.speed), lecturer, lecturerModel, input, headphones: saved.headphones === true, stt, sttBefore };
+  return { narrator, voiceId, speed: clampSpeed(saved.speed), lecturer, lecturerModel, lecturerStyle, input, headphones: saved.headphones === true, stt, sttBefore };
 }
 
 const vendorOf = (env: VoiceKeyEnv): VoiceVendor => (env === "ELEVENLABS_API_KEY" ? "elevenlabs" : "deepgram");

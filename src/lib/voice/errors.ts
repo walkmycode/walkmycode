@@ -65,7 +65,11 @@ export function voiceFriendly(code: ErrorCode, vendor: VoiceVendor, ctx: VoiceEr
           : { title: `${label} API key missing`, message: `Add your ${label} key in Settings → Voice, or put ${ENV[vendor]} in .env.local. Until then your browser's voice reads aloud.`, action: "settings" };
       case "invalid_key":
         return vendor === "deepgram" && ctx.status === 403
-          ? { title: "Deepgram refused the key", message: "Talk needs a Deepgram key with Member permissions or above. Paste one in Settings → Voice.", action: "settings" }
+          ? {
+              title: "Your Deepgram key can't start Talk",
+              message: "It still reads aloud, but Deepgram only lets keys with Member permissions (or above) start a live conversation. In Deepgram's console, open API Keys, create a key with the Member role, and paste it in Settings → Voice.",
+              action: "settings",
+            }
           : { title: `${label} rejected the API key`, message: "The key may be mistyped, revoked or expired. Paste a fresh key in Settings → Voice.", action: "settings" };
       case "out_of_credits":
         return { title: `${label} account is out of credits`, message: `Top up your ${label} balance, or pick another voice in Settings → Voice.`, action: "settings" };

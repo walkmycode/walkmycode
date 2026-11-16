@@ -6,7 +6,7 @@
 .claude-status .claude-status-text { overflow: hidden; text-overflow: ellipsis; }
 .claude-status.bad { color: var(--pink); }
 .claude-status.busy { color: var(--yellow); }
-.top .claude-status { height: calc(30px * var(--ctl)); padding: 0 calc(10px * var(--sp)); border: 1px solid var(--ui-line); border-radius: 0; max-width: 46vw; }
+.top .claude-status { height: var(--top-ctl); padding: 0 calc(10px * var(--sp)); border: 1px solid var(--ui-line); border-radius: 0; max-width: 46vw; }
 /* Responsive: the status gives way before the map's name does. Long lines shorten with "…", then only the dot
    and its button stay (the full sentence is in the guide and the pill's tooltip). */
 /* The status line gives way first, shortening with "…", down to its dot (and its fix

@@ -270,7 +270,7 @@ describe("normalisedName and flow order", () => {
     assert.equal(normalisedName("Users-Service"), "users");
     assert.equal(normalisedName("orders_api"), "orders");
     assert.equal(normalisedName("web.app"), "web");
-    assert.equal(normalisedName("ireliabee-web"), "ireliabee-web");
+    assert.equal(normalisedName("acme-web"), "acme-web");
   });
 
   it("orders apps callers-first, UI first on ties, breaks cycles by name, infra after", () => {

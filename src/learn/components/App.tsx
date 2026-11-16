@@ -8,12 +8,13 @@ import { DEFAULT_PROFILE, type Course, type Lesson, type Profile, type RoadmapMo
 import { cleanRoadmap, roadmapPrompt } from "@/learn/lib/professor";
 import { sampleMessage } from "@/learn/lib/claude";
 import { addNote, removeNote, type Note } from "@/learn/lib/notebook";
+import { usedPictures } from "@/learn/lib/worlds";
 import { cardsFor, dueCards, mergeCards, review, type Card } from "@/learn/lib/recall";
 import { mapHref, readTeach, type TeachRequest } from "@/learn/links";
 import TopBar from "@/components/TopBar";
 import CodePanel from "./CodePanel";
 import FolderCourse from "./FolderCourse";
-import Library from "./Library";
+import Library, { type Start } from "./Library";
 import NewLesson from "./NewLesson";
 import Player, { boardsSeen } from "./Player";
 import Recall from "./Recall";
@@ -21,7 +22,8 @@ import Recall from "./Recall";
 type View =
   | { kind: "library" }
   | { kind: "lesson"; id: string }
-  | { kind: "new"; course?: string; teach?: TeachRequest; module?: { stage: string; module: RoadmapModule } }
+  /** start: from the Learn home's front door or a course's "Next lesson", written at once. */
+  | { kind: "new"; course?: string; teach?: TeachRequest; module?: { stage: string; module: RoadmapModule }; start?: Start }
   | { kind: "code" }
   /** Every recall card that is due, from every course. */
   | { kind: "recall" }
@@ -220,14 +222,6 @@ export default function App() {
               </button>
             )}
             {codeRoom}
-            {store.kind === "computer" && (
-              <button className="ctl compact" type="button" onClick={() => setView({ kind: "folder" })} title="Teach a course kept as a folder of lessons on this computer">
-                Course from a folder
-              </button>
-            )}
-            <button className="ctl compact primary" type="button" onClick={() => setView({ kind: "new" })}>
-              New lesson
-            </button>
           </>
         ) : (
           <>
@@ -239,6 +233,11 @@ export default function App() {
                 title={`See it in your code: ${current.source.file}${current.source.start ? `:${current.source.start}` : ""}`}
               >
                 See it in your code →
+              </a>
+            )}
+            {current?.ground?.missing && (
+              <a className="ctl compact" href="/map" title={`“${current.ground.missing}” was not found on this computer. Open your project in Explore, then choose “Teach me this” on any file.`}>
+                Learn from my own code →
               </a>
             )}
           </>
@@ -260,6 +259,7 @@ export default function App() {
             onDropNote={(id) => putNotes(removeNote(notes, id))}
             cards={cards}
             onReview={onReview}
+            used={usedPictures(lessons.filter((l) => l.course === current.course && l.id !== current.id))}
           />
         ) : view.kind === "code" ? (
           <div className="hall room">
@@ -296,6 +296,7 @@ export default function App() {
             course={view.course}
             teach={view.teach}
             module={view.module}
+            start={view.start}
             roadmap={courses.find((c) => c.name === view.course)}
             onRoadmap={saveCourse}
             planRoadmap={planRoadmap}
@@ -311,10 +312,12 @@ export default function App() {
             profile={profile}
             canWrite
             store={store}
-            due={due}
+            cards={openCards}
             onRecall={() => setView({ kind: "recall" })}
             onOpen={openLesson}
-            onNew={(course) => setView({ kind: "new", course })}
+            onStart={(start) => setView({ kind: "new", course: start.course, start })}
+            onCode={() => setView({ kind: "code" })}
+            onFolder={store.kind === "computer" ? () => setView({ kind: "folder" }) : undefined}
             roadmaps={courses}
             onPlan={async (name) => {
               try {

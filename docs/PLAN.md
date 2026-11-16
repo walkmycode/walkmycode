@@ -2,7 +2,7 @@
 
 *Draft 4, 30 Sep 2026 (draft 3 was 29 Sep; draft 4 adds monoliths and microservices, now built). Owner's decisions so far: name **WalkMyCode**; two versions from one codebase — **WalkMyCode Lite** (a
 Claude artifact, AI on the viewer's own Claude plan) and **WalkMyCode** (a hosted web app sold on pay-per-use credits, with
-self-hosting on your own keys kept as a mode); models not Anthropic-only, configured iReliabee's way; motion design
+self-hosting on your own keys kept as a mode); models not Anthropic-only; motion design
 in the spirit of the @uxmiles reference videos; the Code room ("Try it") from Lecture Hall; the voice lecturer as a
 Deepgram Voice Agent; order: provider layer + motion → Lite → voice lecturer + Code room → hosted credits.*
 
@@ -45,14 +45,14 @@ button all the way to the database table**. That's our gap.
   GitHub OAuth, and — in hosted mode — accounts and the credit ledger. **Code is never stored**: the map and file
   index live in the browser (IndexedDB), and only the snippets a question needs are sent to the AI. The AI's tools
   (`read_file`, `search`, `query_map`, …) execute in the browser; the server only forwards.
-- **Models, not Anthropic-only**: a `PROVIDERS` catalogue in iReliabee's style (id, env var, models with plain
+- **Models, not Anthropic-only**: a `PROVIDERS` catalogue (id, env var, models with plain
   descriptions, default, base URL): Anthropic (default, `claude-opus-5-5`), OpenAI, Google Gemini, Groq, DeepSeek,
   xAI, and any OpenAI-compatible local server (Ollama, LM Studio). Anthropic is called natively; the others go
-  through one translator (Anthropic wire format ↔ OpenAI chat format, tool calls included, streaming included),
-  as iReliabee's website proxy does. A settings screen picks provider + model and takes keys; keys are written by
+  through one translator (Anthropic wire format ↔ OpenAI chat format, tool calls included, streaming included).
+  A settings screen picks provider + model and takes keys; keys are written by
   the server to a local gitignored file, never held in the browser; a readiness check says what's missing.
   *Spec: `docs/PROVIDERS.md`; motion in `docs/MOTION.md`.*
-- **Two modes of the full app**: **hosted** (the owner's keys, users buy credits — iReliabee's ledger pattern:
+- **Two modes of the full app**: **hosted** (the owner's keys, users buy credits through a ledger:
   hold → settle at actual cost × markup) and **self-hosted / BYOK** (clone, put keys in `.env.local` or the settings
   screen, run `npm run dev`; no accounts, no ledger). Same code, `WALKMYCODE_MODE=hosted|byok`. Open-source licence to
   confirm with the owner (MIT suggested) — it is what makes BYOK possible and is a marketing asset for the hosted one.
@@ -64,12 +64,12 @@ button all the way to the database table**. That's our gap.
    files, broker topics/queues, gateway rewrites) and the map must offer a **system view** (service → service, with
    the same evidence rules) that drills into each service's five lanes. Several folders/repos can be connected into
    one workspace. *Spec and status: `docs/SERVICES.md` — built on the `services` branch (all fourteen tasks,
-   tests green); iReliabee reads as three services with every earlier link kept.*
+   tests green); the reference project reads as three services with every earlier link kept.*
 2. **Every panel docks, undocks and resizes.** Map, Code, Guide, Details, Files, Code room and Settings are panels
    in a dockable layout (drag to re-arrange, split, tab, float, pop out into its own browser window, drag the
    dividers), and the arrangement is remembered. *Spec: `docs/SHELL.md`.*
 3. **Users register.** The full app has accounts (sign-up / sign-in), which is what credits, saved workspaces and
-   the privacy record hang off. Reuse iReliabee's email-code sign-in (accounts, auth_codes, refresh_tokens, Resend
+   the privacy record hang off. Use email-code sign-in (accounts, auth_codes, refresh_tokens, Resend
    mail) rather than passwords; GitHub sign-in can come with GitHub OAuth. Lite uses the viewer's Claude identity
    (`user.id()`) and needs no registration. *Spec: `docs/ACCOUNTS.md`. Decided: sender `support@`, a GitHub App (not an OAuth App), Turso when hosted / a SQLite file when self-hosted.*
 
@@ -148,10 +148,10 @@ as a fragment plus `files.json`, ready for the artifact publisher (about 180 fil
 walkthroughs on other people's repos at no cost to the owner, (3) full-app voice, then (4) hosted accounts + credits.
 
 ## How the map is built (the parser decides the links, the AI only labels them)
-1. **Parse** every source file with tree-sitter (WASM grammars for TS/JS/TSX, Python, Dart, PHP) to get imports, exports,
+1. **Parse** every source file with tree-sitter (WASM grammars for TS/JS/TSX, Python, Dart, PHP, Rust) to get imports, exports,
    functions, JSX elements and Flutter widgets, and call sites. The Dart grammar is built from source and kept in
    `vendor/tree-sitter-dart` (its README says where it came from); PHP's is npm's `tree-sitter-php` (the full grammar,
-   so Blade views and HTML around `<?php` parse).
+   so Blade views and HTML around `<?php` parse); Rust's is npm's `tree-sitter-rust` 0.24, which web-tree-sitter 0.27 loads.
 2. **Framework extractors** turn syntax into architecture:
    - *Routes*: Next.js `app/**/route.ts` + `pages/api`, Express `app.get/post`, FastAPI `@router.get(...)` +
      `include_router` prefixes.
@@ -181,14 +181,15 @@ walkthroughs on other people's repos at no cost to the owner, (3) full-app voice
 - **Tour**: Claude returns a script as structured JSON, `steps: [{say, file, lines, nodeIds}]`. Each step's `say`
   goes to **Deepgram Aura-2** TTS, and the UI highlights the step's lines and nodes while it plays (step-level sync
   in the MVP, word-level later).
-- **Listening / the voice lecturer** (full WalkMyCode only; decided 29 Sep): instead of wiring STT and TTS ourselves, the lecturer is a **Deepgram Voice Agent** (the API iReliabee
-  already uses for its voice mock interview: `wss://agent.deepgram.com/v1/agent/converse`, relayed by our server so
+- **Listening / the voice lecturer** (full WalkMyCode only; decided 29 Sep): instead of wiring STT and TTS ourselves, the lecturer is a **Deepgram Voice Agent**
+  (`wss://agent.deepgram.com/v1/agent/converse`, relayed by our server so
   the key never reaches the browser). It bundles listening (Nova-3), a thinking model (can be Claude), Aura speech
   and **function calling**, with barge-in built in. Its system prompt is the lecturer persona (Lecture Hall's
   professor: plain English, patient). Its functions drive the UI: `highlight_lines`, `open_file`,
   `focus_map_node`, `trace_path`, `next_step`, `run_code`, plus the read tools (`read_file`, `search`, `query_map`)
-  so answers stay grounded. It is billed per minute ($0.075/min standard, plus the thinking model's tokens), so hosted mode charges **credits per minute** with a hold at the
-  start of each session, as iReliabee does for live sessions. Lite stays typed with `speechSynthesis`, because
+  so answers stay grounded. It is billed per minute ($0.075/min standard, as of
+  20 Sep 2026, plus the thinking model's tokens), so hosted mode charges **credits per minute** with a hold at the
+  start of each session. Lite stays typed with `speechSynthesis`, because
   artifacts block the microphone and outside network calls. *Fallback if the agent's function calling proves too
   limited for tours*: the earlier design — Nova-3 STT + our own Claude tool loop + Aura TTS.
 - **Secret guard**: `.env*`, key files and strings that look like keys are never sent to any AI, and the map
@@ -235,7 +236,13 @@ Today the map reads JavaScript/TypeScript, Python and Dart/Flutter (plus SQL, Pr
 order, each one build: a tree-sitter grammar (as Dart's, built for web-tree-sitter 0.27 if npm has none that loads), an
 extractor, and its popular frameworks' routes, calls and data:
 1. **Go**: net/http, chi, gin, echo, fiber; database/sql, sqlx, gorm; net/http clients.
-2. **Rust**: axum, actix-web, rocket; sqlx, diesel, sea-orm; reqwest.
+2. **Rust**: axum, actix-web, rocket; sqlx, diesel, sea-orm; reqwest. In since 12 Nov (extract/rust.ts): `mod`
+   and `use` paths walk the module tree (`crate::`, `self::`, `super::`, 2018-style child paths, other crates of a Cargo
+   workspace by name; x.rs or x/mod.rs), so modules are cards with arrows naming what each uses; functions and `impl`
+   methods (`Money::new`); axum routers (`.route("/x", get(a).post(b))`, `.nest`, `.merge`, prefixes followed across
+   files, each route calling the module its handler calls); actix-web and Rocket `#[get("/x")]` routes; SQL in strings
+   (sqlx, rusqlite, diesel's sql_query) as tables; reqwest calls and env reads. A crate's root (src/main.rs, lib.rs)
+   always has a card. Not yet: Rocket's `mount` prefix, actix `web::scope`, diesel's `table!` schema, sea-orm entities.
 3. **Java/Kotlin**: Spring (MVC, WebFlux), Ktor; JPA/Hibernate, JDBC; RestTemplate, WebClient, OkHttp.
 4. **PHP**: Laravel, Symfony; Eloquent, Doctrine; Guzzle. Laravel is in (extract/php.ts): routes/web.php and api.php
    (closures, controller methods, resources, groups), Eloquent models and migrations as tables (with their columns),
@@ -245,11 +252,45 @@ extractor, and its popular frameworks' routes, calls and data:
    Doctrine relations as arrows between tables, a Guzzle client's base_uri.
 5. **C#**: ASP.NET Core (controllers, minimal APIs); Entity Framework, Dapper; HttpClient.
 Same rules as every language: an arrow only with file:line evidence, guesses dashed; fixtures and tests per framework;
-the iReliabee and ahofe maps must stay byte-identical. Running code in any language already works through the local
+the reference maps must stay byte-identical. Running code in any language already works through the local
 terminal ("Run on: This computer").
 
-## Licence
-GNU AGPL-3.0 (`AGPL-3.0-only`): open source, with no closed hosted clones.
+## Business model (1 Oct 2026; full plan with sources: docs/BUSINESS.md)
+- **Free where it costs us nothing, paid where we carry the cost.** Self-hosted (the user's keys), Lite (the viewer's
+  Claude plan) and WalkMyCode for Claude (an MCP server on the user's Claude subscription, proposed as a fourth version)
+  are free. The hosted app is paid.
+- **Teams is the main business**: hosted workspaces through the GitHub App, maps re-made on every push, shared tours
+  with cached audio, onboarding paths, insight for leads. $20/seat/month annual, $25 monthly; $12 on the team's own
+  keys (prices to test with 3–5 design-partner teams). The market band is $19–40 per seat; no one there is
+  beginner-first or teaches out loud.
+- **Credits for individuals** on the hosted app: 1 credit = $0.01, priced about 2× our cost; the map is always free;
+  packs from $10 abroad, smaller in cedis; 100 free credits a month.
+- **WalkMyCode for Claude (MCP) is the public free version** (owner, 1 Oct): Lite's front-end served by a local MCP
+  server, Claude driving the map through tools on the user's own subscription. **The Lite artifact stays private, for
+  the owner only** (artifacts can't take payments anyway, and nothing inside one can be trusted).
+- **Payments from Ghana**: Paystack in cedis for Ghana (1.95%, Mobile Money), a merchant of
+  record for everyone else (Polar or Dodo, both pay out to Ghana; Paddle as fallback) so foreign VAT is handled.
+  Stripe does not serve Ghana directly.
+- **Decided 1 Oct (owner)**: licence **GNU AGPL-3.0** (`AGPL-3.0-only`; LICENSE added: open source, but no closed
+  hosted clones); name **WalkMyCode** (chosen over LanternBee the same day; npm `walkmycode` and `walkmycode-mcp`, walkmycode.com/.dev/.app/.io/.ai, github.com/walkmycode and PyPI all unregistered on 1 Oct; the rename waits for the owner's go. Earlier candidate LanternBee: npm free, .app/.dev/.io/.ai unregistered
+  on 1 Oct; lanternbee.com and github.com/lanternbee were registered on 7 Sep 2026: confirm they are the owner's).
+  Still before going public: a trademark search on "WalkMyCode", an accountant.
+
+## Cost per use (estimates to check against real usage; Lite costs the owner nothing)
+| Action | What runs | Our cost |
+|---|---|---|
+| Index a repo (~300 files) | Haiku labels, Batch API | ~$0.30 once, re-labels only changed files |
+| Highlight → explain | 1 Opus call, context pre-packed from map (~6k in / 600 out) | ~$0.04 |
+| Free-form question | Opus + 3–4 tool rounds (~75k in mostly cached, ~2.5k out) | ~$0.10–0.15 |
+| 5-min voice tour (own STT/TTS design) | Opus script ~$0.15 + Aura ~4.5k chars × $0.030/1k ≈ $0.14 + Nova-3 $0.0077/min | ~$0.30–0.35 |
+| 5-min voice lecturer (Deepgram Voice Agent) | $0.075/min × 5 + the thinking model's tokens (~$0.15 on Opus) | ~$0.50–0.55 → priced as credits per minute |
+| Try it (Code room) | Runs in the page; only "explain this step" asks the model (~$0.03 each) | ~$0 |
+
+The default model is Opus 5.5 (the owner's choice); the settings screen switches provider/model (Sonnet 5.5 costs
+about half; Gemini Flash / Groq far less, with lower quality on tricky traces). The app shows a running cost for
+each session, worked out from `usage`, so nobody gets a surprise bill. In hosted mode credits are priced with a
+margin over the worst-case shape; a hold is taken before every call and settled
+at actual cost. Finished tour audio is cached per repo version, so replaying it costs nothing.
 
 ## Privacy (policy live before the hosted launch; README + first screen for BYOK and Lite)
 The policy names every provider that can see code. The snippets a question needs, and the question, go to exactly one
@@ -266,19 +307,19 @@ own Claude plan and saved data sits in their private artifact space.
 
 ## MVP (2–3 weeks, one stack end to end)
 - **Week 1**: analyzer (TS/TSX + Python, React + FastAPI + Next.js route handlers, fetch↔route matching, raw
-  SQL/SQLite + Prisma tables) and the map UI. First run on **iReliabee** (React/Tauri → FastAPI → SQLite, plus
-  the Node website).
+  SQL/SQLite + Prisma tables) and the map UI. First run on a real
+  reference project (React/Tauri → FastAPI → SQLite, plus a Node website).
 - **Week 2**: code viewer, highlight-to-explain, Trace it, and one scripted text tour, all with Claude + tools.
 - **Week 3**: voice (Aura narration, Nova-3 questions, barge-in), a session cost meter, local-folder picker
   polish, and a README with setup + privacy.
 - **Out of the MVP**: GitHub OAuth (it comes right after), Express/SQLAlchemy extractors, team sharing, and
   editing code.
-- **Status on 29 Sep**: weeks 1–2 are done in prototype form and running against iReliabee (277 routes, 60 tables,
+- **Status on 29 Sep**: weeks 1–2 are done in prototype form and running against that reference project (277 routes, 60 tables,
   1,787 links, 65 traced to the UI element that fires them). Next: provider layer + motion, then Lite, then voice.
 - **Status on 30 Sep**: owner requirement 1 (monoliths and microservices) is built on the `services` branch per
   `docs/SERVICES.md`: map version 2, service boundaries from config, requests resolved across services, the system
-  view with drill-in, workspaces of several repos, and the AI told which service it is in. iReliabee now reads as
-  three services (frontend, backend, ireliabee-web) with 1,809 links and every one of the earlier 1,787 kept. Not
+  view with drill-in, workspaces of several repos, and the AI told which service it is in. The reference project now reads as
+  three services (frontend, backend, website) with 1,809 links and every one of the earlier 1,787 kept. Not
   yet done: the 20-question provider run on the compose fixture (needs a real key). Requirements 2 (docking) and 3
   (accounts) are specified in `docs/SHELL.md` and `docs/ACCOUNTS.md`.
 

@@ -1,7 +1,7 @@
 "use client";
 // Settings → Voice → Speech to text → "On this computer (Parakeet)": where
 // the speech model stands on this computer, and getting or removing it
-// (GET/POST /api/voice/parakeet). A copy iReliabee already downloaded is used
+// (GET/POST /api/voice/parakeet). A copy another app already downloaded is used
 // where it lies and is never removed from here; only WalkMyCode's own copy
 // (~/.walkmycode/models) can be. The credit line is the model licence's
 // (CC-BY-4.0) attribution.
@@ -93,7 +93,7 @@ export default function ParakeetPanel({ onStatus }: { onStatus?: (s: ParakeetSta
             )}
             {s.state === "installed" && s.removable && (
               <button type="button" className="sv-link quiet" disabled={busy} onClick={() => void act("remove")} data-testid="parakeet-remove" title="Removes WalkMyCode's own copy only, from .walkmycode/models in your home folder">
-                {s.source === "ireliabee" ? "Remove WalkMyCode's own copy" : "Remove"}
+                {s.source === "shared" ? "Remove WalkMyCode's own copy" : "Remove"}
               </button>
             )}
           </span>

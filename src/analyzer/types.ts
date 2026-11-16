@@ -14,6 +14,7 @@ export type Lang =
   | "jsx"
   | "py"
   | "dart"
+  | "rust"
   | "php"
   /** A Twig template (Symfony): read by its tags, no grammar. */
   | "twig"

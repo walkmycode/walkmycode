@@ -13,7 +13,7 @@ import { light } from "@/lib/light";
 import { DOCK_OPTIONS, capabilities, lanternTheme } from "./theme";
 import { PANELS, editorPath, isEditorId } from "./panels";
 import { buildPreset, sizePreset, fingerprint, localLayoutStorage, pickDefault, sanitise, type PresetName, type SavedLayout } from "./layout";
-import { dockGroup, floatFailedPopouts, floatGroup, maximiseGroup, popoutGroup } from "./actions";
+import { dockGroup, floatFailedPopouts, floatGroup, maximiseGroup, popoutGroup, swapGroups, swapTargets } from "./actions";
 import { useShell } from "./WorkspaceProvider";
 import { applyMotion, savedMotion } from "./motion";
 import { guardTabClicks } from "./tabClick";
@@ -34,6 +34,7 @@ import OutputPanel from "./panels/OutputPanel";
 import { outputs } from "@/ide/outputStore";
 import { outputHost } from "./outputDock";
 import { preparePopout } from "./popout";
+import { closeOpened } from "@/lib/desktop";
 
 const components = {
   map: MapPanel,
@@ -221,6 +222,11 @@ export default function Workspace() {
         api.onDidOpenPopoutWindowFail(() => floatFailedPopouts(api, "Pop-ups are blocked here, so the panel is floating instead.")),
         // React Flow sizes itself from the main window's resize event.
         api.onDidPopoutGroupSizeChange(() => window.dispatchEvent(new Event("resize"))),
+        // A pop-out whose panels have all left it (a preset applied, the window made narrow, a tab dragged
+        // back) closes its window: in the desktop app it has no frame, and would stay as an empty box.
+        api.onDidLayoutChange(() => {
+          for (const p of api.getPopouts()) if (p.window && !p.window.closed && p.group.panels.length === 0) void closeOpened(p.window);
+        }),
         // The light (docs/SHELL.md §8): its targets move while a group or tab is
         // dragged, so it hides; once dropped it goes home, and an undocked group
         // gets its beacon on its tab bar.
@@ -304,7 +310,7 @@ export default function Workspace() {
       hostOff.current = null;
       try {
         // Belt and braces: dockview's own dispose also closes them.
-        s.api.current?.getPopouts().forEach((p) => p.window?.close?.());
+        s.api.current?.getPopouts().forEach((p) => p.window && void closeOpened(p.window));
       } catch {
         /* already disposed */
       }
@@ -324,6 +330,8 @@ export default function Workspace() {
       ...(capabilities.popout && where !== "popout" ? [{ label: "Pop out into a window", action: () => void popoutGroup(api, group) }] : []),
       ...(where !== "grid" ? [{ label: "Dock back", action: () => void dockGroup(api, group) }] : []),
       ...(where === "grid" ? [{ label: group.api.isMaximized() ? "Restore size" : "Maximise", action: () => maximiseGroup(group) }] : []),
+      // Swap places with a neighbour (dragging a tab onto another group's edge rearranges too).
+      ...swapTargets(api, group).map(({ group: other, side }) => ({ label: `Swap places with ${other.activePanel?.title ?? "the panel beside it"}`, action: () => swapGroups(api, group, other, side) })),
     ];
     return items;
   }, []);

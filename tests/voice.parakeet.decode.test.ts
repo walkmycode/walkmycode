@@ -2,7 +2,7 @@
 //  - a real .tar.bz2 (tests/fixtures/voice/tiny-model.tar.bz2, four tiny
 //    files and a test recording) goes through the real bzip2 decompressor and
 //    the safe extraction, as a download would;
-//  - when the speech model is on this machine (iReliabee's copy or
+//  - when the speech model is on this machine (another app's copy or
 //    WalkMyCode's own) and sherpa-onnx-node loads, the model's own test
 //    recording is streamed through the stream route in 0.2 s pieces, in real
 //    time, as the page sends a microphone, and the words must come back:
@@ -40,7 +40,7 @@ describe("Parakeet: a real .tar.bz2 through the real decompressor", () => {
     const bytes = readFileSync(FIXTURE);
     const own = join(dir, "models");
     const where = await installModel({
-      dirs: { own, ireliabee: "" },
+      dirs: { own, shared: "" },
       model: { name: "tiny-model", url: "https://example.test/tiny-model.tar.bz2", bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), files: WANT },
       fetch: async () => new Response(new Uint8Array(bytes)),
       needed: 1,

@@ -25,6 +25,9 @@ function ctor(): RecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** How long stop() waits for the browser's last words before ending with the words it already has. */
+export const STOP_GRACE_MS = 1200;
+
 /** Can this browser turn speech into text? */
 export function canListen(): boolean {
   return !!ctor();
@@ -60,11 +63,14 @@ export function listen(o: { onText: (t: string) => void; onDone: (t: string) => 
     if (e.error === "aborted" || e.error === "no-speech") return;
     o.onError?.(e.error === "not-allowed" || e.error === "service-not-allowed" ? "The microphone is blocked for this page." : "The browser could not hear that.");
   };
-  r.onend = () => {
+  let late: ReturnType<typeof setTimeout> | null = null;
+  const finish = () => {
+    if (late) clearTimeout(late);
     if (finished) return;
     finished = true;
     if (!cancelled) o.onDone(text);
   };
+  r.onend = finish;
   try {
     r.start();
   } catch {
@@ -72,11 +78,23 @@ export function listen(o: { onText: (t: string) => void; onDone: (t: string) => 
   }
   return {
     stop: () => {
+      if (finished || late) return;
       try {
         r.stop();
       } catch {
         /* already stopped */
       }
+      // Some engines (a desktop webview, or one busy while a voice plays) never say they ended: the words
+      // heard so far are the answer after a moment, so a second press of the mic is never ignored.
+      late = setTimeout(() => {
+        late = null;
+        try {
+          r.abort();
+        } catch {
+          /* already stopped */
+        }
+        finish();
+      }, STOP_GRACE_MS);
     },
     cancel: () => {
       cancelled = true;

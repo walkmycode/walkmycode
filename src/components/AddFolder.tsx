@@ -35,7 +35,9 @@ async function attach(folder: PickedFolder): Promise<string> {
   return r.missing.length ? `Added the code of ${r.label}. Still to add: ${r.missing.join(", ")}.` : `Added the code of ${r.label}: you can read every file now.`;
 }
 
-export default function AddFolder({ className = "ctl compact primary", label = "Add folder" }: { className?: string; label?: string }) {
+/** `onFolder`: what the folder picked is for, and what to say after; by default its code joins the open map.
+ * A map made before WalkMyCode could draw its language maps the folder again instead (MapAgain.tsx). */
+export default function AddFolder({ className = "ctl compact primary", label = "Add folder", onFolder = attach }: { className?: string; label?: string; onFolder?: (folder: PickedFolder) => Promise<string | null> }) {
   const input = useRef<HTMLInputElement>(null);
   const [sheet, setSheet] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,8 @@ export default function AddFolder({ className = "ctl compact primary", label = "
     if (!folder) return;
     setBusy(true);
     try {
-      toast(await attach(folder));
+      const said = await onFolder(folder);
+      if (said) toast(said);
     } catch (e) {
       toast(`That folder could not be read: ${(e as Error).message}`);
     } finally {
@@ -54,10 +57,16 @@ export default function AddFolder({ className = "ctl compact primary", label = "
 
   const open = async () => {
     if (busy) return;
-    const plan = pickSource({ target: TARGET, directoryPicker: typeof window !== "undefined" && "showDirectoryPicker" in window });
+    const lf = await import("@/lib/localFolder");
+    const plan = pickSource({ target: TARGET, directoryPicker: lf.canPickFolders() });
     if (plan.picker === "directory") {
-      const lf = await import("@/lib/localFolder");
-      return done(await lf.pickFolder());
+      let folder: PickedFolder | null;
+      try {
+        folder = await lf.pickFolder();
+      } catch (e) {
+        return toast(`That folder could not be read: ${(e as Error).message}`);
+      }
+      return done(folder);
     }
     // The browser asks its own "Upload all files?" next: say what it means first.
     if (showFolderPrompt(plan.picker, prefStore())) setSheet(true);

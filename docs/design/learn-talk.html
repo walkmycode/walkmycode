@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Talk with the professor</title>
+<!-- Mockup only (docs/design): a live, hands-free voice conversation with the professor in a lesson.
+     Colours and type are the app's (dark theme); the board and the presenter are the 0.1.3 layout. -->
+<style>
+:root {
+  --ui: #2b2d30; --ui-2: #35373c; --ui-line: #43454a; --ui-text: #dfe1e5; --ui-dim: #9da0a8; --ui-faint: #6f737a;
+  --wall: #1e1f22; --out: #17181a; --hair: rgba(255,255,255,.06); --hair-2: rgba(255,255,255,.11);
+  --yellow: #f3d77a; --pink: #f08aa0; --green: #8fd19e; --chalk: #f1efe6; --chalk-dim: #b9b5a8;
+  --text: 13px; --sans: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--wall); color: var(--ui-text); font: var(--text)/1.45 var(--sans); }
+button { font: inherit; color: inherit; }
+.demo { display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: var(--ui); border-bottom: 1px solid var(--ui-line); flex-wrap: wrap; }
+.demo b { margin-right: 6px; }
+.demo button { padding: 3px 9px; border: 1px solid var(--ui-line); background: var(--ui-2); cursor: pointer; }
+.demo button.on { border-color: var(--yellow); color: var(--yellow); }
+.room { display: grid; grid-template-columns: 220px minmax(0, 1fr) 380px; height: calc(100% - 35px); }
+.outline { border-right: 1px solid var(--hair-2); padding: 12px; color: var(--ui-dim); }
+.outline p { margin: 0 0 8px; } .outline .on { color: var(--yellow); }
+.main { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px; min-height: 0; }
+.frame { flex: 1; position: relative; background: linear-gradient(145deg, #3c3f44, #2b2d30); padding: 8px; display: flex; }
+.board { flex: 1; background: radial-gradient(60% 50% at 30% 20%, rgba(255,255,255,.05), transparent 70%), #1d2420; padding: 22px 26px; color: var(--chalk); }
+.board h2 { margin: 0 0 10px; color: var(--yellow); font-size: 15px; }
+.board p { margin: 0 0 8px; }
+.board .rule { display: inline-block; border: 1px dashed #7fb7d6; padding: 2px 8px; color: #9fd0ec; font-family: var(--mono); }
+.n { position: absolute; top: 18px; right: 22px; color: var(--chalk-dim); font-family: var(--mono); }
+
+/* The professor in the corner: his ring says who has the floor. */
+.presenter { position: absolute; right: 26px; bottom: 24px; left: 26px; display: flex; justify-content: flex-end; align-items: flex-end; gap: 12px; pointer-events: none; }
+.subs { max-width: 72ch; background: rgba(14,18,16,.86); border: 1px solid rgba(241,239,230,.14); padding: 8px 12px; color: var(--chalk); pointer-events: auto; }
+.subs .who { margin: 0 0 2px; font-weight: 650; } .subs .who span { color: var(--chalk-dim); font-weight: 500; }
+.subs .you { color: var(--chalk-dim); margin: 0 0 4px; font-style: italic; }
+.subs .line { margin: 0; font-weight: 600; } .subs mark { background: none; color: var(--yellow); }
+.face { width: 120px; height: 120px; border-radius: 50%; background: #2f3237; position: relative; display: grid; place-items: center; font-size: 54px; box-shadow: 0 8px 18px rgba(0,0,0,.45); }
+.face::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 3px solid transparent; transition: border-color .2s, box-shadow .2s; }
+[data-s="speaking"] .face::after { border-color: var(--yellow); box-shadow: 0 0 18px rgba(243,215,122,.5); }
+[data-s="listening"] .face::after { border-color: var(--green); box-shadow: 0 0 calc(6px + var(--lvl) * 26px) rgba(143,209,158,.55); }
+[data-s="thinking"] .face::after { border-color: var(--ui-dim); border-style: dashed; animation: spin 2.4s linear infinite; }
+[data-s="nudge"] .face::after { border-color: var(--pink); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.mmhm { position: absolute; right: 150px; bottom: 132px; padding: 2px 8px; background: rgba(14,18,16,.86); border: 1px solid var(--hair-2); color: var(--chalk-dim); font-style: italic; opacity: 0; transition: opacity .2s; }
+[data-s="listening"] .mmhm { opacity: 1; }
+
+/* The lesson controls; while talking, the talk strip takes their place. */
+.controls, .talk { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--ui); border: 1px solid var(--ui-line); }
+.ctl { padding: 5px 10px; border: 1px solid var(--ui-line); background: var(--ui-2); cursor: pointer; }
+.ctl.primary { background: var(--yellow); color: #1e1f22; border-color: var(--yellow); font-weight: 650; }
+.ctl.talk-start { border-color: var(--green); color: var(--green); font-weight: 650; }
+.sp { flex: 1; }
+.talk { border-color: var(--green); }
+.talk .live { display: inline-flex; align-items: center; gap: 6px; color: var(--green); font-weight: 650; }
+.talk .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pink); animation: blink 1.2s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.talk .state { color: var(--ui-text); }
+.seg { display: inline-flex; border: 1px solid var(--ui-line); } .seg button { border: 0; background: none; padding: 5px 9px; color: var(--ui-dim); cursor: pointer; } .seg .on { background: var(--ui-2); color: var(--ui-text); }
+.cost { color: var(--ui-faint); font-family: var(--mono); }
+.end { border-color: var(--pink); color: var(--pink); }
+[data-s="idle"] .talk, :not([data-s="idle"]) > .main > .controls { display: none; }
+[data-s="idle"] .controls { display: flex; }
+
+/* The conversation: spoken turns kept with the typed ones, marked by a small mic. */
+.side { border-left: 1px solid var(--hair-2); display: flex; flex-direction: column; }
+.tabs { display: flex; border-bottom: 1px solid var(--hair-2); } .tabs span { flex: 1; text-align: center; padding: 8px; color: var(--ui-dim); } .tabs .on { color: var(--ui-text); border-bottom: 2px solid var(--yellow); }
+.msgs { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.msg .who { margin: 0; color: var(--ui-faint); font-weight: 600; } .msg.prof .who b { color: var(--yellow); }
+.msg p { margin: 2px 0 0; }
+.mic { display: inline-block; margin-left: 4px; font-size: 11px; color: var(--green); border: 1px solid rgba(143,209,158,.4); padding: 0 4px; }
+.spec { border-top: 1px solid var(--hair-2); padding: 10px 12px; color: var(--ui-dim); max-height: 40%; overflow: auto; }
+.spec h3 { margin: 0 0 4px; color: var(--ui-text); font-size: var(--text); } .spec ul { margin: 0 0 8px; padding-left: 16px; }
+</style>
+</head>
+<body>
+<div class="demo"><b>Mockup</b>
+  <button data-go="idle">Before Talk</button>
+  <button data-go="speaking" class="on">Professor speaking</button>
+  <button data-go="listening">You speaking (mm-hmm)</button>
+  <button data-go="thinking">Thinking</button>
+  <button data-go="nudge">You went quiet</button>
+</div>
+<div class="room" id="room" data-s="speaking" style="--lvl:.6">
+  <aside class="outline"><p>THIS LESSON</p><p>✓ Good evening</p><p class="on">● The old way: people write the rules</p><p>○ The new way: show examples</p><p>○ A tiny example: taxi fares</p></aside>
+  <section class="main">
+    <div class="frame">
+      <div class="board">
+        <h2>The old way: people write the rules</h2>
+        <p>For decades, programmers wrote <b style="color:var(--yellow)">rules</b> by hand.</p>
+        <p><span class="rule">if temperature &gt; 30 → say "hot"</span></p>
+        <p>But try writing the rule for: <span style="color:#f2a3a3">"Is this person stuttering?"</span></p>
+      </div>
+      <span class="n">2 / 12</span>
+      <span class="mmhm">mm-hmm</span>
+      <div class="presenter">
+        <div class="subs" id="subs"></div>
+        <div class="face">🧑‍🏫</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="ctl">☰</button><button class="ctl">◀ Back</button><button class="ctl primary">▶ Play</button><button class="ctl">Next ▶</button><button class="ctl">&lt;/&gt; Code</button>
+      <button class="ctl talk-start">🎙 Talk with the professor</button>
+      <span class="sp"></span><button class="ctl">Voice: Deepgram Aura-2</button><label><input type="checkbox"> Read only</label>
+    </div>
+    <div class="talk" role="toolbar" aria-label="Talking with the professor">
+      <span class="live"><span class="dot"></span>Live 1:42</span>
+      <span class="state" id="state">Speaking</span>
+      <span class="sp"></span>
+      <span class="seg"><button class="on">Hands-free</button><button>Hold to talk</button></span>
+      <button class="ctl">Mute mic</button>
+      <span class="cost">Fast · $0.075/min</span>
+      <button class="ctl end">End</button>
+    </div>
+  </section>
+  <aside class="side">
+    <div class="tabs"><span class="on">Professor</span><span>Notebook</span><span>Recall</span></div>
+    <div class="msgs">
+      <div class="msg"><p class="who">You <span class="mic">🎙 spoken</span></p><p>Wait, why can't they just write a rule for stuttering?</p></div>
+      <div class="msg prof"><p class="who"><b>Professor</b> <span class="mic">🎙 spoken</span></p><p>Good question. Try it: what would the rule say? "Repeats a sound"? Then every song chorus is stuttering. Every rule you write breaks on someone.</p></div>
+      <div class="msg"><p class="who">You <span class="mic">🎙 spoken</span></p><p>So you'd need thousands of rules.</p></div>
+      <div class="msg prof"><p class="who"><b>Professor</b> <span class="mic">🎙 spoken</span></p><p>Exactly, and they'd still miss people. So instead of writing the rules, we show the computer examples. Shall we see how on the next board?</p></div>
+    </div>
+    <div class="spec">
+      <h3>How it feels</h3>
+      <ul>
+        <li><b>Just talk.</b> Hands-free by default, and you can cut in at any time: he stops, listens, then answers in 1–3 sentences and hands the turn back with a question.</li>
+        <li><b>He knows where you are.</b> The board on screen, what you've seen, your notes. When the board changes, he knows.</li>
+        <li><b>He drives the lesson while you talk.</b> "Let's see the next board", "Open the example", "Quick quiz?", "Explain it back to me".</li>
+        <li><b>He sounds human.</b> A quiet "mm-hmm" while you speak (with headphones), "take your time" if you go quiet, and he slows down when you sound stuck. Voice style from Settings (Lively by default).</li>
+        <li><b>You can see who has the floor.</b> His ring: gold while he speaks, green and swelling with your voice while you speak, dashed while he thinks, pink when he checks on you.</li>
+        <li><b>Nothing is lost.</b> Spoken turns land in the conversation, marked 🎙, kept with the lesson.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+<script>
+const room = document.getElementById("room"), subs = document.getElementById("subs"), state = document.getElementById("state");
+const S = {
+  idle: ["", ""],
+  speaking: ["Speaking", `<p class="who">The professor <span>· speaking</span></p><p class="line">Every rule you write breaks on <mark>someone</mark>. So instead, we show the computer examples.</p>`],
+  listening: ["Listening…", `<p class="you">You: "so you'd need like thousands of rul…"</p><p class="who">The professor <span>· listening</span></p>`],
+  thinking: ["Thinking…", `<p class="you">You: "so you'd need thousands of rules?"</p><p class="who">The professor <span>· thinking…</span></p>`],
+  nudge: ["Still there?", `<p class="who">The professor <span>· checking in</span></p><p class="line">Take your time. Want me to say it another way?</p>`],
+};
+function go(s) {
+  room.dataset.s = s; state.textContent = S[s][0]; subs.innerHTML = S[s][1]; subs.style.display = S[s][1] ? "" : "none";
+  document.querySelectorAll("[data-go]").forEach((b) => b.classList.toggle("on", b.dataset.go === s));
+}
+document.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => go(b.dataset.go)));
+let t = 0; setInterval(() => { t += .3; room.style.setProperty("--lvl", (.4 + .5 * Math.abs(Math.sin(t))).toFixed(2)); }, 120);
+go("speaking");
+</script>
+</body>
+</html>

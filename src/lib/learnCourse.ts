@@ -58,7 +58,12 @@ function text(file: string): string | null {
 }
 
 /** A folder with a README and something to practise with is a lesson whatever is under it. */
-const hasParts = (dir: string) => !!readme(dir) && (PARTS.some((p) => existsSync(join(dir, p))) || ["Cargo.toml", "package.json", "pyproject.toml"].some((f) => existsSync(join(dir, f))));
+const PROJECT = ["Cargo.toml", "package.json", "pyproject.toml"];
+/** A lesson folder: a README with its examples, exercises or code; or a project (Cargo.toml and its src/), which
+ *  is taught from its code even with no README yet (the owner's Rust course: 06_framework_mastery/axum_basics). */
+const hasParts = (dir: string) =>
+  (!!readme(dir) && (PARTS.some((p) => existsSync(join(dir, p))) || PROJECT.some((f) => existsSync(join(dir, f))))) ||
+  (PROJECT.some((f) => existsSync(join(dir, f))) && ["src", "examples"].some((p) => existsSync(join(dir, p))));
 
 /**
  * What the documents of one folder are to each other. Where anything in the folder is numbered, only numbered
@@ -226,9 +231,13 @@ export function loadOutline(root: string): FolderOutline {
   // A course that is one README is that lesson; its README is not also the course's description.
   const about = top && lessons[0] !== "" ? readReadme(text(top) ?? "") : { title: "", summary: "" };
   const units = new Map<string, FolderOutline["units"][number]>();
+  // A course in part folders (01_foundations/…): a top-level folder that is only its README so far is a part of
+  // its own ("05_mastery" → Mastery), not one of the loose "Lessons" a flat course of documents has.
+  const inParts = lessons.some((id) => id.split("/").filter(Boolean).length > 1);
   for (const id of lessons) {
     const parts = id.split("/").filter(Boolean);
-    const unit = parts.length > 1 ? titleOfDir(parts.slice(0, -1).join(" / ")) : "Lessons";
+    const ownPart = parts.length === 1 && inParts && statSync(join(root, id)).isDirectory();
+    const unit = parts.length > 1 ? titleOfDir(parts.slice(0, -1).join(" / ")) : ownPart ? titleOfDir(parts[0]) : "Lessons";
     if (!units.has(unit)) units.set(unit, { title: unit, lessons: [] });
     units.get(unit)!.lessons.push(outlineOf(loadLesson(root, id)));
   }

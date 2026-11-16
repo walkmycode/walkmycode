@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WalkMyCode desktop title bar (mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  The desktop app's title bar (docs/DESKTOP.md, "Title bar"). The window has no
+  frame of its own (decorations: false), so WalkMyCode's own top bar is the title
+  bar: drag it from its empty space, double-click it to maximise or restore, and
+  use the three window buttons at its right end. Everything else in the bar is
+  exactly the browser's bar. Tokens are the dark graphite theme's
+  (src/app/globals.css, :root[data-theme="dark"]); one text size, square corners,
+  line icons on the tool strips' 16px grid (src/shell/ToolStrip.tsx).
+-->
+<style>
+:root{
+  --wall:#1e1f22; --wall-2:#232428; --board:#1b1c1f; --board-2:#26282c;
+  --ui:#2b2d30; --ui-2:#35373c; --ui-line:#43454a; --ui-raise:#3c3f44;
+  --ui-text:#dfe1e5; --ui-dim:#9da0a8; --ui-faint:#6f737a;
+  --hair:rgba(255,255,255,.06); --hair-2:rgba(255,255,255,.11); --hair-3:rgba(255,255,255,.2);
+  --bar:#2b2d30; --yellow:#f3d77a; --green:#a8e0a0; --blue:#9fd3f0; --pink:#f2a7a0;
+  --text:13px; --top-h:32px; --top-ctl:24px; --win-w:46px;
+  --close:#c42b1c; --close-down:#b0281b;
+  --sans:Inter,"Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;border-radius:0}
+html,body{margin:0}
+body{background:#111214;color:var(--ui-text);font:var(--text)/1.5 var(--sans);-webkit-font-smoothing:antialiased;padding:32px 16px 64px}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+h1,h2{font:700 var(--text)/1.3 var(--sans);margin:0}
+h1{color:var(--yellow)}
+p{margin:6px 0 0;color:var(--ui-dim);max-width:78ch}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:28px}
+.note{display:grid;gap:4px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.toggle{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border:1px solid var(--ui-line);background:var(--ui);color:var(--ui-text)}
+.toggle[aria-pressed="true"]{border-color:var(--yellow);color:var(--yellow)}
+
+/* ---------- a window ---------- */
+.window{border:1px solid var(--hair-3);background:var(--wall);box-shadow:0 18px 60px rgba(0,0,0,.55);overflow:hidden;position:relative}
+.window.blurred{box-shadow:0 10px 30px rgba(0,0,0,.4)}
+.browser-chrome{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;background:#3a3b3f;color:var(--ui-dim);border-bottom:1px solid #000}
+.browser-chrome .url{flex:1;height:22px;display:flex;align-items:center;padding:0 10px;background:#232428;font:var(--text) var(--mono);color:var(--ui-dim)}
+
+/* ---------- the top bar, as in globals.css ---------- */
+.top{display:flex;align-items:center;gap:10px;height:var(--top-h);padding:0 12px;border-bottom:1px solid var(--hair);background:var(--bar);color:var(--ui-text);min-width:0;position:relative}
+.top-left{display:flex;align-items:center;gap:18px;flex:none}
+.brand{font:650 var(--text)/1 var(--sans);color:var(--yellow);white-space:nowrap}
+.rooms{display:flex;gap:2px;height:var(--top-ctl);padding:2px;border:1px solid var(--hair);background:var(--ui)}
+.rooms a{display:flex;align-items:center;padding:0 10px;color:var(--ui-dim);text-decoration:none;font-weight:600}
+.rooms a.on{background:var(--ui-raise);color:var(--ui-text)}
+.top-mid{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.top-title{font-weight:600;display:inline-flex;align-items:center;gap:8px}
+.proj{display:inline-flex;align-items:center;gap:6px;height:var(--top-ctl);padding:0 10px;border:1px solid var(--hair-2);background:var(--ui)}
+.proj i{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.top-detail{color:var(--ui-dim);overflow:hidden;text-overflow:ellipsis}
+.top-actions{display:flex;align-items:center;gap:2px;height:var(--top-ctl);padding:2px;border:1px solid var(--hair);background:var(--ui)}
+.ctl{height:100%;padding:0 10px;color:var(--ui-text);white-space:nowrap}
+.ctl:hover{background:var(--ui-raise)}
+.ai-pill{display:inline-flex;align-items:center;gap:6px;height:var(--top-ctl);padding:0 10px;border:1px solid var(--hair-2);background:var(--ui);white-space:nowrap}
+.ai-pill i{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.iconbtn{width:var(--top-ctl);height:var(--top-ctl);display:grid;place-items:center;color:var(--ui-dim)}
+.iconbtn:hover{background:var(--ui-raise);color:var(--ui-text)}
+svg.ico{width:16px;height:16px;display:block}
+
+/* ---------- desktop only: the window buttons ---------- */
+.window.desktop .top{padding-right:0}
+.winctl{display:flex;align-self:stretch;margin-left:6px;margin-bottom:-1px;border-left:1px solid var(--hair)}
+.winctl button{width:var(--win-w);height:100%;display:grid;place-items:center;color:var(--ui-dim);transition:background-color 120ms,color 120ms}
+.winctl button:hover{background:var(--ui-raise);color:var(--ui-text)}
+.winctl button:active{background:var(--ui-2)}
+.winctl button.close:hover{background:var(--close);color:#fff}
+.winctl button.close:active{background:var(--close-down);color:#fff}
+.winctl button:focus-visible{outline:1px solid var(--yellow);outline-offset:-1px}
+.window.blurred .winctl button:not(:hover){color:var(--ui-faint)}
+.window.blurred .brand{opacity:.75}
+
+/* ---------- show where the window drags ---------- */
+.show-drag [data-drag]{background-image:repeating-linear-gradient(135deg,rgba(159,211,240,.16) 0 6px,transparent 6px 12px)}
+.show-drag .top[data-drag]{outline:1px dashed var(--blue);outline-offset:-1px}
+
+.body{display:grid;grid-template-columns:52px 1fr;height:250px}
+.strip{background:var(--board);border-right:1px solid var(--hair);display:flex;flex-direction:column;align-items:center;padding-top:10px;gap:6px;color:var(--ui-dim)}
+.strip span{width:34px;height:34px;display:grid;place-items:center}
+.strip span.on{background:var(--ui-raise);color:var(--ui-text)}
+.canvas{background:radial-gradient(circle at 1px 1px,rgba(255,255,255,.05) 1px,transparent 0) 0 0/22px 22px,var(--wall);position:relative}
+.card{position:absolute;padding:8px 12px;background:var(--board-2);border:1px solid var(--hair-2);font-weight:600}
+.resize-hint{position:absolute;inset:0;pointer-events:none;display:none}
+.show-resize .resize-hint{display:block}
+.resize-hint i{position:absolute;background:rgba(243,215,122,.28)}
+
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.legend div{padding:12px 14px;border:1px solid var(--hair-2);background:var(--wall-2)}
+.legend b{display:block;color:var(--ui-text)}
+.legend span{color:var(--ui-dim)}
+.spec{display:grid;grid-template-columns:max-content 1fr;gap:4px 18px;padding:12px 14px;border:1px solid var(--hair-2);background:var(--wall-2)}
+.spec dt{color:var(--ui-dim)}
+.spec dd{margin:0;font-family:var(--mono)}
+.zoom{display:flex;gap:0;border:1px solid var(--hair-2);width:max-content;background:var(--bar)}
+.zoom button{width:92px;height:116px;display:grid;place-items:center;color:var(--ui-dim)}
+.zoom button svg.ico{width:32px;height:32px}
+.zoom button:hover{background:var(--ui-raise);color:var(--ui-text)}
+.zoom button.close:hover{background:var(--close);color:#fff}
+.zoom-labels{display:flex;width:max-content}
+.zoom-labels span{width:92px;text-align:center;color:var(--ui-dim)}
+@media (max-width:760px){.top-detail,.top-actions{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="note">
+    <h1>WalkMyCode desktop: the title bar</h1>
+    <p>No window frame. WalkMyCode's own top bar is the title bar: drag it from any empty space, double-click it to maximise or restore, and use the three buttons at its right end. Every other control in the bar works exactly as in the browser, and in a browser the bar is unchanged (the second window below).</p>
+    <div class="controls">
+      <button class="toggle" id="t-max" aria-pressed="false">Window maximised</button>
+      <button class="toggle" id="t-focus" aria-pressed="true">Window focused</button>
+      <button class="toggle" id="t-drag" aria-pressed="false">Show where it drags</button>
+      <button class="toggle" id="t-resize" aria-pressed="false">Show resize edges</button>
+    </div>
+  </div>
+
+  <h2>Desktop app (Windows and Linux)</h2>
+  <div class="window desktop" id="desk">
+    <header class="top" data-drag>
+      <div class="top-left" data-drag>
+        <span class="brand" data-drag>WalkMyCode</span>
+        <nav class="rooms"><a class="on">Explore</a><a>Learn</a></nav>
+      </div>
+      <div class="top-mid" data-drag>
+        <span class="top-title" data-drag><span class="proj"><i></i>codebase-guide</span></span>
+        <span class="top-detail" data-drag>412 files · Next.js · 3 services</span>
+      </div>
+      <div class="top-actions"><button class="ctl">Trace</button><button class="ctl">Tour</button><button class="ctl">Refresh</button></div>
+      <span class="ai-pill"><i></i>Claude · Opus</span>
+      <button class="iconbtn" title="Settings"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.25"/><path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05"/></svg></button>
+      <div class="winctl" role="group" aria-label="Window">
+        <button class="min" title="Minimise" aria-label="Minimise"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><path d="M3 8.5h10"/></svg></button>
+        <button class="max" title="Maximise" aria-label="Maximise"></button>
+        <button class="close" title="Close" aria-label="Close"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><path d="m3.5 3.5 9 9M12.5 3.5l-9 9"/></svg></button>
+      </div>
+    </header>
+    <div class="body">
+      <div class="strip"><span class="on"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="2" width="4.5" height="3.5"/><rect x="10" y="2" width="4.5" height="3.5"/><rect x="5.75" y="10.5" width="4.5" height="3.5"/><path d="M6 3.75h4M3.75 5.5v2.5h4.25v2.5M12.25 5.5v2.5H8"/></svg></span><span><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4M9 2.5 7 13.5"/></svg></span></div>
+      <div class="canvas"><div class="card" style="left:60px;top:40px">src/app/page.tsx</div><div class="card" style="left:300px;top:120px">api/localrun</div><div class="card" style="left:560px;top:60px">lib/providers</div></div>
+    </div>
+    <div class="resize-hint"><i style="left:0;top:0;bottom:0;width:6px"></i><i style="right:0;top:0;bottom:0;width:6px"></i><i style="left:0;right:0;bottom:0;height:6px"></i><i style="left:0;right:0;top:0;height:4px"></i></div>
+  </div>
+
+  <div class="legend">
+    <div><b>Drags the window</b><span>The bar's background, the brand, the title and its detail. Double-click any of them: maximise or restore. Dragging a maximised window down restores it; dragging to a screen edge snaps (Windows Snap, and the Linux desktop's own tiling).</span></div>
+    <div><b>Never drags</b><span>Buttons, links, inputs and menus: Explore / Learn, the project chip, the room's actions, the AI pill, Settings and the window buttons.</span></div>
+    <div><b>Window buttons</b><span>46 × 32 px, the bar's full height, so the top-right pixel of a maximised window still closes it. Close turns red on hover. Maximise shows "restore" (two squares) while maximised. Dimmed while the window is in the background.</span></div>
+    <div><b>Edges</b><span>The window resizes from all four edges and corners. It never gets smaller than 960 × 600, and opens where and how big it was last time.</span></div>
+  </div>
+
+  <h2>The buttons, close up (hover them)</h2>
+  <div>
+    <div class="zoom">
+      <button title="Minimise"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><path d="M3 8.5h10"/></svg></button>
+      <button title="Maximise"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
+      <button title="Restore"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><rect x="3" y="5.5" width="7.5" height="7.5"/><path d="M5.5 5.5V3H13v7.5h-2.5"/></svg></button>
+      <button class="close" title="Close"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><path d="m3.5 3.5 9 9M12.5 3.5l-9 9"/></svg></button>
+    </div>
+    <div class="zoom-labels"><span>Minimise</span><span>Maximise</span><span>Restore</span><span>Close</span></div>
+  </div>
+
+  <dl class="spec">
+    <dt>Button</dt><dd>46 × 32 px (var(--top-h): 32 px at the default size, the Windows 11 caption height; a little more at large text), square</dd>
+    <dt>Icon</dt><dd>16 px grid, 1.4 px line, square caps, currentColor</dd>
+    <dt>Idle / hover / pressed</dt><dd>--ui-dim on the bar / --ui-text on --ui-raise / --ui-2</dd>
+    <dt>Close hover / pressed</dt><dd>#fff on #c42b1c / #b0281b</dd>
+    <dt>Background window</dt><dd>icons --ui-faint</dd>
+    <dt>Separator</dt><dd>1 px --hair to the group's left; the bar's right padding drops to 0</dd>
+    <dt>Focus</dt><dd>1 px --yellow outline, inset</dd>
+    <dt>Text</dt><dd>none; tooltips and labels say Minimise, Maximise / Restore, Close</dd>
+  </dl>
+
+  <h2>In a browser: unchanged</h2>
+  <div class="window">
+    <div class="browser-chrome"><span>●</span><span class="url">http://localhost:3000/map</span></div>
+    <header class="top">
+      <div class="top-left"><span class="brand">WalkMyCode</span><nav class="rooms"><a class="on">Explore</a><a>Learn</a></nav></div>
+      <div class="top-mid"><span class="top-title"><span class="proj"><i></i>codebase-guide</span></span><span class="top-detail">412 files · Next.js · 3 services</span></div>
+      <div class="top-actions"><button class="ctl">Trace</button><button class="ctl">Tour</button><button class="ctl">Refresh</button></div>
+      <span class="ai-pill"><i></i>Claude · Opus</span>
+      <button class="iconbtn" title="Settings"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.25"/><path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05"/></svg></button>
+    </header>
+  </div>
+</div>
+<script>
+const MAX = '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><rect x="3.5" y="3.5" width="9" height="9"/></svg>';
+const RESTORE = '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="square"><rect x="3" y="5.5" width="7.5" height="7.5"/><path d="M5.5 5.5V3H13v7.5h-2.5"/></svg>';
+const desk = document.getElementById("desk");
+const max = desk.querySelector(".winctl .max");
+let maximised = false;
+function setMax(v) {
+  maximised = v;
+  max.innerHTML = v ? RESTORE : MAX;
+  max.title = max.ariaLabel = v ? "Restore" : "Maximise";
+  const t = document.getElementById("t-max");
+  t.setAttribute("aria-pressed", String(v));
+}
+setMax(false);
+max.onclick = () => setMax(!maximised);
+desk.querySelector(".top").addEventListener("dblclick", (e) => { if (e.target.closest("[data-drag]") === e.target) setMax(!maximised); });
+function bind(id, fn) {
+  const b = document.getElementById(id);
+  b.onclick = () => { const v = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", String(v)); fn(v); };
+}
+document.getElementById("t-max").onclick = () => setMax(!maximised);
+bind("t-focus", (v) => desk.classList.toggle("blurred", !v));
+bind("t-drag", (v) => desk.classList.toggle("show-drag", v));
+bind("t-resize", (v) => desk.classList.toggle("show-resize", v));
+</script>
+</body>
+</html>

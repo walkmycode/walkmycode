@@ -52,3 +52,11 @@ export function findModule(course: Course | undefined, id: string | undefined) {
   }
   return null;
 }
+
+/** A new course asked for from the Learn home is named after its first subject: "How HTTPS keeps a
+ *  password safe?" becomes the course "How HTTPS keeps a password safe". */
+export function courseNameFrom(topic: string): string {
+  const t = topic.trim().replace(/^(teach me|explain|tell me about|i want to learn|learn)\s+/i, "").replace(/[\s.?!:;,]+$/, "");
+  const short = t.length > 60 ? `${t.slice(0, 60).replace(/\s+\S*$/, "")}…` : t;
+  return short.charAt(0).toUpperCase() + short.slice(1);
+}

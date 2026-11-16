@@ -9,6 +9,7 @@ import { after, describe, it } from "node:test";
 import { Bridge } from "../mcp/src/bridge";
 import { dialogCommand, NoFolderDialog, pickFolder } from "../mcp/src/pickFolder";
 import { apiRoutes } from "../mcp/src/routes";
+import { browserBlocks } from "../src/lib/blockedPorts";
 import { cookieName, startWeb } from "../mcp/src/web";
 
 const dir = mkdtempSync(join(tmpdir(), "wmc-folderpick-"));
@@ -76,6 +77,19 @@ describe("the folder and save routes", () => {
       assert.equal(refused.status, 404);
       assert.match(((await refused.json()) as { error: string }).error, /isn't a file WalkMyCode read/);
       assert.equal((await post("/api/files/save", { workspace: "w", path: "lib/a.ts", text: "x" }, { origin })).status, 403, "no cookie");
+    } finally {
+      await web.close();
+    }
+  });
+});
+
+describe("the page's port", () => {
+  it("is never one browsers refuse, even when it was the last launch's", async () => {
+    const web = await startWeb({ bridge: new Bridge(), uiDir: join(process.cwd(), "mcp", "test-page"), workspace: () => null, token: "t", preferPort: 6000 });
+    try {
+      assert.ok(!browserBlocks(web.port), `port ${web.port}`);
+      // fetch refuses a blocked port outright ("bad port"): this one it reaches.
+      await fetch(`${web.origin}/`);
     } finally {
       await web.close();
     }

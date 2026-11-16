@@ -3,9 +3,12 @@
 // the main thread's time by kind (script, style, layout, paint…), plus the
 // hottest script functions from a CPU profile.
 //
-//   node scripts/perf-profile.mjs [open|everything|click|trace|pan|zoom|fly] [--base http://localhost:3100] [--cpu 4] [--channel msedge]
+//   node scripts/perf-profile.mjs [open|everything|click|trace|pan|zoom|fly] --demo <name> [--base http://localhost:3100] [--cpu 4] [--channel msedge]
+//     [--card <id>] [--fly "<a> to <b>"]
 //
-// fly: "components/TaskList to lib/db" in the go-to bar (a fly-through by names).
+// --demo (or WALKMYCODE_PERF_DEMO): the mapped folder to open. --card (or WALKMYCODE_PERF_CARD):
+// the card to click, by node id; without it, the first file card on the page.
+// fly: --fly (or WALKMYCODE_PERF_FLY) in the go-to bar (a fly-through by names).
 import { chromium } from "playwright";
 import { emptySpot } from "./perf-spot.mjs";
 
@@ -16,8 +19,10 @@ const arg = (name, dflt) => {
 const ACTION = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv[2] : "click";
 const BASE = arg("base", "http://localhost:3100");
 const CPU = Number(arg("cpu", "1"));
-const CARD = "file:lib/tasks.ts";
-const FLY = arg("fly", "components/TaskList to lib/db");
+const DEMO = arg("demo", process.env.WALKMYCODE_PERF_DEMO);
+const FLY = arg("fly", process.env.WALKMYCODE_PERF_FLY);
+if (!DEMO) throw new Error("name the demo: --demo <name> (or WALKMYCODE_PERF_DEMO)");
+if (ACTION === "fly" && !FLY) throw new Error("fly needs --fly \"<a> to <b>\" (or WALKMYCODE_PERF_FLY)");
 
 // Chrome, then Edge, then Playwright's own Chromium (or --channel).
 const CHANNELS = arg("channel") ? [arg("channel")] : ["chrome", "msedge", undefined];
@@ -34,11 +39,11 @@ const logs = [];
 page.on("console", (m) => logs.push(m.text()));
 await page.goto(`${BASE}/`);
 const button = (text) => page.evaluate((t) => [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === t)?.click(), text);
-/** The demo's card on the home page (the indexed one, "Open the map of team-tasks"), or the old connect screen's button. */
+/** The demo's card on the home page (the indexed one, "Open the map of <name>"), or the old connect screen's button. */
 const openDemo = () =>
   page
-    .getByRole("button", { name: "Open the map of team-tasks", exact: true })
-    .or(page.getByRole("button", { name: "team-tasks", exact: true }))
+    .getByRole("button", { name: `Open the map of ${DEMO}`, exact: true })
+    .or(page.getByRole("button", { name: DEMO, exact: true }))
     .first()
     .click();
 if (ACTION !== "open") {
@@ -50,6 +55,10 @@ if (ACTION !== "everything" && ACTION !== "open") {
   await page.waitForFunction(() => document.querySelectorAll(".react-flow__edge").length > 300);
   await page.waitForTimeout(1500);
 }
+/** The card to click: --card, else the first file card on the page. */
+const CARD =
+  arg("card", process.env.WALKMYCODE_PERF_CARD) ??
+  (await page.evaluate(() => document.querySelector(".react-flow__node[data-id^='file:']")?.dataset.id ?? document.querySelector(".react-flow__node")?.dataset.id));
 if (ACTION === "trace") {
   await page.evaluate((id) => document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`).click(), CARD);
   await page.waitForTimeout(1500);

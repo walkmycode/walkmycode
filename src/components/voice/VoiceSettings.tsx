@@ -17,6 +17,7 @@ import ParakeetPanel from "./ParakeetPanel";
 import {
   builtModels,
   LECTURER_IDS,
+  LECTURER_STYLES,
   LECTURERS,
   lecturerPrice,
   NARRATOR_IDS,
@@ -30,6 +31,7 @@ import {
   type InputMode,
   type LecturerId,
   type LecturerModelId,
+  type LecturerStyle,
   type NarratorId,
   type SttId,
   type SttKeyEnv,
@@ -80,6 +82,7 @@ export default function VoiceSettings() {
   const [speed, setSpeed] = useState<number>(VOICE_DEFAULT.speed);
   const [lecturer, setLecturer] = useState<LecturerId>(VOICE_DEFAULT.lecturer);
   const [model, setModel] = useState<LecturerModelId>(LECTURERS[VOICE_DEFAULT.lecturer].defaultModel);
+  const [style, setStyle] = useState<LecturerStyle>(VOICE_DEFAULT.lecturerStyle);
   const [input, setInput] = useState<InputMode>(VOICE_DEFAULT.input);
   const [headphones, setHeadphones] = useState(false);
   const face = useSyncExternalStore(subscribeFace, faceOn, () => true);
@@ -104,6 +107,7 @@ export default function VoiceSettings() {
           setSpeed(v.speed);
           setLecturer(v.lecturer);
           setModel(v.lecturerModel);
+          setStyle(v.lecturerStyle);
           setInput(v.input);
           setHeadphones(v.headphones);
           setStt(v.stt);
@@ -186,7 +190,7 @@ export default function VoiceSettings() {
         const res = await fetch("/api/voice/config", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ narrator, voice_id: voiceId, speed, lecturer, lecturer_model: model, input, headphones, stt }),
+          body: JSON.stringify({ narrator, voice_id: voiceId, speed, lecturer, lecturer_model: model, lecturer_style: style, input, headphones, stt }),
         });
         if (!res.ok) throw new Error(await bodyError(res));
         announceVoiceSaved();
@@ -402,6 +406,21 @@ export default function VoiceSettings() {
                       {m.label} · {lecturerPrice(m)}
                     </button>
                   ))}
+                </div>
+              )}
+              {lecturer === "deepgram-agent" && (
+                <div className="sv-row">
+                  <span className="sv-hint" id="lecturer-style-label">
+                    Voice style
+                  </span>
+                  <div className="sv-seg" role="radiogroup" aria-labelledby="lecturer-style-label">
+                    {LECTURER_STYLES.map((st) => (
+                      <button key={st.id} type="button" role="radio" aria-checked={style === st.id} className={style === st.id ? "on" : undefined} onClick={() => setStyle(st.id)} title={st.detail} data-testid={`lecturer-style-${st.id}`}>
+                        {st.label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="sv-hint">{LECTURER_STYLES.find((st) => st.id === style)?.detail}</span>
                 </div>
               )}
               <p className="sv-hint">

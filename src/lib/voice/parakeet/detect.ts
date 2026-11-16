@@ -12,10 +12,14 @@
 //   word), and at HARD_MAX_S whatever is being said.
 // - flush() ends it now (push-to-talk let go): what is left is handed over,
 //   so a short dictation is never lost waiting for the silence.
+// - While someone speaks, the session reads the utterance so far by frame
+//   (slice, levels, the quiet at its end) to write it down in pieces.
 
 export const RATE = 16000;
 /** Samples in one 20 ms frame. */
 export const FRAME = 320;
+/** Seconds in one frame. */
+export const FRAME_S = FRAME / RATE;
 
 export interface DetectOptions {
   /** Speech is this many times the noise floor… */
@@ -59,8 +63,8 @@ export const DETECT_DEFAULTS: DetectOptions = {
 export type DetectEvent =
   /** Speech began. */
   | { type: "start" }
-  /** One utterance, whole: its audio, how much of it was voiced, and whether the length cap ended it. */
-  | { type: "end"; audio: Float32Array; voicedS: number; capped: boolean }
+  /** One utterance, whole: its audio, how much of it was voiced, whether the length cap ended it, and its last voiced frame. */
+  | { type: "end"; audio: Float32Array; voicedS: number; capped: boolean; lastVoiced: number }
   /** What started was too short to be anything. */
   | { type: "discard" };
 
@@ -82,8 +86,6 @@ export function int16ToFloat32(bytes: Uint8Array): Float32Array {
   return out;
 }
 
-const FRAME_S = FRAME / RATE;
-
 export class UtteranceDetector {
   readonly o: DetectOptions;
   /** The learnt noise floor (RMS). */
@@ -94,11 +96,15 @@ export class UtteranceDetector {
   private rest = new Float32Array(0);
   /** Recent frames while nobody speaks (the pre-roll, and a start still being confirmed). */
   private recent: Float32Array[] = [];
+  private recentLevels: number[] = [];
   private loud = 0;
-  /** The utterance's frames. */
+  /** The utterance's frames, and each one's RMS. */
   private frames: Float32Array[] = [];
+  private levels: number[] = [];
   private voiced = 0;
   private quiet = 0;
+  /** The utterance's last voiced frame. */
+  private lastVoicedAt = -1;
 
   constructor(o: Partial<DetectOptions> = {}) {
     this.o = { ...DETECT_DEFAULTS, ...o };
@@ -123,10 +129,51 @@ export class UtteranceDetector {
     return this.frames.length * FRAME_S;
   }
 
-  /** The last `seconds` of the utterance being heard (for a live preview); empty when nobody speaks. */
-  tail(seconds: number): Float32Array {
+  /** Frames in the utterance being heard. Frame 0 is the start of its pre-roll. */
+  get frameCount(): number {
+    return this.frames.length;
+  }
+
+  /** Quiet frames at the end of the utterance being heard (a pause, or the silence that may end it). */
+  get quietFrames(): number {
+    return this.quiet;
+  }
+
+  /** The utterance's last voiced frame; -1 when nobody speaks. */
+  get lastVoiced(): number {
+    return this.speaking ? this.lastVoicedAt : -1;
+  }
+
+  /** Frames from..to of the utterance being heard, as audio; empty when nobody speaks. */
+  slice(from: number, to: number = this.frames.length): Float32Array {
     if (!this.speaking) return new Float32Array(0);
-    return join(this.frames.slice(-this.n(seconds)));
+    return join(this.frames.slice(from, to));
+  }
+
+  /** Voiced frames from `from` on. */
+  voicedFrom(from: number): number {
+    const t = this.threshold();
+    let n = 0;
+    for (let i = Math.max(0, from); i < this.levels.length; i++) if (this.levels[i] > t) n++;
+    return n;
+  }
+
+  /** The middle of the longest pause in frames from..to; with no quiet frame there, the quietest one (most likely a gap between words). */
+  gap(from: number, to: number = this.levels.length): number {
+    const t = this.threshold();
+    const end = Math.min(to, this.levels.length);
+    let quietest = Math.max(0, from);
+    let best = -1;
+    let bestLength = 0;
+    for (let i = quietest, run = 0; i < end; i++) {
+      if (this.levels[i] < this.levels[quietest]) quietest = i;
+      run = this.levels[i] > t ? 0 : run + 1;
+      if (run > bestLength) {
+        bestLength = run;
+        best = i - ((run - 1) >> 1);
+      }
+    }
+    return best >= 0 ? best : quietest;
   }
 
   /** Audio in; the events it caused, in order. */
@@ -152,12 +199,12 @@ export class UtteranceDetector {
     if (this.seen < 10) {
       // The first 200 ms only learn the room.
       this.floor = Math.max(0.0002, this.seen++ === 0 ? level : this.floor + (level - this.floor) * 0.4);
-      this.keep(f);
+      this.keep(f, level);
       return null;
     }
     const isSpeech = level > this.threshold();
     if (!this.speaking) {
-      this.keep(f);
+      this.keep(f, level);
       if (!isSpeech) {
         this.loud = 0;
         this.floor = Math.max(0.0002, this.floor + (level - this.floor) * (level < this.floor ? 0.2 : 0.02));
@@ -166,15 +213,20 @@ export class UtteranceDetector {
       if (++this.loud < this.n(this.o.minSpeechS)) return null;
       this.speaking = true;
       this.frames = this.recent;
+      this.levels = this.recentLevels;
       this.recent = [];
+      this.recentLevels = [];
+      this.lastVoicedAt = this.frames.length - 1;
       this.voiced = this.loud;
       this.loud = 0;
       this.quiet = 0;
       return { type: "start" };
     }
     this.frames.push(f);
+    this.levels.push(level);
     if (isSpeech) {
       this.voiced++;
+      this.lastVoicedAt = this.frames.length - 1;
       this.quiet = 0;
     } else this.quiet++;
     const long = this.lengthS >= this.o.maxS;
@@ -185,10 +237,14 @@ export class UtteranceDetector {
   }
 
   /** Frames kept while nobody speaks: the pre-roll, plus the loud run that may become a start. */
-  private keep(f: Float32Array): void {
+  private keep(f: Float32Array, level: number): void {
     this.recent.push(f);
+    this.recentLevels.push(level);
     const max = this.n(this.o.prerollS) + this.n(this.o.minSpeechS);
-    if (this.recent.length > max) this.recent.shift();
+    if (this.recent.length > max) {
+      this.recent.shift();
+      this.recentLevels.shift();
+    }
   }
 
   private finish(capped: boolean, minVoicedS: number): DetectEvent {
@@ -196,12 +252,15 @@ export class UtteranceDetector {
     const drop = Math.max(0, this.quiet - this.n(this.o.tailS));
     const frames = drop ? this.frames.slice(0, this.frames.length - drop) : this.frames;
     const voicedS = this.voicedS;
+    const lastVoiced = this.lastVoicedAt;
     this.speaking = false;
     this.frames = [];
+    this.levels = [];
     this.voiced = 0;
     this.quiet = 0;
     this.loud = 0;
-    return voicedS < minVoicedS ? { type: "discard" } : { type: "end", audio: join(frames), voicedS, capped };
+    this.lastVoicedAt = -1;
+    return voicedS < minVoicedS ? { type: "discard" } : { type: "end", audio: join(frames), voicedS, capped, lastVoiced };
   }
 
   /** End the utterance now (push-to-talk let go, or Stop): what was being said, or null when nothing was. */
@@ -215,6 +274,7 @@ export class UtteranceDetector {
     }
     this.rest = new Float32Array(0);
     this.recent = [];
+    this.recentLevels = [];
     this.loud = 0;
     return e;
   }
@@ -223,11 +283,14 @@ export class UtteranceDetector {
   reset(): void {
     this.speaking = false;
     this.frames = [];
+    this.levels = [];
     this.recent = [];
+    this.recentLevels = [];
     this.rest = new Float32Array(0);
     this.voiced = 0;
     this.quiet = 0;
     this.loud = 0;
+    this.lastVoicedAt = -1;
   }
 }
 

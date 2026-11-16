@@ -18,6 +18,8 @@ export interface EnvStanding {
   source: KeySource | null;
   /** The folder of another WalkMyCode whose keys.env holds this key ("codebase-guide", "your home folder"). */
   found?: string;
+  /** Set but not good for everything: what the vendor said (a Deepgram key that cannot start Talk). */
+  note?: string;
 }
 
 const MAX_LEN = 1024;
@@ -27,7 +29,7 @@ export function keysPath(): string {
   return join(dataDirIn(homeBase(process.cwd())), "keys.env");
 }
 
-let cache: { path: string; mtimeMs: number; keys: Map<string, string> } | null = null;
+let cache: { path: string; mtimeMs: number; size: number; keys: Map<string, string> } | null = null;
 
 /** Parse KEY=value lines; quotes stripped, blank lines and # comments skipped. */
 function parse(text: string): Map<string, string> {
@@ -45,17 +47,19 @@ function parse(text: string): Map<string, string> {
   return keys;
 }
 
-/** The keys in the file, re-read only when its mtime changes. Missing file = no keys. */
+/** The keys in the file, re-read only when it changes (its mtime or size: two writes in the same
+ *  clock tick keep the mtime). Missing file = no keys. */
 export function readKeys(): Map<string, string> {
   const path = keysPath();
   let mtimeMs: number;
+  let size: number;
   try {
-    mtimeMs = statSync(path).mtimeMs;
+    ({ mtimeMs, size } = statSync(path));
   } catch {
-    cache = { path, mtimeMs: -1, keys: new Map() };
+    cache = { path, mtimeMs: -1, size: -1, keys: new Map() };
     return cache.keys;
   }
-  if (cache && cache.path === path && cache.mtimeMs === mtimeMs) return cache.keys;
+  if (cache && cache.path === path && cache.mtimeMs === mtimeMs && cache.size === size) return cache.keys;
   rememberKeyFile(path);
   let text = "";
   try {
@@ -63,7 +67,7 @@ export function readKeys(): Map<string, string> {
   } catch {
     text = "";
   }
-  cache = { path, mtimeMs, keys: parse(text) };
+  cache = { path, mtimeMs, size, keys: parse(text) };
   return cache.keys;
 }
 
@@ -100,7 +104,7 @@ export function keyForEnv(envVar: string): { value: string; source: KeySource } 
   return null;
 }
 
-/** Port of iReliabee's _clean_value: trim, cap the length, refuse control characters. */
+/** Trim, cap the length, refuse control characters. */
 function cleanValue(value: string): string {
   const v = value.trim();
   if (v.length > MAX_LEN) throw new HttpError(400, "That key is far longer than any real one.");

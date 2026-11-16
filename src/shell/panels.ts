@@ -29,7 +29,7 @@ export const PANELS: Record<string, PanelDef> = {
   coderoom: { key: "coderoom", title: "Code room", icon: "▶", available: false, renderer: "onlyWhenVisible", shortcut: 7 },
   // The code's output, popped out from under the editor (src/ide/outputStore.ts).
   // Always mounted: while it is open, the output lives here instead.
-  output: { key: "output", title: "Output", icon: "▷", available: true, renderer: "always", shortcut: 8 },
+  output: { key: "output", title: "Run", icon: "▷", available: true, renderer: "always", shortcut: 8 },
 };
 
 /** Dynamic editors: id `code:<path>`, component 'code', params { path }. Not in PANELS. */

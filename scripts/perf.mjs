@@ -2,11 +2,13 @@
 // through Playwright against a running server:
 //
 //   npm run build && npx next start -p 3100
-//   node scripts/perf.mjs [--base http://localhost:3100] [--demo team-tasks] [--runs 3] [--headed]
+//   node scripts/perf.mjs --demo <name> [--base http://localhost:3100] [--runs 3] [--headed]
+//     [--cards <id,id>] [--other <id,id>] [--fly "<a> to <b>"]
 //
-// Needs the demo's .walkmycode/<name>.map.json and .files.json. Uses the Chrome
-// installed on this machine (channel "chrome"); falls back to Playwright's own
-// Chromium (`npx playwright install chromium`).
+// Needs the demo's .walkmycode/<name>.map.json and .files.json. The demo, cards and
+// fly-through can also come from WALKMYCODE_PERF_DEMO, _CARDS, _OTHER and _FLY.
+// Uses the Chrome installed on this machine (channel "chrome"); falls back to
+// Playwright's own Chromium (`npx playwright install chromium`).
 //
 // Every interaction reports two numbers:
 //   frame   – from the click to the first frame painted after it
@@ -20,13 +22,19 @@ const arg = (name, dflt) => {
   return i < 0 ? dflt : process.argv[i + 1];
 };
 const BASE = arg("base", "http://localhost:3100");
-const DEMO = arg("demo", "team-tasks");
+const DEMO = arg("demo", process.env.WALKMYCODE_PERF_DEMO);
+if (!DEMO) {
+  console.error("Name the demo to time: --demo <name> (or WALKMYCODE_PERF_DEMO), the folder whose .walkmycode/<name>.map.json is mapped.");
+  process.exit(1);
+}
 const RUNS = Number(arg("runs", "3"));
 const HEADED = process.argv.includes("--headed");
 const CPU = Number(arg("cpu", "1"));
-/** Well-connected cards of the demo's map (the first one found on the page is used). */
-const CARDS = ["file:lib/tasks.ts", "file:lib/db.ts", "file:lib/auth.ts"];
-const OTHER = ["file:components/TaskList.tsx", "file:app/page.tsx"];
+const list = (name, env) => (arg(name) ?? process.env[env] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+/** Well-connected cards of the demo's map, by node id (the first one found on the page is used);
+ * without them, the first file cards on the page. */
+const CARDS = list("cards", "WALKMYCODE_PERF_CARDS");
+const OTHER = list("other", "WALKMYCODE_PERF_OTHER");
 
 // In the page: long tasks, and a helper that times one action.
 const INSTRUMENT = () => {
@@ -110,8 +118,8 @@ async function openDemo(page) {
 }
 
 /** "A to B" for the fly-through measure: two cards the go-to bar resolves by name, joined by
- * real arrows (frontend page → backend route → logic → table on the demo's map). */
-const FLY = arg("fly", DEMO === "team-tasks" ? "components/TaskList to lib/db" : "");
+ * real arrows (say frontend page → backend route → logic → table). Skipped when not given. */
+const FLY = arg("fly", process.env.WALKMYCODE_PERF_FLY ?? "");
 
 /** In the page: press Enter in the open go-to bar and time the camera's first move. */
 const ENTER_AND_TIME = () =>
@@ -182,7 +190,7 @@ async function run(browser) {
   out.connectFcp = await fcp(page);
 
   // Map the demo's files as if they were a picked folder: how long, and the longest the page froze.
-  // The home page: "Add several", then the demo's chip ("+ team-tasks"); before it, "add to workspace".
+  // The home page: "Add several", then the demo's chip ("+ <name>"); before it, "add to workspace".
   const several = page.getByRole("button", { name: "Add several (web + API)" });
   if (await several.count()) {
     await several.click();
@@ -226,8 +234,9 @@ async function run(browser) {
 
   // Click one card.
   const pick = (ids) => page.evaluate((ids) => ids.find((id) => document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`)), ids);
-  const card = await pick(CARDS);
-  const other = await pick(OTHER);
+  const shown = await page.evaluate(() => [...document.querySelectorAll(".react-flow__node[data-id^='file:']")].map((e) => e.dataset.id));
+  const card = (await pick(CARDS)) ?? shown[0];
+  const other = (await pick(OTHER)) ?? shown.find((id) => id !== card);
   if (!card || !other) throw new Error("no card to click");
   const click = (id) =>
     page.evaluate(
@@ -310,7 +319,7 @@ async function run(browser) {
   // Go to a card by name (Ctrl+K, type its name, Enter): from the Enter to the first
   // move of the camera, and to the frame painted after it (docs/PLAN.md "Fly-through":
   // the first move within 100 ms of a name match).
-  out.goTo = await goTo(page, [...OTHER, ...CARDS]);
+  out.goTo = await goTo(page, [other, card, ...shown]);
   await page.waitForTimeout(1200);
 
   // A fly-through by names ("A to B", resolved in the page with no AI): frames per

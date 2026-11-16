@@ -4,7 +4,6 @@
 // whether it is signed in to a plan rather than an API key, the command that runs one question with
 // WalkMyCode's tools (the stdio bridge, scripts/cli-tools-mcp.mjs), and how to read what it prints.
 // cli.ts runs them all the same way. No React and no server-only imports, so tests can load it.
-// The command lines follow iReliabee's, which runs the same three.
 import type { ProviderId } from "./catalogue";
 
 export type AgentId = Extract<ProviderId, "claude-code" | "codex" | "gemini-cli">;
@@ -66,7 +65,7 @@ const claude: Agent = {
   override: "WALKMYCODE_CLAUDE",
   strip: (k) => /^ANTHROPIC_/.test(k) || k === "CLAUDECODE" || (/^CLAUDE_CODE_/.test(k) && k !== "CLAUDE_CODE_GIT_BASH_PATH"),
   authArgs: ["auth", "status"],
-  // After iReliabee's assistant_auth.parse: a claude.ai login is the plan; a Console login, an API key
+  // A claude.ai login is the plan; a Console login, an API key
   // or Bedrock/Vertex is billed per token.
   who: (out) => {
     const s = parse(out.slice(Math.max(0, out.indexOf("{"))));

@@ -442,6 +442,35 @@ try {
     await clickText("^Done editing$");
   } else note(where, "Edit", "no Edit button");
 
+  // Code only: the editor keeps the panel's whole width (it once shrank to its longest line), and again after
+  // Show panels. Measured with wrapping off, as code is by default outside Explore, and the lines cut short.
+  const toggle = page.locator('[data-testid="ide-code-only"]').first();
+  if (await toggle.isVisible().catch(() => false)) {
+    const widths = () =>
+      page.evaluate(() => {
+        const ide = [...document.querySelectorAll(".ide")].find((e) => window.__vis(e));
+        const content = ide?.querySelector(".cm-content");
+        const style = document.createElement("style");
+        style.textContent = ".cm-line { display: none } .cm-line:first-child { display: block }";
+        const wrapped = content?.classList.contains("cm-lineWrapping");
+        content?.classList.remove("cm-lineWrapping");
+        document.head.append(style);
+        const w = (sel) => Math.round(ide?.querySelector(sel)?.getBoundingClientRect().width ?? 0);
+        const got = { editor: w(".cm-editor"), panel: w(".ide-grid"), single: !!ide?.querySelector(".ide-grid.single") };
+        style.remove();
+        if (wrapped) content?.classList.add("cm-lineWrapping");
+        return got;
+      });
+    for (const label of ["Code only", "Show panels"]) {
+      await toggle.click();
+      await page.waitForTimeout(500);
+      const w = await widths();
+      // Shown alone (Code only, or a file with nothing to run) the editor is the panel's width.
+      if (w.single && Math.abs(w.editor - w.panel) > 2) note(where, label, `the editor is ${w.editor} px wide in a ${w.panel} px panel (screenshot: ${await shot("code-only")})`);
+    }
+    await look("Code only, then Show panels");
+  } else note(where, "Code only", "no Code only button");
+
   // ── The guide: a typed question, Talk ──
   where = "guide";
   await page.locator(".dv-tab", { hasText: "Guide" }).first().click().catch(() => {});

@@ -23,6 +23,13 @@ export function envVar(name: string, env: Record<string, string | undefined> = p
   return env[`WALKMYCODE_${name}`] ?? env[`LANTERN_${name}`];
 }
 
+/** Where WalkMyCode's own files are (scripts/, node_modules/): the repo it runs from, or in the
+ * desktop app the server folder inside the install (WALKMYCODE_APP_DIR, docs/DESKTOP.md), whose
+ * working folder is the user's home instead. */
+export function appDir(env: Record<string, string | undefined> = process.env): string {
+  return envVar("APP_DIR", env) ?? process.cwd();
+}
+
 /** The folder WALKMYCODE_HOME (or the old LANTERN_HOME) points at, else `fallback`. */
 export function homeBase(fallback: string): string {
   return envVar("HOME") ?? fallback;

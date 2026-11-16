@@ -5,6 +5,7 @@
 // Lite). Each hop's line is cached under the map, so a replay costs nothing.
 // Loaded the first time a hop is read aloud.
 import type { FlyVoice } from "./flythrough";
+import { exploreMuted } from "./voice/mute";
 import { getNarrator, type Narrator } from "./voice/narrate";
 import { loadVoiceView, narratorInForce } from "./voice/view";
 
@@ -14,7 +15,7 @@ export function flyVoice(): FlyVoice {
     async say(text, scope) {
       const view = await loadVoiceView();
       const { narrator } = narratorInForce(view);
-      current = getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed });
+      current = getNarrator({ narrator, voiceId: narrator === view.narrator ? view.voiceId : null, speed: view.speed, muted: exploreMuted() });
       return current.speak(text, { scope });
     },
     pause: () => current?.pause(),

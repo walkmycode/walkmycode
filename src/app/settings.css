@@ -103,6 +103,9 @@
 .sv-key-form .sv-input { flex: 1 1 200px; width: auto; height: calc(38px * var(--ctl)); }
 .sv-key-note { margin: calc(8px * var(--sp)) 0 0; color: var(--ui-faint); font-size: var(--text); }
 .sv-key-note .sv-status { margin-left: 0; }
+/* A key that is saved but not good for everything (a Deepgram key that cannot start Talk). */
+.sv-key-note.warn { padding-left: calc(10px * var(--sp)); color: var(--ui-dim); border-left: 2px solid var(--pink); }
+.sv-key-note.warn a { color: var(--yellow); }
 
 /* Which should I pick? */
 .sv-pick { display: grid; gap: calc(2px * var(--sp)); margin: 0; padding: 0; list-style: none; }

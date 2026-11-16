@@ -3,7 +3,7 @@
 // over a silence, and a narrator's reading lights no word in a pause.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { loudness, measuredWords, voicedRuns, wordHeardAt, LINGER } from "../src/lib/voice/measure";
+import { loudness, measuredWords, MEASURE_VERSION, voicedRuns, wordHeardAt, LINGER } from "../src/lib/voice/measure";
 import { ServerNarrator } from "../src/lib/voice/narrate";
 import { AudioCache } from "../src/lib/voice/audioCache";
 
@@ -88,6 +88,28 @@ describe("timing words against the sound", () => {
     assert.equal(at(4.6), null);
   });
 
+  it("starts the words after a comma where the voice starts again, when it paused there (and not when it did not)", () => {
+    // Measured 15 Nov 2026 on Aura-2 Draco: it paused about 0.8 s after "on its own," and every word after the comma
+    // was lit about a second early, laid over the sound before the pause.
+    const text = "You can run it again and again on its own, but one mistake builds nothing.";
+    const runs = voicedRuns(levels(6.5, [[0.2, 3.4], [4.2, 6.2]]), STEP);
+    const words = measuredWords(text, runs);
+    const but = words.find((w) => said(text, w) === "but")!;
+    const own = words.find((w) => said(text, w) === "own,")!;
+    near(but.start, 4.2, 0.02);
+    assert.ok(own.end <= 3.41, "the comma's word ends where the sound before the pause ends");
+    // The same text, read with no pause at the comma: the words are spread over the one stretch of sound.
+    const flat = measuredWords(text, voicedRuns(levels(5.5, [[0.2, 5.3]]), STEP));
+    assert.ok(flat.find((w) => said(text, w) === "but")!.start > 2.5);
+  });
+
+  it("gives a code name the time it takes to say: main.rs is \"main dot r s\"", () => {
+    const text = "Open main.rs then mains";
+    const words = measuredWords(text, voicedRuns(levels(4, [[0.1, 3.9]]), STEP));
+    const len = (w: string) => { const x = words.find((y) => said(text, y) === w)!; return x.end - x.start; };
+    assert.ok(len("main.rs") > len("mains") * 2, `${len("main.rs")} vs ${len("mains")}`);
+  });
+
   it("spreads the words over all the sound when the pauses do not match the sentences", () => {
     // One sentence, said with a pause in the middle; and two sentences said without one.
     const one = measuredWords("This is one long sentence with a pause", voicedRuns(levels(3, [[0.2, 1.0], [1.5, 2.4]]), STEP));
@@ -138,5 +160,36 @@ describe("a narrator that sends no word timings", () => {
     // Heard again from the cache: not measured a second time.
     await narrator.prefetch("Hello there", scope);
     assert.equal(asked.length, 1);
+    assert.equal(([...kept.values()][0] as { measured?: number }).measured, MEASURE_VERSION);
+  });
+
+  it("measures again, once, audio kept with words from an older measurement (which lit words early)", async () => {
+    const { kept, store: s } = store();
+    const asked: string[] = [];
+    const fresh = [{ from: 0, to: 5, start: 0.4, end: 0.9 }];
+    const make = () =>
+      new ServerNarrator("deepgram", {
+        voiceId: null,
+        speed: 1,
+        cache: new AudioCache(s),
+        fetch: (async () => new Response(mp3, { headers: { "content-type": "audio/mpeg" } })) as typeof fetch,
+        measure: async (text) => {
+          asked.push(text);
+          return fresh;
+        },
+      });
+    const narrator = make();
+    await narrator.prefetch("Hello there", scope);
+    // Make the kept entry look like one an older version measured: its words, but no version.
+    const [id, v] = [...kept.entries()][0];
+    kept.set(id, { ...v, words: [{ from: 0, to: 5, start: 0.1, end: 0.3 }] } as never);
+    delete (kept.get(id) as { measured?: number }).measured;
+    asked.length = 0;
+    const again = make();
+    await again.prefetch("Hello there", scope);
+    assert.deepEqual(asked, ["Hello there"], "measured again from the audio already kept");
+    assert.deepEqual(kept.get(id)!.words, fresh);
+    await again.prefetch("Hello there", scope);
+    assert.equal(asked.length, 1, "and only once");
   });
 });

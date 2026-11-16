@@ -63,7 +63,8 @@ describe("tool strips: where the icons go", () => {
   it("puts a group's icons on the edge it touches; the middle one keeps its usual side", () => {
     const items = stripItems(dock(three()), box);
     const side = Object.fromEntries(items.map((i) => [i.id, i.side]));
-    assert.deepEqual(side, { map: "left", "code:home": "left", guide: "right", details: "right", files: "right", settings: "right" });
+    // Run is always on a strip (a click opens it in a sidebar), on the right until it is docked elsewhere.
+    assert.deepEqual(side, { map: "left", "code:home": "left", guide: "right", details: "right", files: "right", settings: "right", output: "right" });
   });
 
   it("lights the tab in front of a shown group; an editor tab counts for Code", () => {

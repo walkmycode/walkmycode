@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "tests/fixtures", "examples", "out", "out-mcp", "publish-lite", "mcp/dist"]
+  "exclude": ["node_modules", "tests/fixtures", "examples", "out", "out-mcp", "publish-lite", "mcp/dist", "src-tauri"]
 }
