@@ -24,6 +24,9 @@ export interface Lit {
    * only this hop animates, its arrow ridden (against it when `reverse`) and its card lit
    * as the rider lands; a gap is drawn as one. */
   fly?: FlyHop;
+  /** A change on the map (src/lib/diffTour.ts): the cards it changed with their count ("+9 −4"),
+   * the ones that use them without changing ("affected"), and the tour step's own cards ("now"). */
+  change?: { changed: Map<string, string>; affected: Set<string>; now: Set<string> };
 }
 
 export interface FlyHop {
@@ -56,8 +59,16 @@ export function hiStateOf(map: CodeMap, selected: string | null, lit: Lit | null
 export function cardClass(s: HiState, id: string): string {
   let c = s.selected === id ? " selected" : "";
   if (s.lit?.nodes.has(id)) c += " lit";
+  const ch = s.lit?.change;
+  if (ch) c += ch.changed.has(id) ? " changed" : ch.affected.has(id) ? " affected" : "";
+  if (ch?.now.has(id)) c += " now";
   if (s.mode === "near" && s.near!.nodes.has(id)) c += " near";
   return c;
+}
+
+/** A changed card's count ("+9 −4"), or "". */
+export function changeBadge(s: HiState, id: string): string {
+  return s.lit?.change?.changed.get(id) ?? "";
 }
 
 /** Classes of a service card on the system view. */

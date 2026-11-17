@@ -872,3 +872,78 @@
 @media (max-width: 1180px) { .lh-below { grid-template-columns: minmax(0, 1fr); } .lh-side { position: static; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .lh-saved { grid-column: 1 / -1; } }
 @media (max-width: 900px) { .lh-hero { grid-template-columns: minmax(0, 1fr); } .lh-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .lh-side { grid-template-columns: minmax(0, 1fr); } .lh-stats .lh-art { display: none; } .lh-go span { display: none; } }
+
+/* Quiz from your code (RepoQuiz.tsx, docs/LEARNING.md "Know your codebase"): topics and boxes beside the board. */
+.learn .hall.rq { max-width: 1440px; display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: calc(8px * var(--sp)); align-items: stretch; min-height: calc(100dvh - var(--top-h) - calc(52px * var(--sp))); }
+.learn .rq-side, .learn .rq-board { background: var(--ui); border: 1px solid var(--ui-line); color: var(--ui-text); font-size: var(--text); min-width: 0; }
+.learn .rq-side { padding: calc(18px * var(--sp)); display: flex; flex-direction: column; gap: calc(12px * var(--sp)); }
+.learn .rq-board { padding: calc(30px * var(--sp)) clamp(calc(16px * var(--sp)), 3.4vw, calc(48px * var(--sp))); display: flex; flex-direction: column; gap: calc(16px * var(--sp)); }
+.learn .rq p { margin: 0; }
+.learn .rq-label { font: 600 calc(var(--text) * .85) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.learn .rq-dim { color: var(--ui-dim); line-height: 1.5; }
+.learn .rq-faint { color: var(--ui-faint); }
+.learn .rq-small { font-size: calc(var(--text) * .92); }
+.learn .rq-topics { list-style: none; margin: 0; padding: 0; }
+.learn .rq-topics button { width: 100%; display: flex; justify-content: space-between; gap: calc(10px * var(--sp)); padding: calc(6px * var(--sp)) 0; background: none; border: 0; border-bottom: 1px solid var(--hair); color: var(--ui-text); font: var(--text)/1.4 var(--sans); text-align: left; cursor: pointer; }
+.learn .rq-topics button:hover span:first-child, .learn .rq-topics button.on span:first-child { color: var(--yellow); }
+.learn .rq-topics .rq-faint { flex: none; font-size: calc(var(--text) * .92); }
+.learn .rq-boxes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(6px * var(--sp)); }
+.learn .rq-boxes span { border: 1px solid var(--ui-line); padding: calc(5px * var(--sp)) 0; text-align: center; font-size: calc(var(--text) * .85); color: var(--ui-dim); display: flex; flex-direction: column; }
+.learn .rq-boxes span b { font: 600 var(--text) var(--mono); color: var(--ui-text); }
+.learn .rq-boxes span.on { border-color: var(--yellow); color: var(--yellow); }
+.learn .rq-boxes span.on b { color: var(--yellow); }
+.learn .rq-stale { border: 1px solid var(--yellow); padding: calc(10px * var(--sp)); display: flex; flex-direction: column; gap: calc(8px * var(--sp)); color: var(--ui-dim); }
+.learn .rq-side-end { margin-top: auto; display: flex; flex-direction: column; gap: calc(8px * var(--sp)); }
+.learn .rq-side-end .ctl, .learn .rq-stale .ctl { justify-content: center; }
+.learn .rq-row-btns { display: flex; flex-wrap: wrap; gap: calc(8px * var(--sp)); }
+.learn .rq-head { display: flex; align-items: center; gap: calc(14px * var(--sp)); flex-wrap: wrap; }
+.learn .rq-head .rq-faint { margin-left: auto; font: calc(var(--text) * .92) var(--mono); }
+.learn .rq-prog { display: flex; gap: calc(4px * var(--sp)); }
+.learn .rq-prog i { flex: 1; height: 4px; background: var(--ui-line); }
+.learn .rq-prog i.d { background: var(--green); }
+.learn .rq-prog i.x { background: var(--pink); }
+.learn .rq-prog i.c { background: var(--yellow); }
+.learn .rq-q { font: 600 calc(var(--text) * 1.8)/1.35 var(--sans); max-width: 820px; text-wrap: balance; color: var(--ui-text); }
+.learn .rq-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(10px * var(--sp)); max-width: 900px; }
+.learn .rq-opt { display: flex; gap: calc(12px * var(--sp)); align-items: flex-start; text-align: left; padding: calc(13px * var(--sp)) calc(16px * var(--sp)); border: 1px solid var(--ui-line); background: var(--ui); color: var(--ui-text); font: calc(var(--text) * 1.08)/1.45 var(--sans); cursor: pointer; }
+.learn .rq-opt:hover:not(:disabled) { border-color: var(--yellow); }
+.learn .rq-opt:disabled { cursor: default; }
+.learn .rq-opt b { flex: none; width: 24px; height: 24px; border: 1px solid var(--ui-faint); display: grid; place-items: center; font-size: calc(var(--text) * .92); }
+.learn .rq-opt.right { border-color: var(--green); }
+.learn .rq-opt.right b { background: var(--green); border-color: var(--green); color: var(--ink); }
+.learn .rq-opt.wrong { border-color: var(--pink); }
+.learn .rq-opt.wrong b { background: var(--pink); border-color: var(--pink); color: var(--ink); }
+.learn .rq-opt.no { color: var(--ui-faint); }
+.learn .rq-why { border: 1px solid var(--green); padding: calc(16px * var(--sp)) calc(18px * var(--sp)); max-width: 1100px; display: flex; gap: calc(24px * var(--sp)); }
+.learn .rq-why.wrong { border-color: var(--pink); }
+.learn .rq-why.right .rq-label { color: var(--green); }
+.learn .rq-why.wrong > .rq-why-text > .rq-label:first-child { color: var(--pink); }
+.learn .rq-why-text { flex: 0 1 340px; min-width: 0; display: flex; flex-direction: column; gap: calc(8px * var(--sp)); line-height: 1.5; }
+.learn .rq-why-code { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: calc(8px * var(--sp)); }
+.learn .rq-follow { border-top: 1px solid var(--ui-line); padding-top: calc(8px * var(--sp)); display: flex; flex-direction: column; gap: calc(6px * var(--sp)); }
+.learn .rq-code { margin: 0; }
+.learn .rq-rows { padding: calc(6px * var(--sp)) 0; overflow-x: auto; font: calc(var(--text) * .92)/1.6 var(--mono); color: var(--ui-text); }
+.learn .rq-row { display: flex; white-space: pre; min-width: max-content; }
+.learn .rq-row.hl { background: color-mix(in srgb, var(--yellow) 12%, transparent); }
+.learn .rq-ln { flex: none; width: 3.2em; padding-right: .8em; text-align: right; color: var(--code-gutter-ink); user-select: none; }
+.learn .rq-row code { font: inherit; padding-right: 1em; }
+.learn .rq-acts { display: flex; flex-wrap: wrap; align-items: center; gap: calc(10px * var(--sp)); max-width: 1100px; }
+.learn .rq-acts .grow { flex: 1; }
+.learn .rq-acts a.ctl { text-decoration: none; }
+.learn .rq-empty { margin: auto 0; max-width: 680px; display: flex; flex-direction: column; gap: calc(10px * var(--sp)); }
+.learn .rq-big { font: 650 calc(var(--text) * 1.6)/1.3 var(--sans); color: var(--ui-text); }
+.learn .rq-setup { border: 1px solid var(--yellow); padding: calc(12px * var(--sp)) calc(14px * var(--sp)); display: flex; flex-wrap: wrap; align-items: center; gap: calc(12px * var(--sp)); max-width: 900px; }
+.learn .rq-setup p { flex: 1 1 260px; color: var(--ui-dim); }
+.learn .rq-setup b { color: var(--ui-text); }
+.learn .rq-busy { display: flex; align-items: center; gap: calc(12px * var(--sp)); color: var(--ui-dim); }
+.learn .rq-note { color: var(--ui-dim); }
+.learn .rq-err { color: var(--pink); }
+@media (max-width: 860px) {
+  .learn .hall.rq { grid-template-columns: minmax(0, 1fr); }
+  .learn .hall.rq { min-height: 0; }
+  .learn .rq-board { order: -1; padding: calc(18px * var(--sp)) calc(16px * var(--sp)); }
+  .learn .rq-opts { grid-template-columns: minmax(0, 1fr); }
+  .learn .rq-why { flex-direction: column; }
+  .learn .rq-why-text { flex-basis: auto; }
+  .learn .rq-q { font-size: calc(var(--text) * 1.4); }
+}

@@ -27,6 +27,9 @@ Rules:
 /** Added to a question asked from the map's go-to bar: the answer is the map moving. */
 export const FLY_REQUEST = `Show me the way on the map. First find the real path with query_map (and read_file where a hop needs it). Then call fly_step once per hop, in order, as you go: the first call names where to start, each later call a node joined to the one before by a real arrow (via_edge is its id, or leave it out). Give each hop one short spoken sentence in say. Use only nodes and links the map has; where it has no link, say so and fly_step shows the gap. Then answer in two or three sentences, citing the lines.`;
 
+/** Added to "Explain the risks" (the Details panel's change impact, src/lib/impact.ts), after the lists it worked out. */
+export const IMPACT_REQUEST = `Explain the risks of this change for a beginner: what could break, for whom (the user on screen, another part of the app, the data), and what to check or test first. Read the changed code and the code of the users before you say anything about them, and use only the lists above and code you read. Cite every claim as path:line. Say when a link is a guess. If no test covers it, say so plainly.`;
+
 export const TOUR_ADDENDUM = `
 This time, build a guided tour. First use the tools (query_map, read_file, search) to follow the real flow end to end. Then call finish_tour exactly once with 4–9 steps in flow order. Each step: 1–3 spoken sentences for a beginner, the file and the exact lines to highlight (a small range, 3–25 lines), and the map node ids involved (from query_map). Don't write the tour as text; hand it in with the tool.`;
 

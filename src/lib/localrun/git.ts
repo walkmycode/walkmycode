@@ -8,8 +8,11 @@
 // message is never read as an option. Pushing never waits on a typed password
 // (GIT_TERMINAL_PROMPT=0): the terminal is where a first sign-in happens.
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { COMMIT, FUNC_NAME, githubWeb, LINE_LOG_FORMAT, parseLineLog, STORY_COMMITS, type LineStory, type StoryOf } from "./lineStory";
+import { cutDiff, dropSecrets, isRefName, isSecretPath, parseDiff, parseNumstat, type ChangeBases, type RangeChange } from "../diffParse";
+import { CHURN_FORMAT, CHURN_MAX_COMMITS, isSpan, parseChurn, sinceOf, type Churn, type Span } from "../hotspots";
 
 export type GitChange = "modified" | "added" | "deleted" | "renamed" | "untracked" | "conflicted" | "type";
 
@@ -70,6 +73,10 @@ export interface GitBlameHunk {
   time: number;
   /** The commit's message, its first line. */
   summary: string;
+  /** Committed lines: the commit's full hash, and each line's number in that commit (git blame's
+   * "original line"), so a line's own history can start there even when lines above it have moved. */
+  sha?: string;
+  orig?: number[];
 }
 
 /** One commit that changed a file. */
@@ -106,6 +113,80 @@ export const runGit: Exec = (args, cwd, timeoutMs) =>
       },
     );
   });
+
+/** The execs readOnlyExec made. */
+const guarded = new WeakSet<Exec>();
+
+/** git commands that never read a file's contents from the working tree, so no clean or smudge filter
+ * can run in them. Every other command (blame, diff, status, anything added later) gets the filters
+ * switched off first: an unknown command is treated as one that may run them. */
+const NO_WORKTREE_READ = new Set(["rev-parse", "for-each-ref", "merge-base", "symbolic-ref", "config", "ls-files", "log", "check-ref-format"]);
+
+/** Why a read is refused when a filter can't be switched off. */
+export const FILTER_REFUSED = "This repo sets up a filter program WalkMyCode can't switch off (its name has an \"=\" in it), so WalkMyCode won't read its changed files.";
+
+/** The filter drivers git knows here (`filter.<name>.*` in any config git reads: the repo's own
+ * .git/config, its includes, the user's), from `git config --null --get-regexp`: each entry is
+ * "key\nvalue" (or just "key"), entries end with NUL. The name is the key between "filter." and its
+ * last dot, kept as written (a driver's name is case-sensitive). */
+export function filterDrivers(out: string): string[] {
+  const names = new Set<string>();
+  for (const entry of out.split("\0")) {
+    const key = entry.split("\n", 1)[0];
+    const dot = key.lastIndexOf(".");
+    if (key.startsWith("filter.") && dot > 7) names.add(key.slice(7, dot));
+  }
+  return [...names];
+}
+
+/** git so that a repo's own settings can't make it start a program, for the ops that only read: no
+ * file-system monitor (core.fsmonitor), blame with no text conversion, a diff with no text conversion
+ * and no external diff program (diff.external, a diff driver's command), and no clean or smudge
+ * filter. The desktop app's read-only route (./gitRead.ts), line history over the local-run socket
+ * and the change tour (changeBases, change) run git through this.
+ *
+ * Filters: a repo's .git/config can define `filter.<name>.clean`, `.smudge` or `.process` (a command),
+ * and an attribute `filter=<name>` selects it; git then runs it whenever it reads a file from the
+ * working tree (a diff against a commit, blame of a changed file, a new file's diff). Every driver git
+ * knows here is switched off by name before such a command: `-c filter.<name>.clean=` (and .smudge,
+ * .process) with `.required=false`. git runs no filter whose command is empty, and `-c` outranks every
+ * config file. Why not `--attr-source=<the empty tree>` (git 2.40+) instead: it only replaces the
+ * working tree's .gitattributes, and $GIT_DIR/info/attributes and a core.attributesFile the repo's own
+ * config names still select the filter (tests/gitFilters.test.ts has both); switching the drivers off
+ * covers every place an attribute can come from, on every git version, so there's no version to check.
+ * A name with "=" in it can't be written as `-c key=value` (git splits at the first "="), so the read
+ * is refused instead. The driver list is read with `git config` just before the command; a config
+ * changed in between would need something already writing to this computer. */
+export function readOnlyExec(exec: Exec = runGit): Exec {
+  // Already guarded (a createGit given a readOnlyExec that guards a call again itself): once is enough.
+  if (guarded.has(exec)) return exec;
+  const ro: Exec = async (all, cwd, timeoutMs) => {
+    // The caller's own `-c name=value` pairs (churn's NO_MONITOR) come first; ours go after them, so they win.
+    let k = 0;
+    while (all[k] === "-c" && k + 1 < all.length) k += 2;
+    const pre = all.slice(0, k);
+    const args = all.slice(k);
+    const a = args[0] === "blame" ? ["blame", "--no-textconv", ...args.slice(1)] : args[0] === "diff" ? ["diff", "--no-textconv", "--no-ext-diff", ...args.slice(1)] : args;
+    const base = [...pre, "-c", "core.fsmonitor=false"];
+    if (NO_WORKTREE_READ.has(a[0] ?? "")) return exec([...base, ...a], cwd, timeoutMs);
+    const list = await exec([...base, "config", "--null", "--get-regexp", "^filter\\."], cwd, 10_000);
+    // 1: no filter set up. Anything else: git couldn't read its config, so don't go on blind.
+    if (list.code > 1) return { code: list.code, stdout: "", stderr: list.stderr || "git couldn't read this repo's settings." };
+    const names = list.code === 0 ? filterDrivers(list.stdout) : [];
+    if (names.some((n) => n.includes("="))) return { code: 1, stdout: "", stderr: FILTER_REFUSED };
+    const off = names.flatMap((n) => ["-c", `filter.${n}.clean=`, "-c", `filter.${n}.smudge=`, "-c", `filter.${n}.process=`, "-c", `filter.${n}.required=false`]);
+    return exec([...base, ...off, ...a], cwd, timeoutMs);
+  };
+  guarded.add(ro);
+  return ro;
+}
+
+/** The most new (untracked) files read into a change, and the largest diff git may hand back for one. */
+const NEW_FILES_MAX = 40;
+/** The branches a change is usually measured against, offered first. */
+const USUAL_BASES = ["main", "master", "develop", "dev", "trunk"];
+/** A full commit id, as rev-parse and merge-base print it (SHA-1 or SHA-256). */
+const SHA = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 const CHANGE: Record<string, GitChange> = { M: "modified", A: "added", D: "deleted", R: "renamed", C: "added", T: "type", U: "conflicted" };
 
@@ -174,20 +255,22 @@ export function parseFileLog(out: string): GitFileCommit[] {
  * (the all-zero hash) form blocks of their own with no author. */
 export function parseBlame(out: string): GitBlameHunk[] {
   const commits = new Map<string, { author: string; email: string; time: number; summary: string }>();
-  const lines: { line: number; hash: string }[] = [];
+  const lines: { line: number; hash: string; orig: number }[] = [];
   let cur: string | null = null;
   let at = 0;
+  let orig = 0;
   for (const l of out.split("\n")) {
-    const head = /^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$/.exec(l);
+    const head = /^([0-9a-f]{40}) (\d+) (\d+)(?: \d+)?$/.exec(l);
     if (head) {
       cur = head[1];
-      at = Number(head[2]);
+      orig = Number(head[2]);
+      at = Number(head[3]);
       if (!commits.has(cur)) commits.set(cur, { author: "", email: "", time: 0, summary: "" });
       continue;
     }
     if (!cur) continue;
     if (l.startsWith("\t")) {
-      lines.push({ line: at, hash: cur });
+      lines.push({ line: at, hash: cur, orig });
       continue;
     }
     const c = commits.get(cur)!;
@@ -197,22 +280,29 @@ export function parseBlame(out: string): GitBlameHunk[] {
     else if (l.startsWith("summary ")) c.summary = l.slice(8);
   }
   const hunks: GitBlameHunk[] = [];
-  for (const { line, hash } of lines.sort((a, b) => a.line - b.line)) {
+  for (const { line, hash, orig } of lines.sort((a, b) => a.line - b.line)) {
     const pending = /^0+$/.test(hash);
     const short = pending ? "" : hash.slice(0, 7);
     const last = hunks[hunks.length - 1];
-    if (last && last.hash === short && last.start + last.lines === line) {
+    if (last && last.hash === short && (pending || last.sha === hash) && last.start + last.lines === line) {
       last.lines++;
+      last.orig?.push(orig);
       continue;
     }
     const c = commits.get(hash)!;
-    hunks.push(pending ? { start: line, lines: 1, hash: "", author: "", email: "", time: 0, summary: "" } : { start: line, lines: 1, hash: short, author: c.author, email: c.email, time: c.time, summary: c.summary });
+    hunks.push(pending ? { start: line, lines: 1, hash: "", author: "", email: "", time: 0, summary: "" } : { start: line, lines: 1, hash: short, author: c.author, email: c.email, time: c.time, summary: c.summary, sha: hash, orig: [orig] });
   }
   return hunks;
 }
 
 /** The biggest file blamed (a minified bundle is not worth it). */
 const BLAME_MAX_LINES = 20_000;
+/** The most lines one line-history may follow (a function's), and the biggest file it reads to count them. */
+const STORY_MAX_SPAN = 2000;
+const STORY_MAX_BYTES = 5_000_000;
+
+/** git told not to start the repo's file-system monitor (a program a repo's settings can name). */
+const NO_MONITOR = ["-c", "core.fsmonitor=false"];
 
 const tail = (r: { stdout: string; stderr: string }) => `${r.stdout}${r.stderr}`.trim();
 
@@ -287,10 +377,101 @@ export function createGit(exec: Exec = runGit) {
     return null;
   };
 
+  /** The first of these folders that is in a git repo (the folder itself, not the repo's top), or null. */
+  const rootOf = async (roots: string[]): Promise<string | null> => {
+    for (const root of roots) {
+      if (!existsSync(root)) continue;
+      const r = await exec(["rev-parse", "--show-toplevel"], root, 10_000);
+      if (r.code === 0 && r.stdout.trim()) return root;
+    }
+    return null;
+  };
+
+  /** A ref the page named, as the commit it is now: checked by its shape first (never an option, never a
+   * range), then by git, which must find a commit by that name. Null when it isn't one. */
+  const commitOf = async (cwd: string, ref: string): Promise<string | null> => {
+    if (ref !== "HEAD" && !isRefName(ref)) return null;
+    const r = await exec(["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`], cwd, 10_000);
+    const sha = r.stdout.trim();
+    return r.code === 0 && SHA.test(sha) ? sha : null;
+  };
+
   return {
     topOf,
+    rootOf,
     status,
     locate,
+
+    /** What a change can be toured against: the branch the folder is on, the other branches (local, then
+     * remote), and the last commit. Read-only. */
+    async changeBases(cwd: string): Promise<ChangeBases | { error: string }> {
+      const r = await exec(["for-each-ref", "--format=%(HEAD)%1f%(refname:short)%1f%(refname)", "refs/heads", "refs/remotes"], cwd, 10_000);
+      if (r.code !== 0) return { error: tail(r) || "git couldn't list the branches." };
+      let current: string | null = null;
+      const local: string[] = [];
+      const remote: string[] = [];
+      for (const line of r.stdout.split("\n")) {
+        const [head, name, full] = line.split("\x1f");
+        if (!name || !full || !isRefName(name)) continue;
+        if (head === "*") current = name;
+        // origin/HEAD only points at another remote branch.
+        else if (full.startsWith("refs/remotes/")) {
+          if (!full.endsWith("/HEAD")) remote.push(name);
+        } else local.push(name);
+      }
+      const last = await commitOf(cwd, "HEAD~1");
+      // The usual bases first (main, then origin/main), then the rest as git lists them, local before remote.
+      const usual = (n: string, remoteRef: boolean) => USUAL_BASES.indexOf(remoteRef ? n.replace(/^origin\//, "") : n);
+      const ranked = [...local.map((n) => ({ n, u: usual(n, false), remote: false })), ...remote.map((n) => ({ n, u: n.startsWith("origin/") ? usual(n, true) : -1, remote: true }))];
+      const first = ranked.filter((x) => x.u >= 0).sort((x, y) => x.u - y.u || Number(x.remote) - Number(y.remote));
+      const rest = ranked.filter((x) => x.u < 0);
+      return { current, bases: [...first, ...rest].map((x) => x.n).slice(0, 60).concat(last ? ["HEAD~1"] : []) };
+    },
+
+    /** The change in this folder against a base: the folder as it is now (commits since the branch left
+     * the base, and anything not committed yet, new files too) against where it left the base. With no
+     * base, against the last commit: the uncommitted changes. Paths are from the folder (`--relative`),
+     * secret files are left out, and the diff is cut at DIFF_CUT. Read-only. */
+    async change(cwd: string, base: string | null): Promise<RangeChange | { error: string }> {
+      const head = await commitOf(cwd, "HEAD");
+      if (!head) return { error: "This folder has no commit yet, so there is nothing to compare it with." };
+      let from = head;
+      if (base !== null) {
+        const b = await commitOf(cwd, base);
+        if (!b) return { error: `There is no branch or commit called "${base}" here.` };
+        // Where this branch left the base; two histories that never met: the base itself.
+        const mb = await exec(["merge-base", head, b], cwd, 20_000);
+        from = mb.code === 0 && SHA.test(mb.stdout.trim()) ? mb.stdout.trim() : b;
+      }
+      const branch = await exec(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd, 10_000);
+      const opts = ["--no-color", "--no-renames", "--relative"];
+      const num = await exec(["diff", "--numstat", "-z", ...opts, from, "--"], cwd, 30_000);
+      if (num.code !== 0) return { error: tail(num) || "git couldn't compare the files." };
+      const d = await exec(["diff", ...opts, "-U3", from, "--"], cwd, 60_000);
+      if (d.code !== 0) return { error: /maxBuffer/i.test(d.stderr) ? "This change is too big to read here." : tail(d) || "git couldn't show the change." };
+      const files = parseNumstat(num.stdout);
+      let text = dropSecrets(d.stdout);
+      let cut = false;
+      // New files git doesn't track yet are part of the change too: each as all added lines.
+      const ls = await exec(["ls-files", "--others", "--exclude-standard", "-z"], cwd, 20_000);
+      const fresh = ls.code === 0 ? ls.stdout.split("\0").filter((p) => p && !isSecretPath(p)) : [];
+      if (fresh.length > NEW_FILES_MAX) cut = true;
+      for (const p of fresh.slice(0, NEW_FILES_MAX)) {
+        if (text.length > DIFF_MAX * 2) {
+          cut = true;
+          break;
+        }
+        const n = await exec(["diff", "--no-index", ...opts.filter((o) => o !== "--relative"), "--", process.platform === "win32" ? "NUL" : "/dev/null", p], cwd, 20_000);
+        // --no-index exits 1 when the files differ, which is the point.
+        if (n.code > 1 || !n.stdout) continue;
+        const one = parseDiff(n.stdout)[0];
+        if (!one) continue;
+        text += n.stdout.endsWith("\n") ? n.stdout : `${n.stdout}\n`;
+        files.push({ path: one.path, added: one.added, removed: 0, ...(one.status === "binary" ? { binary: true } : {}) });
+      }
+      const c = cutDiff(text);
+      return { base, head: branch.code === 0 ? branch.stdout.trim() || null : null, files, diff: c.text, cut: cut || c.cut };
+    },
 
     /** Who last changed each line of a file, and when: blocks of lines per commit. Lines changed
      * since the last commit come as blocks with no hash. */
@@ -309,6 +490,93 @@ export function createGit(exec: Exec = runGit) {
     async fileLog(top: string, rel: string, n = 100): Promise<GitFileCommit[]> {
       const r = await exec(["log", `-n${n}`, "--follow", FILE_LOG_FORMAT, "--", rel], top, 30_000);
       return r.code === 0 ? parseFileLog(r.stdout) : [];
+    },
+
+    /** How one line (or a range of lines, or a function by name) got to be as it is: the commits that
+     * changed it, newest first, each with the lines it took out and put in (git log -L).
+     *
+     * A line's number in the file on disk drifts from the commits' once lines above it change and
+     * aren't committed, so the page sends the commit that last changed the line and the line's number
+     * there (git blame's), `at`: the log starts at that commit, and the lines are checked against the
+     * file as that commit has it. Without `at` the lines are the last commit's, so they are refused
+     * while the file has changes not committed. The lines are whole numbers inside the file; `at` is
+     * a commit's hash (checked by git), never a branch name or an option; a function's name is a plain
+     * identifier. git is told not to run a repo's text-conversion or clean/smudge filters or its
+     * file-system monitor (readOnlyExec), and is given a limit and a time. */
+    async lineLog(top: string, rel: string, of: StoryOf, n = STORY_COMMITS): Promise<{ ok: true; story: LineStory } | { ok: false; output: string }> {
+      // Its `diff HEAD` reads the file on disk: guarded like every read (no monitor, no filter), wherever this createGit's exec came from.
+      const guard = readOnlyExec(exec);
+      const ro = (args: string[], ms = 10_000) => guard(args, top, ms);
+      const tracked = await ro(["ls-files", "--error-unmatch", "--", rel]);
+      if (tracked.code !== 0) return { ok: false, output: `${rel} isn't in git yet: commit it first, then its history shows here.` };
+      // Changes not committed: the file's line numbers on disk aren't the last commit's.
+      const changed = (await ro(["diff", "--quiet", "--no-ext-diff", "--no-textconv", "HEAD", "--", rel], 20_000)).code !== 0;
+      let range: string;
+      let start: string | null = null;
+      if ("func" in of) {
+        if (typeof of.func !== "string" || !FUNC_NAME.test(of.func)) return { ok: false, output: "That isn't a function's name." };
+        // git reads the name as a pattern: a "$" in it is the character, not the end of the line.
+        range = `:${of.func.replace(/\$/g, () => "\\$")}:${rel}`;
+      } else {
+        const { from, to, at } = of;
+        if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to - from >= STORY_MAX_SPAN) return { ok: false, output: "Those aren't lines of the file." };
+        let text: string;
+        if (at !== undefined) {
+          if (typeof at !== "string" || !COMMIT.test(at)) return { ok: false, output: "That isn't a commit." };
+          const v = await ro(["rev-parse", "--verify", "--quiet", "--end-of-options", `${at}^{commit}`]);
+          start = v.stdout.trim();
+          if (v.code !== 0 || !/^[0-9a-f]{40,64}$/.test(start)) return { ok: false, output: "That commit isn't in this repo." };
+          const size = await ro(["cat-file", "-s", `${start}:${rel}`]);
+          if (size.code !== 0) return { ok: false, output: `${rel} had another name when this line was last changed: its history can't be followed from here yet.` };
+          if (Number(size.stdout.trim()) > STORY_MAX_BYTES) return { ok: false, output: `${rel} is too long to follow a line through its history.` };
+          const blob = await ro(["cat-file", "blob", `${start}:${rel}`], 20_000);
+          if (blob.code !== 0) return { ok: false, output: `git couldn't read ${rel} as that commit has it.` };
+          text = blob.stdout;
+        } else {
+          if (changed) return { ok: false, output: `${rel} has changes not committed yet, so its line numbers don't match the last commit's.` };
+          try {
+            const abs = join(top, rel);
+            if (statSync(abs).size > STORY_MAX_BYTES) return { ok: false, output: `${rel} is too long to follow a line through its history.` };
+            text = readFileSync(abs, "utf8");
+          } catch {
+            return { ok: false, output: `${rel} couldn't be read.` };
+          }
+        }
+        const lines = text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+        if (to > lines) return { ok: false, output: `${rel} has only ${lines} lines${start ? " in that commit" : ""}.` };
+        range = `${from},${to}:${rel}`;
+      }
+      // The commit goes after --end-of-options: git can never read it as an option.
+      const r = await ro(["log", "--no-textconv", "--no-color", `-n${n + 1}`, LINE_LOG_FORMAT, "-L", range, ...(start ? ["--end-of-options", start] : [])], 30_000);
+      if (r.code !== 0) {
+        const why = tail(r);
+        // A function git can't find in the last commit, or no commit yet: nothing to tell.
+        if (/has only \d+ lines|no match|starts beyond|does not have|bad (default )?revision|unknown revision/i.test(why)) return { ok: true, story: { changes: [], web: null, cut: false, changed } };
+        return { ok: false, output: why || `git couldn't follow ${rel}'s history.` };
+      }
+      const all = parseLineLog(r.stdout);
+      const remote = await ro(["config", "--get", "remote.origin.url"]);
+      return { ok: true, story: { changes: all.slice(0, n), web: remote.code === 0 ? githubWeb(remote.stdout) : null, cut: all.length > n, changed } };
+    },
+
+    /** Hotspots (src/lib/hotspots.ts): how often each file in this folder changed over a span, and by how
+     * many people, renames followed. Only the folder's own files, with paths from it (--relative). Read-only:
+     * no file-system monitor, no text conversion, no outside diff program and no signature check, so a repo's
+     * own settings can't make it start a program (here too when it comes through the local-run socket); at
+     * most CHURN_MAX_COMMITS commits and 30 seconds. */
+    async churn(dir: string, span: Span, now = Date.now()): Promise<{ ok: true; churn: Churn } | { ok: false; located: boolean; output: string }> {
+      if (!isSpan(span)) return { ok: false, located: true, output: "Pick 30, 90 or 365 days, or all of the history." };
+      const inRepo = await exec([...NO_MONITOR, "rev-parse", "--show-toplevel"], dir, 10_000);
+      if (inRepo.code !== 0 || !inRepo.stdout.trim()) return { ok: false, located: false, output: "This project's folder isn't a git repo, so there is no history to read." };
+      const since = sinceOf(span, now);
+      const r = await exec(
+        [...NO_MONITOR, "log", "--no-merges", "--no-textconv", "--no-ext-diff", "--no-show-signature", "--relative", "-M", "--name-status", `-n${CHURN_MAX_COMMITS + 1}`, CHURN_FORMAT, ...(since ? [`--since=${since}`] : []), "--", "."],
+        dir,
+        30_000,
+      );
+      // A repo with no commit yet has no history: nothing changed.
+      if (r.code !== 0) return /does not have any commits|bad default revision/i.test(tail(r)) ? { ok: true, churn: { span, commits: 0, capped: false, files: {} } } : { ok: false, located: true, output: tail(r) || "git couldn't read the history." };
+      return { ok: true, churn: parseChurn(r.stdout, span) };
     },
 
     /** One file's change as a unified diff; a new file as all added lines. */

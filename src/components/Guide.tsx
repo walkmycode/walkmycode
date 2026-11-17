@@ -7,7 +7,9 @@
 // Claude's page the answers are the user's own Claude's, over the bridge: the
 // board says plainly when Claude is not listening, shows what Claude says
 // unasked, and Talk sends a spoken question to Claude (or opens the Lightning
-// lecturer, as chosen in Settings → Voice).
+// lecturer, as chosen in Settings → Voice). A tour on screen can be saved to share
+// ("Save this tour"), and a tour file a teammate saved opened here and played on
+// this project's code (src/lib/walkTour.ts).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import ReadAloud from "./voice/ReadAloud";
@@ -33,6 +35,8 @@ import { readAnySceneBlock } from "@/lib/scene/any";
 import { mapLanes, type Lane } from "@/lib/diagramStyle";
 import { madeNote, stackOf } from "@/lib/projectStack";
 import { buildItAsk, STARTER_GUIDE } from "@/lib/starterGuide";
+import { mergeStory, type TouredChange } from "@/lib/diffTour";
+import ChangeBoard from "./ChangeBoard";
 
 /** "just now", "5 minutes ago", "on 2 Oct". */
 function sinceMade(at: string): string {
@@ -45,6 +49,8 @@ function sinceMade(at: string): string {
 import { MAX_IMAGES, type AskImage } from "@/lib/bridge/protocol";
 import { attachImage, imageSrc } from "@/lib/imageAttach";
 import AddFolder, { CODE_MISSING } from "./AddFolder";
+import ErrorWalk from "./ErrorWalk";
+import { walkTour, type WalkState } from "@/lib/stackTrace";
 
 // WalkMyCode for Claude's own parts of the board: only its build loads them.
 const ClaudeStatus = MCP ? dynamic(() => import("./mcp/ClaudeStatus"), { ssr: false }) : () => null;
@@ -65,6 +71,9 @@ const TourPlayer = dynamic(() => import("./voice/TourPlayer"), {
     </button>
   ),
 });
+
+// "Save this tour", and what it needs, loads when it opens.
+const SaveTour = dynamic(() => import("./SaveTour"), { ssr: false });
 
 // A live talk with the lecturer, and everything it needs, loads when one opens. Lite has no
 // microphone, so its build leaves the lecturer out altogether (the condition is fixed at build time).
@@ -87,7 +96,7 @@ const LecturePanel =
 const VOICE = pickVoice(TARGET);
 /** Images in the question box: the app's own model and WalkMyCode for Claude see them; Lite's guide can't. */
 const PICS = TARGET !== "lite";
-import { aiNeeded } from "@/lib/aiPill";
+import { aiNeeded, isNotReady, openSetup } from "@/lib/aiPill";
 import { openSettings as openSettingsPane } from "@/lib/settingsNav";
 
 export interface Job {
@@ -106,6 +115,11 @@ export interface Job {
   images?: AskImage[];
   /** A spoken question that carries on the unanswered one before it: it takes that turn's place on the board. */
   replaces?: boolean;
+  /** "Walk an error": the walk this asks the likely cause of; its answer is drawn in the walk's box. */
+  walk?: number;
+  /** "Explain and review" on a change (src/lib/diffTour.ts): the change's own tour, which the guide's
+   * story is laid onto (each step keeps its file, lines and cards). */
+  change?: Tour;
 }
 
 interface Props {
@@ -118,9 +132,18 @@ interface Props {
   step: number;
   onStep: (i: number) => void;
   onAsk: (question: string, images?: AskImage[]) => void;
+  /** "Walk an error" (src/components/ErrorWalk.tsx): the walk on screen, and walking or putting one away.
+   * Left out where the guide has no map to light (the entry is not offered then). */
+  walk?: WalkState | null;
+  onWalk?: (text: string) => void;
+  onWalkEnd?: () => void;
+  /** The change whose tour is on screen ("Tour a change"), and the guide's "Explain and review" of it. */
+  change?: TouredChange | null;
+  onExplainChange?: () => void;
 }
 
-const CITE = /`?((?:[\w.-]+\/)*[\w.-]+\.(?:tsx?|jsx?|py|sql|prisma|mjs|cjs|mts|dart|php|twig))(?::(\d+)(?:\s*[-–]\s*(\d+))?)?`?/g;
+// A folder may be a Next.js dynamic segment (app/api/projects/[id]/tasks/route.ts), as a walked error's frames often are.
+const CITE = /`?((?:(?:\[[\w.-]+\]|[\w.-]+)\/)*[\w.-]+\.(?:tsx?|jsx?|py|sql|prisma|mjs|cjs|mts|dart|php|twig|go|rs|java|kt|cs))(?::(\d+)(?:\s*[-–]\s*(\d+))?)?`?/g;
 
 /** Chalk rendering: paragraphs, lists, **bold**, `code`, path:line citations as buttons,
  * ```mermaid blocks drawn as diagrams, ```scene blocks as analogies to watch and
@@ -278,6 +301,10 @@ interface Turn {
   unasked?: boolean;
   /** The images the question carried, shown small under it. */
   images?: AskImage[];
+  /** The likely cause of this walk (Job.walk): shown in the walk's box while it is open. */
+  walk?: number;
+  /** The guide's review of a change: shown on the change's board, under its steps. */
+  change?: boolean;
 }
 
 
@@ -327,7 +354,7 @@ function saveHistory(key: string, turns: Turn[]) {
   }
 }
 
-export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, onAsk }: Props) {
+export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, onAsk, walk = null, onWalk, onWalkEnd, change = null, onExplainChange }: Props) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
@@ -369,6 +396,9 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
   const starter = ws?.starterTour ?? null;
   // The open talk with the lecturer (a new key for each), and why Talk could not start.
   const [lecture, setLecture] = useState<number | null>(null);
+  // "Walk an error": open from its button until Close; `since` is the last turn then, so the board under
+  // the walk shows only what was asked after it (the likely causes are drawn in the walk's own box).
+  const [walkOpen, setWalkOpen] = useState<{ since: number } | null>(null);
   const [talkBlocked, setTalkBlocked] = useState<FriendlyError | null>(null);
   useEffect(() => {
     if (!talkBlocked) return;
@@ -380,6 +410,30 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
   const [heard, setHeard] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const focusAsk = useCallback(() => inputRef.current?.focus(), []);
+
+  // Shared tours: the save dialog, and a tour file opened against this project's code.
+  const [saving, setSaving] = useState(false);
+  const [tourNote, setTourNote] = useState<string | null>(null);
+  const tourPicker = useRef<HTMLInputElement>(null);
+  const openTourFile = useCallback(
+    async (f: File) => {
+      setTourNote(null);
+      const { otherProjectNote, readWalkTour, replayTour } = await import("@/lib/walkTour");
+      const read = readWalkTour(await f.text().catch(() => ""));
+      if (!read.ok) return setTourNote(read.why);
+      const r = replayTour(read.tour, repo.files);
+      if (r.otherProject) return setTourNote(otherProjectNote(read.tour, ws?.name));
+      onTour(r.tour);
+      onStep(0);
+      const said = [`Opened “${read.tour.name}”, ${r.tour.steps.length} steps.`];
+      if (r.changed) said.push(`${r.changed === 1 ? "One step's" : `${r.changed} steps'`} code has changed since it was made; ${r.changed === 1 ? "that step says" : "each says"} so.`);
+      if (r.missing) said.push(`${r.missing === 1 ? "One step's file isn't" : `${r.missing} steps' files aren't`} in this project.`);
+      if (read.left.length) said.push(`Left out ${read.left.length === 1 ? "a step" : `${read.left.length} steps`} in files WalkMyCode hides.`);
+      setTourNote(said.length > 1 ? said.join(" ") : null);
+    },
+    [repo.files, ws?.name, onTour, onStep],
+  );
+  const pickTourFile = () => tourPicker.current?.click();
 
   // WalkMyCode for Claude: an answer no question here was waiting for (one asked in Claude's own chat,
   // or answered after a reload) is shown as Claude's own turn.
@@ -449,7 +503,9 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
           conversation.current = r.conversation;
           fly.done();
           setTurns((t) => [...t.slice(0, -1), { ...t[t.length - 1], a: r.text || (r.tour ? `Tour ready: ${r.tour.title}` : "(no answer)") }]);
-          if (r.tour) {
+          // A change's story keeps the change's own steps, and the step the user is on.
+          if (r.tour && j.change) onTour(mergeStory(j.change, r.tour));
+          else if (r.tour) {
             onTour(r.tour);
             onStep(0);
           }
@@ -475,7 +531,7 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
   // A new question: its turn on the board, then the answer.
   const begin = useCallback(
     (j: Job) => {
-      const turn: Turn = { id: nextTurnId(), q: j.shown, a: "", tools: [], ...(j.images?.length ? { images: j.images } : {}) };
+      const turn: Turn = { id: nextTurnId(), q: j.shown, a: "", tools: [], ...(j.images?.length ? { images: j.images } : {}), ...(j.walk ? { walk: j.walk } : {}), ...(j.change ? { change: true } : {}) };
       // "think" … "all right, carry on": one question on the board, not two, while the first is unanswered.
       setTurns((t) => (j.replaces && t.length && t[t.length - 1].q.startsWith("(said) ") ? [...t.slice(0, -1), turn] : [...t, turn]));
       run(j);
@@ -497,7 +553,7 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
   const retry = () => {
     const j = lastJob.current;
     if (!j || busy) return;
-    setTurns((t) => [...t.slice(0, -1), { id: nextTurnId(), q: j.shown, a: "", tools: [] }]);
+    setTurns((t) => [...t.slice(0, -1), { id: nextTurnId(), q: j.shown, a: "", tools: [], ...(j.walk ? { walk: j.walk } : {}), ...(j.change ? { change: true } : {}) }]);
     run(j);
   };
 
@@ -575,6 +631,9 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
 
   const current = tour ? tour.steps[step] : null;
   const last = turns[turns.length - 1];
+  // The guide's latest review of this change (asked from its board), and whether it is still being written.
+  const review = change ? [...turns].reverse().find((t) => t.change) : undefined;
+  const reviewing = !!review && busy && review === last;
   // Narration is cached per map version: mapping the folder again starts afresh.
   const scope = useMemo(() => ({ map: repo.map.name, generatedAt: repo.map.generatedAt }), [repo.map]);
   const sayEl = useCallback(() => boardRef.current?.querySelector<HTMLElement>("[data-say]") ?? null, []);
@@ -605,11 +664,141 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
     if (pill) light.settleOn(pill, { handoff: true });
   }, [tour, step]);
 
+  // One turn on the board: the question, what it looked at, and the answer (or what went wrong).
+  const turnView = (t: Turn) =>
+    t.note ? (
+      <p key={t.id} className="note turn" data-turn={t.id}>
+        {t.note}
+      </p>
+    ) : (
+      <div key={t.id} className="turn" data-turn={t.id}>
+        <p className="asked">
+          {t.unasked ? (
+            <>From {capName(aiName)}:</>
+          ) : (
+            <>
+              {t.q.startsWith("(said) ") ? "You said: " : "You asked: "}
+              <span>{t.q.replace(/^\(said\) /, "")}</span>
+            </>
+          )}
+        </p>
+        {t.images && (
+          <div className="asked-pics">
+            {t.images.map((p, k) => (
+              <img key={k} src={imageSrc(p)} alt={`Image ${k + 1} with the question`} />
+            ))}
+          </div>
+        )}
+        {t.tools.length > 0 && (
+          <details className="looked">
+            <summary>What I looked at</summary>
+            <small>{lookedLine(t.tools)}</small>
+          </details>
+        )}
+        {t.err ? (
+          <div className="err">
+            <p className="err">
+              <strong>{t.err.title}</strong> {t.err.message}
+            </p>
+            {t.err.detail && (
+              <p className="note">
+                <code>{t.err.detail}</code>
+              </p>
+            )}
+            {t.err.action === "settings" && (
+              <button type="button" className="ctl compact" onClick={openSettings}>
+                Open settings
+              </button>
+            )}
+            {t.err.action === "retry" && t.id === lastTurn && (
+              <button type="button" className="ctl compact" onClick={retry} disabled={busy}>
+                Try again
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <Chalk text={stripToolTalk(t.a)} onCite={onCite} writing={busy && t.id === lastTurn} laneOf={laneOf} />
+            {t.a && !(busy && t.id === lastTurn) && <ReadAloud text={stripToolTalk(t.a)} />}
+          </>
+        )}
+      </div>
+    );
+
+  // "Walk an error" (src/components/ErrorWalk.tsx): its box, and the likely cause drawn in it.
+  const openWalk = () => {
+    setWalkOpen({ since: lastTurn ?? 0 });
+    boardRef.current?.scrollTo({ top: 0 });
+  };
+  const closeWalk = () => {
+    setWalkOpen(null);
+    onWalkEnd?.();
+  };
+  const causeTurn = walk ? [...turns].reverse().find((t) => t.walk === walk.id) : undefined;
+  const walkCause = !causeTurn || (!causeTurn.a && !causeTurn.err) ? (
+    <p className="note scribing">Reading the code at each step…</p>
+  ) : causeTurn.err ? (
+    isNotReady(causeTurn.err) ? (
+      <div className="err">
+        <p className="note">Finding the likely cause needs an AI, and none is set up yet. The steps above and the map work without one.</p>
+        <button type="button" className="ctl compact" onClick={openSetup}>
+          Set up AI
+        </button>
+      </div>
+    ) : (
+      <div className="err">
+        <p className="err">
+          <strong>{causeTurn.err.title}</strong> {causeTurn.err.message}
+        </p>
+        {causeTurn.err.action === "settings" && (
+          <button type="button" className="ctl compact" onClick={openSettings}>
+            Open settings
+          </button>
+        )}
+        {causeTurn.err.action === "retry" && causeTurn.id === lastTurn && (
+          <button type="button" className="ctl compact" onClick={retry} disabled={busy}>
+            Try again
+          </button>
+        )}
+      </div>
+    )
+  ) : (
+    <Chalk text={stripToolTalk(causeTurn.a)} onCite={onCite} writing={busy && causeTurn.id === lastTurn} laneOf={laneOf} />
+  );
+
   return (
     <>
       <div ref={frameRef} className={`frame fill${thinking ? " thinking" : ""}`} style={{ minHeight: 0, display: "flex" }}>
         <div ref={boardRef} className="board fill" aria-busy={busy}>
-          {tour && current ? (
+          {tourNote && (
+            <p className="note tour-file-note" role="status">
+              <span>{tourNote}</span>
+              <button type="button" className="ctl compact ghost" onClick={() => setTourNote(null)} aria-label="Dismiss">
+                ×
+              </button>
+            </p>
+          )}
+          {tour?.change && change && current ? (
+            <ChangeBoard change={change} tour={tour} step={step} onStep={onStep} onCite={onCite} onExplain={onExplainChange} busy={busy} canAsk={route !== "none"}>
+              {review &&
+                (review.err ? (
+                  <div className="err">
+                    <p className="err">
+                      <strong>{review.err.title}</strong> {review.err.message}
+                    </p>
+                    {review.err.action === "settings" && (
+                      <button type="button" className="ctl compact" onClick={openSettings}>
+                        Open settings
+                      </button>
+                    )}
+                  </div>
+                ) : review.a ? (
+                  <Chalk text={stripToolTalk(review.a)} onCite={onCite} writing={reviewing} laneOf={laneOf} />
+                ) : (
+                  <p className="note scribing">{reviewing ? "Reading the change…" : ""}</p>
+                ))}
+            </ChangeBoard>
+          ) : tour && current ? (
             <>
               <h2 key={`title-${tour.title}`} className="wipe-line">
                 {tour.title}
@@ -617,9 +806,33 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
               <p key={`step-${step}`} className="asked rise">
                 Step <span>{step + 1}</span> of {tour.steps.length} · <button className="cite" onClick={(e) => depart(e.currentTarget, () => onCite(current.file, current.start_line, current.end_line, e.currentTarget))}>{current.file}:{current.start_line}–{current.end_line}</button>
               </p>
+              {current.note && (
+                <p key={`note-${step}`} className="note tour-changed" role="status">
+                  {current.note}
+                </p>
+              )}
               <p key={`say-${step}`} data-say className="wipe-para" style={{ ["--wd" as string]: "100ms", ["--wdur" as string]: `${wipeMs(current.say)}ms` }}>
                 {current.say}
               </p>
+            </>
+          ) : walkOpen && onWalk ? (
+            <>
+              <ErrorWalk
+                walk={walk}
+                files={repo.files}
+                onWalk={onWalk}
+                onClose={closeWalk}
+                onOpen={(path, line) => onCite(path, line, line)}
+                onTourPath={() => {
+                  if (!walk) return;
+                  onTour(walkTour(repo.map, walk.result));
+                  onStep(0);
+                }}
+                cause={walkCause}
+                onFix={causeTurn?.a && !causeTurn.err ? () => onAsk("How could I fix this error? Show me the change, and cite the lines it touches.") : undefined}
+                busy={busy}
+              />
+              {turns.filter((t) => t.id > walkOpen.since && !t.walk).map(turnView)}
             </>
           ) : turns.length === 0 ? (
             <>
@@ -684,6 +897,20 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
                   <span className="note">{starter.title}, in {starter.steps.length} steps.</span>
                 </p>
               )}
+              {onWalk && (
+                <p className="wipe-para walk-entry" style={{ ["--wd" as string]: "340ms", ["--wdur" as string]: "700ms" }}>
+                  <button type="button" className="ctl compact" onClick={openWalk}>
+                    Walk an error
+                  </button>{" "}
+                  <span className="note">Paste a stack trace and see the path it took through the code.</span>
+                </p>
+              )}
+              <p className="wipe-para open-tour" style={{ ["--wd" as string]: "320ms", ["--wdur" as string]: "600ms" }}>
+                <button type="button" className="ctl compact" onClick={pickTourFile}>
+                  Open a tour file
+                </button>{" "}
+                <span className="note">A tour a teammate saved, played on this code.</span>
+              </p>
               {codeMissing && (
                 <div className="note code-missing-guide" role="status">
                   <p>{CODE_MISSING.guide}</p>
@@ -704,70 +931,19 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
           ) : (
             <>
               <div className="board-tools">
+                {onWalk && (
+                  <button type="button" className="ctl compact ghost" onClick={openWalk} title="Paste an error or stack trace and walk the path it took">
+                    Walk an error
+                  </button>
+                )}
+                <button type="button" className="ctl compact ghost" onClick={pickTourFile} title="Open a tour a teammate saved (a .walktour file) and play it on this code">
+                  Open a tour file
+                </button>
                 <button type="button" className="ctl compact ghost" onClick={startOver} disabled={busy} title="Clear the board and start a fresh conversation">
                   New conversation
                 </button>
               </div>
-              {turns.map((t, i, shown) =>
-              t.note ? (
-                <p key={t.id} className="note turn" data-turn={t.id}>
-                  {t.note}
-                </p>
-              ) : (
-                <div key={t.id} className="turn" data-turn={t.id}>
-                  <p className="asked">
-                    {t.unasked ? (
-                      <>From {capName(aiName)}:</>
-                    ) : (
-                      <>
-                        {t.q.startsWith("(said) ") ? "You said: " : "You asked: "}
-                        <span>{t.q.replace(/^\(said\) /, "")}</span>
-                      </>
-                    )}
-                  </p>
-                  {t.images && (
-                    <div className="asked-pics">
-                      {t.images.map((p, k) => (
-                        <img key={k} src={imageSrc(p)} alt={`Image ${k + 1} with the question`} />
-                      ))}
-                    </div>
-                  )}
-                  {t.tools.length > 0 && (
-                    <details className="looked">
-                      <summary>What I looked at</summary>
-                      <small>{lookedLine(t.tools)}</small>
-                    </details>
-                  )}
-                  {t.err ? (
-                    <div className="err">
-                      <p className="err">
-                        <strong>{t.err.title}</strong> {t.err.message}
-                      </p>
-                      {t.err.detail && (
-                        <p className="note">
-                          <code>{t.err.detail}</code>
-                        </p>
-                      )}
-                      {t.err.action === "settings" && (
-                        <button type="button" className="ctl compact" onClick={openSettings}>
-                          Open settings
-                        </button>
-                      )}
-                      {t.err.action === "retry" && i === shown.length - 1 && (
-                        <button type="button" className="ctl compact" onClick={retry} disabled={busy}>
-                          Try again
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <Chalk text={stripToolTalk(t.a)} onCite={onCite} writing={busy && i === shown.length - 1} laneOf={laneOf} />
-                      {t.a && !(busy && i === shown.length - 1) && <ReadAloud text={stripToolTalk(t.a)} />}
-                    </>
-                  )}
-                </div>
-              ),
-              )}
+              {turns.map(turnView)}
             </>
           )}
           {MCP && busy && (
@@ -792,11 +968,27 @@ export default function Guide({ repo, job, onCite, onTour, tour, step, onStep, o
           </button>
           <span className="sp" />
           <TourPlayer tour={tour} step={step} onStep={onStep} scope={scope} sayEl={sayEl} />
+          <button className="ctl compact" onClick={() => setSaving(true)} title="Save this tour as a file to share, or as Markdown">
+            save this tour
+          </button>
           <button className="ctl compact ghost" onClick={() => onTour(null)}>
             end tour
           </button>
         </div>
       )}
+      {saving && tour && <SaveTour tour={tour} repo={repo} project={ws?.name} microphone={VOICE.microphone} onClose={() => setSaving(false)} />}
+      <input
+        ref={tourPicker}
+        type="file"
+        accept=".walktour,.json,.txt,application/json"
+        hidden
+        data-testid="tour-file-input"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void openTourFile(f);
+        }}
+      />
       {lecture !== null && <LecturePanel key={lecture} onDismiss={() => setLecture(null)} />}
       {PICS && (pics.length > 0 || picNote) && (
         <div className="ask-pics" aria-label="Images attached to the next question">

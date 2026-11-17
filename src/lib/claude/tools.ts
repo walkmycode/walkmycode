@@ -110,6 +110,10 @@ export interface TourStep {
   start_line: number;
   end_line: number;
   node_ids: string[];
+  /** A tour opened from a file (src/lib/walkTour.ts): the code changed since it was saved, in words. */
+  note?: string;
+  /** A tour opened from a file: the narration in its maker's own voice, played instead of read aloud. */
+  clip?: { type: string; base64: string };
 }
 export interface Tour {
   title: string;
@@ -118,6 +122,10 @@ export interface Tour {
   autoplay?: boolean;
   /** WalkMyCode for Claude: the requests Claude was working on when it handed the tour over (their answers keep it on screen). */
   requests?: string[];
+  /** A tour of a change (src/lib/diffTour.ts): what it walks through, "feat/x → main". The map keeps the change marked. */
+  change?: string;
+  /** A change's tour as the guide told it (its steps' words are the guide's, not just the facts). */
+  told?: boolean;
 }
 
 export interface RepoView {

@@ -1,0 +1,62 @@
+/* "Tour a change" (docs/GIT.md; mockup: DiffTour): the top bar's picker and size, the marks on the
+   map's cards, the added and removed lines in the editor, and the guide's board for the change.
+   Green is what was added or changed, pink what was taken out, yellow what is affected or on screen. */
+.plus { color: var(--green); }
+.minus { color: var(--pink); }
+
+/* The top bar */
+.change-pick { position: relative; display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); min-width: 0; }
+.change-pick > .ctl { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.change-pick > .ctl.on { border-color: var(--green); color: var(--ui-text); }
+.change-chip { font: var(--text) var(--mono); color: var(--ui-dim); border: 1px solid var(--ui-line); padding: calc(2px * var(--sp)) calc(8px * var(--sp)); white-space: nowrap; }
+.change-menu { left: 0; right: auto; width: 360px; max-height: min(70vh, 560px); overflow: auto; }
+.change-menu button[disabled] { opacity: .6; cursor: default; }
+.change-menu .change-why { color: var(--ui-text); border-left: 2px solid var(--yellow); }
+@media (max-width: 1280px) { .change-chip { display: none; } }
+
+/* The map: a changed card has a green frame and its count; one that uses it, a dashed yellow one. */
+div.node.changed { border-top-color: var(--green); border-right-color: var(--green); border-bottom-color: var(--green); }
+div.node.affected { border-top: 1px dashed var(--yellow); border-right: 1px dashed var(--yellow); border-bottom: 1px dashed var(--yellow); }
+div.node.now { outline: 2px solid var(--yellow); outline-offset: 2px; }
+/* Lit as part of the change, a card keeps the change's colour rather than a trace's yellow glow. */
+:root div.node.lit.changed { box-shadow: 0 0 0 1px var(--green); }
+:root div.node.lit.affected { box-shadow: none; }
+div.node .dbadge { position: absolute; top: -9px; left: 10px; font: 600 calc(11px * var(--fs))/1.5 var(--mono); color: var(--green); background: var(--ui); border: 1px solid var(--green); padding: 0 calc(6px * var(--sp)); white-space: nowrap; }
+.change-legend i.box { width: calc(14px * var(--ctl)); height: calc(10px * var(--ctl)); border: 1px solid var(--ui-dim); }
+.change-legend i.box.changed { border-color: var(--green); }
+.change-legend i.box.affected { border: 1px dashed var(--yellow); }
+.change-legend i.box.now { border: 2px solid var(--yellow); }
+
+/* The editor: added lines, and the lines taken out where they were. */
+.cm-line.cm-diff-add { background-color: color-mix(in srgb, var(--green) 12%, transparent); box-shadow: inset 3px 0 0 var(--green); }
+.cm-diff-del { background-color: color-mix(in srgb, var(--pink) 10%, transparent); box-shadow: inset 3px 0 0 var(--pink); color: color-mix(in srgb, var(--pink) 75%, var(--ui-text)); }
+.cm-diff-del > div { padding: 0 calc(2px * var(--sp)) 0 calc(6px * var(--sp)); white-space: pre-wrap; }
+.cm-diff-del > div::before { content: "−"; display: inline-block; width: 1.4ch; margin-left: -1.4ch; color: var(--pink); }
+.change-toggle .plus { font: 600 var(--text) var(--mono); margin-right: calc(4px * var(--sp)); }
+.change-toggle[disabled] { opacity: .55; }
+
+/* The guide's board */
+.change-board { display: flex; flex-direction: column; gap: calc(10px * var(--sp)); }
+.board .change-board p { margin: 0; }
+.change-label { font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.board .change-sum { color: var(--chalk-dim); }
+.board .change-sum b { color: var(--chalk); }
+.board ol.change-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(6px * var(--sp)); }
+.change-steps li { border: 1px solid var(--ui-line); }
+.change-steps li.on { border-color: var(--yellow); }
+.change-step { display: flex; gap: calc(10px * var(--sp)); align-items: flex-start; width: 100%; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); background: none; border: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.change-step:hover { background: var(--hair); }
+.change-step .n { flex: none; width: calc(18px * var(--ctl)); height: calc(18px * var(--ctl)); border-radius: 50%; border: 1px solid var(--chalk-dim); color: var(--chalk-dim); font: 700 var(--text)/1 var(--sans); display: flex; align-items: center; justify-content: center; }
+.change-steps li.done .n { border-color: var(--green); color: var(--green); }
+.change-steps li.on .n { background: var(--yellow); border-color: var(--yellow); color: var(--ink); }
+.change-step .what { display: flex; flex-direction: column; min-width: 0; }
+.board .change-step strong { color: var(--chalk); }
+.change-step .where { font: var(--text) var(--mono); color: var(--chalk-dim); overflow-wrap: anywhere; }
+.change-step .new { color: var(--green); font-family: var(--sans); }
+.board .change-say { padding: 0 calc(10px * var(--sp)) calc(10px * var(--sp)) calc(38px * var(--sp)); color: var(--chalk); }
+.change-box { border: 1px solid var(--ui-line); padding: calc(10px * var(--sp)) calc(12px * var(--sp)); display: flex; flex-direction: column; gap: calc(6px * var(--sp)); }
+.board .change-box ul { margin: 0; padding-left: calc(18px * var(--sp)); }
+.board .change-box li + li { margin-top: calc(4px * var(--sp)); }
+.change-board .dim { color: var(--chalk-dim); }
+.change-ai-head { display: flex; align-items: center; justify-content: space-between; gap: calc(8px * var(--sp)); }
+.change-ai .err { margin: 0; }

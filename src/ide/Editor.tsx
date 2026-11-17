@@ -9,8 +9,10 @@
  * - `onSelect`, reporting the lines the user selects (for "explain this");
  * - breakpoints in a gutter, and the debugger's current line.
  * - who last changed each block of lines, and when (git blame), in a gutter of its own, and
- *   in a faint note at the end of the line the cursor is on (./lineHistory.ts);
- * - suggestions while typing, when it can be typed in (./suggest.ts).
+ *   in a faint note at the end of the line the cursor is on (./lineHistory.ts); with `onLineStory`,
+ *   that note's "How did this line get here?" and a click on the blame gutter open a line's history;
+ * - suggestions while typing, when it can be typed in (./suggest.ts);
+ * - a change being toured (src/lib/diffTour.ts): added lines marked, removed ones shown where they were.
  *
  * The switches in Settings → Editor (src/lib/editorSettings.ts) turn the last two on and off,
  * in every open editor at once.
@@ -18,11 +20,12 @@
  * The language follows the file's extension, or `language` when there is no path
  * (./languages.ts has the list).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Decoration,
   EditorView,
   GutterMarker,
+  WidgetType,
   drawSelection,
   gutter,
   highlightActiveLine,
@@ -37,9 +40,10 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { languageExtension, languageOf, listMark, type Language } from "./languages";
-import { lineNote, type BlameMark } from "./lineHistory";
+import { lineNote, type BlameMark, type OnLineStory } from "./lineHistory";
 import { suggestions } from "./suggest";
 import { useEditorSettings } from "./useEditorSettings";
+import type { DiffMarks } from "@/lib/diffTour";
 
 export type { BlameMark, Language };
 export { languageOf };
@@ -104,11 +108,14 @@ const theme = EditorView.theme(
 
 /* Breakpoints: a marker per line, set from React. */
 class BlameMarker extends GutterMarker {
-  constructor(readonly mark: BlameMark | null) {
+  constructor(
+    readonly mark: BlameMark | null,
+    readonly story = false,
+  ) {
     super();
   }
   eq(other: BlameMarker) {
-    return other.mark === this.mark;
+    return other.mark === this.mark && other.story === this.story;
   }
   toDOM() {
     const el = document.createElement("div");
@@ -127,7 +134,8 @@ class BlameMarker extends GutterMarker {
           s.className = cls;
           s.textContent = text;
         }
-      el.title = this.mark.tip;
+      el.title = this.story && this.mark.tone !== "new" ? `${this.mark.tip}\nClick: how did this line get here?` : this.mark.tip;
+      if (this.story && this.mark.tone !== "new") el.classList.add("story");
     }
     return el;
   }
@@ -135,14 +143,26 @@ class BlameMarker extends GutterMarker {
 /** Sizes the gutter before any line is drawn. */
 const blameSpacer = new BlameMarker({ start: 0, lines: 0, who: "Not committed", when: { day: "28 Nov", year: " 2026", time: "22:41" }, tip: "", note: "" });
 
-/** The blame gutter: a label where each block begins, nothing on the block's other lines. */
-function blameGutter(marks: BlameMark[] | null): Extension {
+/** The blame gutter: a label where each block begins, nothing on the block's other lines. With
+ * `story`, a click on a block's label opens the history of its first line. */
+function blameGutter(marks: BlameMark[] | null, story: OnLineStory | null = null): Extension {
   if (!marks?.length) return [];
-  const byStart = new Map(marks.map((m) => [m.start, new BlameMarker(m)]));
+  const byStart = new Map(marks.map((m) => [m.start, new BlameMarker(m, !!story)]));
   return gutter({
     class: "cm-blame-gutter",
     lineMarker: (v, line) => byStart.get(v.state.doc.lineAt(line.from).number) ?? null,
     initialSpacer: () => blameSpacer,
+    domEventHandlers: story
+      ? {
+          click: (v, line, e) => {
+            const n = v.state.doc.lineAt(line.from).number;
+            const el = (e.target as HTMLElement).closest<HTMLElement>(".cm-blame.story");
+            if (!el || !byStart.has(n)) return false;
+            story(n, el);
+            return true;
+          },
+        }
+      : {},
   });
 }
 
@@ -193,6 +213,39 @@ function lineMarks(className: string) {
   });
   return { set, field };
 }
+/** Lines a change took out, shown (not part of the file) where they were. */
+class RemovedLines extends WidgetType {
+  constructor(readonly lines: string[]) {
+    super();
+  }
+  eq(other: RemovedLines) {
+    return other.lines.length === this.lines.length && other.lines.every((l, i) => l === this.lines[i]);
+  }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "cm-diff-del";
+    el.setAttribute("aria-label", this.lines.length === 1 ? "1 line taken out" : `${this.lines.length} lines taken out`);
+    for (const l of this.lines) el.appendChild(document.createElement("div")).textContent = l || " ";
+    return el;
+  }
+}
+
+/** A change on the file (src/lib/diffTour.ts, editorMarks): added lines marked, removed ones above the line after them. */
+function diffMarks(m: DiffMarks | null): Extension {
+  if (!m || (!m.added.length && !m.removed.length)) return [];
+  return EditorView.decorations.compute(["doc"], (state) => {
+    const doc = state.doc;
+    const marks = [];
+    for (const r of m.removed) {
+      const atEnd = r.at > doc.lines;
+      const line = doc.line(Math.max(1, Math.min(r.at, doc.lines)));
+      marks.push(Decoration.widget({ widget: new RemovedLines(r.lines), block: true, side: atEnd ? 1 : -1 }).range(atEnd ? line.to : line.from));
+    }
+    for (const n of m.added) if (n >= 1 && n <= doc.lines) marks.push(Decoration.line({ class: "cm-diff-add" }).range(doc.line(n).from));
+    return Decoration.set(marks, true);
+  });
+}
+
 const lit = lineMarks("cm-lit-line");
 const debugMark = lineMarks("cm-debug-line");
 
@@ -227,6 +280,10 @@ export interface EditorProps {
   /** Who last changed each block of lines, and when (git blame): a gutter beside the line numbers,
    * and a note at the end of the cursor's line. */
   blame?: BlameMark[] | null;
+  /** "How did this line get here?": from the cursor line's note, or a click on a block's blame. */
+  onLineStory?: OnLineStory;
+  /** A change being toured: its added and removed lines in this file. */
+  diff?: DiffMarks | null;
   fontSize?: number;
   label?: string;
   /** Size the editor from outside, e.g. to fill a dock panel. It fills its box; it has no height of its own. */
@@ -249,6 +306,8 @@ export default function Editor({
   debugLine = null,
   wrap = false,
   blame = null,
+  onLineStory,
+  diff = null,
   fontSize,
   label = "Code",
   className = "",
@@ -256,10 +315,13 @@ export default function Editor({
 }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, path });
-  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment(), note: new Compartment(), suggest: new Compartment(), tips: new Compartment() });
+  const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, path });
+  // One function for the editor's whole life, so the note and the gutter aren't drawn again when the page's own changes.
+  const [storyFn] = useState<OnLineStory>(() => (line: number, el: HTMLElement) => cb.current.onLineStory?.(line, el));
+  const story = onLineStory ? storyFn : null;
+  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment(), diff: new Compartment(), note: new Compartment(), suggest: new Compartment(), tips: new Compartment() });
   useEffect(() => {
-    cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, path };
+    cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, path };
   });
 
   const lang = language ?? languageOf(path);
@@ -299,12 +361,13 @@ export default function Editor({
                 }),
               ]
             : []),
-          c.blame.of(blameGutter(blame)),
+          c.blame.of(blameGutter(blame, story)),
           lineNumbers({ domEventHandlers: { mousedown: (v, line) => toggle(v, line.from) } }),
           highlightActiveLineGutter(),
           highlightActiveLine(),
           lit.field,
           debugMark.field,
+          c.diff.of(diffMarks(diff)),
           drawSelection(),
           history(),
           indentOnInput(),
@@ -321,7 +384,7 @@ export default function Editor({
               v.dispatch({ effects: c.tips.reconfigure(tipsOn(v.dom)) });
             },
           }),
-          c.note.of(lineNote(blame)),
+          c.note.of(lineNote(blame, story)),
           c.lock.of(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
           c.wrap.of(wrap ? EditorView.lineWrapping : []),
           c.size.of(EditorView.theme({ "&": { fontSize: fontSize ? `calc(${fontSize}px * var(--fs, 1))` : "var(--text, 13px)" } })),
@@ -376,8 +439,11 @@ export default function Editor({
     view.current?.dispatch({ effects: comp.current.wrap.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }, [wrap]);
   useEffect(() => {
-    view.current?.dispatch({ effects: [comp.current.blame.reconfigure(blameGutter(blame)), comp.current.note.reconfigure(lineNote(blame))] });
-  }, [blame]);
+    view.current?.dispatch({ effects: [comp.current.blame.reconfigure(blameGutter(blame, story)), comp.current.note.reconfigure(lineNote(blame, story))] });
+  }, [blame, story]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: comp.current.diff.reconfigure(diffMarks(diff)) });
+  }, [diff]);
   useEffect(() => {
     view.current?.dispatch({ effects: comp.current.suggest.reconfigure(suggestions(lang, suggest)) });
   }, [lang, suggest]);

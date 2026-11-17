@@ -1,6 +1,6 @@
 "use client";
 // One open file (panel id `code:<path>`): the shared editor, read-only, with
-// its own selection bar (Explain this / Trace it). CodeMirror puts its styles
+// its own selection bar (Explain this / Trace it / Show impact of the selection). CodeMirror puts its styles
 // into the document it was made in, so when the panel moves to a pop-out
 // window the editor is re-rooted there (docs/SHELL.md §7). The editor itself
 // is never remounted by a move, so scroll and selection survive.
@@ -27,6 +27,8 @@ import FileIcon from "@/components/FileIcon";
 import { eolOf, toLF, withEol } from "./lineEndings";
 import { languageOf } from "@/ide/Editor";
 import { setMdView, useMdView, type MdView } from "@/ide/mdView";
+import { countLabel } from "@/lib/diffParse";
+import { editorMarks, marksFit } from "@/lib/diffTour";
 
 // The shared IDE (CodeMirror, its runners and the Learn room's markup with KaTeX) loads
 // with the first file opened, not with the map: the map paints and answers clicks first.
@@ -64,8 +66,42 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
 
   const highlight = s.files.find((f) => f.path === path)?.highlight ?? null;
   const content = s.repo.files[path];
-  // Who changed this file, and when: Blame and History in the header (src/ide/localrun/git/FileGit.tsx).
-  const fileGit = useFileGit(path, content);
+  // Who changed this file, and when: Blame and History in the header (src/ide/localrun/git/FileGit.tsx),
+  // and "How did this line get here?", whose story the guide can tell, and which can follow the whole
+  // function the line is in, as the map has it.
+  const { explainHistory, map } = s;
+  const explain = useCallback((o: { from: number; shown: string; question: string }) => explainHistory({ path, ...o }), [explainHistory, path]);
+  const fnAt = useCallback(
+    (line: number) => {
+      let best: { name: string; from: number; to: number } | null = null;
+      for (const [name, [from, to]] of Object.entries(map.files.find((f) => f.path === path)?.fns ?? {})) {
+        if (line >= from && line <= to && (!best || to - from < best.to - best.from)) best = { name, from, to };
+      }
+      if (best) return best;
+      const card = nodeAt(map, path, line);
+      return card?.line && card.endLine && line >= card.line && line <= card.endLine ? { name: card.name, from: card.line, to: card.endLine } : null;
+    },
+    [map, path],
+  );
+  const fileGit = useFileGit(path, content, { explain, fnAt });
+  // A change being toured (src/lib/diffTour.ts): this file's added lines marked and removed ones shown where
+  // they were, when the file here is the one git compared (not changed again since it was mapped).
+  const changed = s.change?.files.find((f) => f.path === path);
+  const [showChange, setShowChange] = useState(true);
+  const fits = useMemo(() => !!changed && content !== undefined && marksFit(changed, content), [changed, content]);
+  const marks = useMemo(() => (changed && fits && showChange ? editorMarks(changed) : null), [changed, fits, showChange]);
+  const changeTool = changed ? (
+    <button
+      type="button"
+      className="ctl change-toggle"
+      aria-pressed={fits && showChange}
+      disabled={!fits}
+      onClick={() => setShowChange((v) => !v)}
+      title={fits ? `What ${s.change?.label} changed in this file: added lines marked, removed ones shown where they were` : "This file changed again since it was mapped: map it again to see the change here"}
+    >
+      <span className="plus">{countLabel(changed.added, changed.removed)}</span> Changes
+    </button>
+  ) : null;
   // A Markdown file shows as it reads, its source, or both (src/ide/mdView.ts). When Claude points at its
   // lines while it is shown as it reads, the source opens beside it, until the user picks a view again.
   const isMd = languageOf(path) === "markdown";
@@ -199,15 +235,21 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
                     </button>
                   ))}
                 </span>
+                {changeTool}
                 {fileGit.tools}
               </>
             ) : (
-              fileGit.tools
+              <>
+                {changeTool}
+                {fileGit.tools}
+              </>
             )
           }
           preview={isMd ? <MarkdownPreview text={shown} path={path} onOpen={openLinked} /> : undefined}
           view={view}
           blame={fileGit.blame}
+          onLineStory={fileGit.lineStory}
+          diff={marks}
           wrap
           // Config and .proto files (compose, Dockerfile, k8s) are shown as plain text.
           language={lang === "config" || lang === "proto" ? "text" : undefined}
@@ -225,7 +267,7 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
         </div>
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave reads the latest workspace when called
-    [path, content, text, shown, dirty, highlight, lang, sample, unread, fileGit.tools, fileGit.blame, isMd, view, litNow, openLinked],
+    [path, content, text, shown, dirty, highlight, lang, sample, unread, fileGit.tools, fileGit.blame, fileGit.lineStory, isMd, view, litNow, openLinked, changed, fits, showChange, marks],
   );
 
   // Re-root CodeMirror in whichever window now holds the panel.
@@ -290,6 +332,7 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
   return (
     <div className="dock-panel code" ref={host}>
       {editor}
+      {fileGit.storyPop}
       <div className="selbar">
         {selection ? (
           <>
@@ -308,6 +351,15 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
               }}
             >
               Trace it
+            </button>
+            <button
+              className="ctl compact"
+              title="What a change to these lines could reach, before you edit"
+              onClick={() => {
+                if (!s.impactSelection(selection)) toast("No card on the map owns these lines.");
+              }}
+            >
+              Show impact of the selection
             </button>
           </>
         ) : (

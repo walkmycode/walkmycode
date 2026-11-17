@@ -39,9 +39,10 @@ import { light } from "@/lib/light";
 import { cameraTarget, easeSettle, flyDuration, flyThrough } from "@/lib/flythrough";
 import { motionOff } from "@/lib/motion";
 import { CARD_H, CARD_W, cardColumns, hasSystem, layoutFor, type EdgeItem, type LinkGroup, type MapViewState, type SvcCard } from "./mapLayout";
-import { Highlight, cardPick, edgePick, hiStateOf, linkPick, splitPick, svcPick, type HiState, type Lit } from "./mapHighlight";
+import { Highlight, cardPick, changeBadge, edgePick, hiStateOf, linkPick, splitPick, svcPick, type HiState, type Lit } from "./mapHighlight";
 import { arrowLength, linearEasing, riderStops } from "./mapTrace";
 import { afterResize, askFit, newCamera, placed, type CameraState } from "./mapCamera";
+import { changesLabel, type CardHeat } from "@/lib/hotspots";
 
 export { layoutFor, defaultView, type MapViewState } from "./mapLayout";
 export type { Lit } from "./mapHighlight";
@@ -72,6 +73,10 @@ function useHiAt(pick: (s: HiState) => string): { cls: string; style: React.CSSP
   return { cls, style: at === undefined ? undefined : ({ "--i": at, "--hop": hopVar(Number(snap.slice(h + 1))) } as React.CSSProperties) };
 }
 const hopVar = (ms: number) => `calc(${ms}ms * var(--m))`;
+/** Hotspots (src/lib/hotspots.ts): each card's heat, when the history has been read. Changed only
+ * when it is read again (another span); "Colour by" itself is one class on the map's box, so
+ * switching it redraws no card and lays nothing out again. */
+const HeatCtx = createContext<Map<string, CardHeat> | null>(null);
 const markerId = (prefix: string, colour: string) => `${prefix}-${colour.slice(1)}`;
 
 interface Props {
@@ -95,6 +100,12 @@ interface Props {
   onPalette?: (q: string) => void;
   /** Bumped by the dock when a hidden map tab is shown again: fit the graph to its box. */
   fit?: number;
+  /** Hotspots: every card's heat, once read; the cards are filled by it while `hot`. */
+  heat?: Map<string, CardHeat> | null;
+  hot?: boolean;
+  /** More controls for the toolbar on the lanes ("Colour by"), and a legend in place of the arrows' one. */
+  tools?: React.ReactNode;
+  legend?: React.ReactNode;
 }
 
 const EDGE_COLOUR: Record<string, string> = {
@@ -137,12 +148,22 @@ type LinkEdgeData = { links: ServiceLink[]; group: LinkGroup; confidence: string
 const Card = memo(function Card({ id, data }: NodeProps<CardNode>) {
   const n = data.node;
   const { cls, style } = useHiAt((s) => cardPick(s, id));
+  // A change on the map (src/lib/diffTour.ts): this card's lines added and removed, "+9 −4".
+  const delta = useHi((s) => changeBadge(s, id));
+  const heat = useContext(HeatCtx)?.get(id);
   const cols = cardColumns(n);
   const sub = n.kind === "route" ? `${n.area} · ${n.handler ?? n.file?.split("/").pop() ?? ""}` : n.kind === "table" ? (n.columns?.length ? `table · ${n.columns.length} column${n.columns.length === 1 ? "" : "s"}` : "table") : n.kind === "service" ? (n.internal ? "this system's own service" : "outside service") : n.kind === "component" && n.note ? n.note : `${n.area} · ${n.kind}`;
   return (
-    <div className={`node ${n.layer}${cls}`} style={style} title={n.file ? `${n.file}:${n.line ?? 1}` : n.name}>
+    <div className={`node ${n.layer}${heat ? ` heat-${heat.level}` : ""}${cls}`} style={style} title={n.file ? `${n.file}:${n.line ?? 1}` : n.name}>
       <div className={`nm${n.kind === "route" ? " mono" : ""}`}>{n.name}</div>
-      <div className="sub">{sub}</div>
+      <div className="sub kind-sub">{sub}</div>
+      {/* Shown in place of the line above while the map is coloured by Hotspots: the same height, so nothing moves. */}
+      {heat && (
+        <div className="sub heat-sub">
+          {changesLabel(heat.changes)}
+          {heat.level >= 3 && heat.files.length === 1 ? ` · ${heat.lines} lines` : heat.files.length > 1 && heat.changes ? ` · via ${heat.files.map((f) => f.split("/").pop()).join(", ")}` : ""}
+        </div>
+      )}
       {cols.shown.length > 0 && (
         <div className="cols">
           {cols.shown.map((c) => (
@@ -155,6 +176,11 @@ const Card = memo(function Card({ id, data }: NodeProps<CardNode>) {
         </div>
       )}
       {data.badge && <span className="nbadge">{data.badge}</span>}
+      {delta && (
+        <span className="dbadge" aria-label={`changed: ${delta}`}>
+          {delta}
+        </span>
+      )}
     </div>
   );
 });
@@ -459,7 +485,7 @@ function Arrowheads({ prefix }: { prefix: string }) {
   );
 }
 
-function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, onSelect, onEdge, onLinks, onFocus, onToggleImports, onView, onJump, onPalette }: Props) {
+function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, onSelect, onEdge, onLinks, onFocus, onToggleImports, onView, onJump, onPalette, heat = null, hot = false, tools, legend }: Props) {
   const { fitView, setCenter, setViewport } = useReactFlow();
   const store = useStoreApi();
   const [q, setQ] = useState("");
@@ -782,7 +808,7 @@ function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, 
   const hasChannels = useMemo(() => map.nodes.some((n) => n.kind === "channel"), [map]);
 
   return (
-    <div ref={box} className={`flowbox hl-${hiState.mode}`} style={{ position: "absolute", inset: 0 }}>
+    <div ref={box} className={`flowbox hl-${hiState.mode}${hot && heat && !isSystem ? " heat" : ""}`} style={{ position: "absolute", inset: 0 }}>
       <div className="maptools">
         <input
           className="field"
@@ -819,7 +845,9 @@ function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, 
             focus on selected
           </button>
         )}
+        {!isSystem && tools}
       </div>
+      <HeatCtx.Provider value={heat}>
       <HiCtx.Provider value={hiCtx}>
       <Arrowheads prefix={markers} />
       <ReactFlow
@@ -855,7 +883,10 @@ function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, 
         <MiniMap pannable zoomable nodeColor={miniColour} maskColor="rgba(0,0,0,.5)" style={MINI_STYLE} />
       </ReactFlow>
       </HiCtx.Provider>
-      {isSystem ? (
+      </HeatCtx.Provider>
+      {!isSystem && legend ? (
+        legend
+      ) : isSystem ? (
         <div className="legend">
           <span>
             <i style={{ borderColor: "#f3d77a" }} /> request
@@ -874,6 +905,19 @@ function Inner({ map, view, selected, lit, focus, showImports, reveal, fit = 0, 
           </span>
           <span>
             <i className="dash" /> guess
+          </span>
+        </div>
+      ) : lit?.change ? (
+        // A change on the map: what its marks mean (src/lib/diffTour.ts).
+        <div className="legend change-legend">
+          <span>
+            <i className="box changed" /> changed
+          </span>
+          <span>
+            <i className="box affected" /> not changed, but uses what changed
+          </span>
+          <span>
+            <i className="box now" /> this step
           </span>
         </div>
       ) : (

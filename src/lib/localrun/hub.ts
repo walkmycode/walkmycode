@@ -10,7 +10,10 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { loadLocalRun, loadSetupRoots, saveLocalRun, saveSetupRoot, type LocalRunSettings } from "./consent";
-import { createGit, type Git, type GitBlameHunk, type GitBranch, type GitCommit, type GitFileCommit, type GitStatus } from "./git";
+import { DEFAULT_SPAN, SPANS, type Churn } from "../hotspots";
+import { createGit, readOnlyExec, type Git, type GitBlameHunk, type GitBranch, type GitCommit, type GitFileCommit, type GitStatus } from "./git";
+import { COMMIT, type LineStory } from "./lineStory";
+import type { ChangeBases, RangeChange } from "../diffParse";
 import { findServiceDirs, planSetup, publicPlan, refreshPath, runSetupStep, type PlannedService, type PlannedStep } from "./setup";
 import { defaultParent, planNew, publicStep, starterList } from "./starters";
 import { HOSTED_REFUSAL, type LocalRunStatus, type ServerMsg } from "./protocol";
@@ -91,7 +94,7 @@ const Msg = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("git"),
     id: Id,
-    op: z.enum(["status", "diff", "draft", "commit", "discard", "push", "pull", "branches", "switch", "log", "resolve", "finish", "blame", "file-log"]),
+    op: z.enum(["status", "diff", "draft", "commit", "discard", "push", "pull", "branches", "switch", "log", "resolve", "finish", "blame", "file-log", "line-log", "bases", "change", "churn"]),
     workspace: z.string().min(1).max(200).optional(),
     path: z.string().min(1).max(1000).optional(),
     paths: z.array(z.string().min(1).max(1000)).max(2000).optional(),
@@ -101,6 +104,14 @@ const Msg = z.discriminatedUnion("type", [
     how: z.enum(["ours", "theirs", "done"]).optional(),
     merge: z.boolean().optional(),
     abort: z.boolean().optional(),
+    /** line-log: the lines, from 1, or a function's name (git.lineLog checks them against the file). */
+    from: z.number().int().min(1).max(10_000_000).optional(),
+    to: z.number().int().min(1).max(10_000_000).optional(),
+    func: z.string().min(1).max(200).optional(),
+    /** line-log: the commit that last changed the line (git blame's); from/to are its number there. */
+    at: z.string().regex(COMMIT).optional(),
+    base: z.string().min(1).max(200).optional(),
+    span: z.enum(SPANS).optional(),
   }),
 ]);
 
@@ -152,6 +163,9 @@ export function createLocalRun(o: LocalRunOptions) {
   const customDone = new Map<string, number>();
   const customOf = (c: z.infer<typeof NewAsk>, parent: string) => (c.starter === "custom" ? { commands: c.custom?.commands ?? [], done: customDone.get(join(parent, c.name.trim())) ?? 0 } : undefined);
   const git = o.git ?? createGit();
+  // Line history and "Tour a change" only read: git that a repo's own settings can't make start a
+  // program, its filters included (./git.ts, readOnlyExec).
+  const readGit = o.git ?? createGit(readOnlyExec());
   /** Where "Set up this project" looks: the workspace's own folders, else the one the user named for it. */
   const rootsFor = (workspace?: string): string[] => {
     const own = o.roots?.() ?? [];
@@ -437,16 +451,40 @@ export function createLocalRun(o: LocalRunOptions) {
           }
           case "git": {
             const roots = rootsFor(m.workspace);
-            type Extra = { ok: boolean; status: GitStatus | null; output?: string; branches?: GitBranch[]; log?: GitCommit[]; blame?: GitBlameHunk[]; me?: string; history?: GitFileCommit[] };
+            type Extra = { ok: boolean; status: GitStatus | null; output?: string; branches?: GitBranch[]; log?: GitCommit[]; blame?: GitBlameHunk[]; me?: string; history?: GitFileCommit[]; story?: LineStory; bases?: ChangeBases; change?: RangeChange; churn?: Churn };
             const reply = (r: Extra) => send({ type: "git-result", id: m.id, op: m.op, located: roots.length > 0, ...r });
             void (async () => {
+              // "Tour a change": read from the workspace's first folder in a repo, paths from that folder.
+              if (m.op === "bases" || m.op === "change") {
+                const root = await readGit.rootOf(roots);
+                if (!root) return reply({ ok: false, status: null, output: roots.length ? "This project's folder isn't in a git repo." : "" });
+                const r = m.op === "bases" ? await readGit.changeBases(root) : await readGit.change(root, m.base ?? null);
+                if ("error" in r) return reply({ ok: false, status: null, output: r.error });
+                return reply(m.op === "bases" ? { ok: true, status: null, bases: r as ChangeBases } : { ok: true, status: null, change: r as RangeChange });
+              }
               // One file's history: the repo it is in, which may be any of the workspace's folders.
-              if (m.op === "blame" || m.op === "file-log") {
-                const at = m.path ? await git.locate(roots, m.path) : null;
+              if (m.op === "blame" || m.op === "file-log" || m.op === "line-log") {
+                const at = m.path ? await readGit.locate(roots, m.path) : null;
                 if (!at) return reply({ ok: false, status: null, output: roots.length ? `${m.path ?? "That file"} isn't in a git repo in this project's folder.` : "" });
-                if (m.op === "file-log") return reply({ ok: true, status: null, history: await git.fileLog(at.top, at.rel) });
-                const b = await git.blame(at.top, at.rel);
+                if (m.op === "file-log") return reply({ ok: true, status: null, history: await readGit.fileLog(at.top, at.rel) });
+                if (m.op === "line-log") {
+                  if (!m.func === !m.from) return reply({ ok: false, status: null, output: "A line's history needs its line or a function's name." });
+                  const l = await readGit.lineLog(at.top, at.rel, m.func ? { func: m.func } : { from: m.from!, to: m.to ?? m.from!, ...(m.at ? { at: m.at } : {}) });
+                  return reply(l.ok ? { ok: true, status: null, story: l.story } : { ok: false, status: null, output: l.output });
+                }
+                const b = await readGit.blame(at.top, at.rel);
                 return reply(b.ok ? { ok: true, status: null, blame: b.hunks, me: b.me } : { ok: false, status: null, output: b.output });
+              }
+              // Hotspots: how often each file of the workspace's folder changed (the first folder in a repo).
+              if (m.op === "churn") {
+                if (!roots.length) return reply({ ok: false, status: null, output: "" });
+                let why = "";
+                for (const root of roots) {
+                  const c = await readGit.churn(root, m.span ?? DEFAULT_SPAN);
+                  if (c.ok) return reply({ ok: true, status: null, churn: c.churn });
+                  why ||= c.output;
+                }
+                return reply({ ok: false, status: null, output: why });
               }
               const top = await git.topOf(roots);
               if (!top) return reply({ ok: m.op === "status", status: null });

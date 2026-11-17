@@ -25,6 +25,7 @@ import { PANELS } from "@/shell/panels";
 import TerminalButton from "@/ide/localrun/TerminalButton";
 import SetupPill from "@/ide/localrun/setup/SetupPill";
 import SourceControl from "@/ide/localrun/git/SourceControl";
+import ChangeTour from "@/ide/localrun/git/ChangeTour";
 import { useStack } from "@/components/StackChips";
 import ProjectChip, { type Metric } from "@/components/ProjectChip";
 import Toast from "@/shell/Toast";
@@ -167,6 +168,7 @@ function MapTop() {
       }
     >
       <SetupPill />
+      <ChangeTour />
       <SourceControl />
       <TerminalButton />
       <MuteButton />

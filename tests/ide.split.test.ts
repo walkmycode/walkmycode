@@ -127,6 +127,23 @@ describe("the output's one store", () => {
     assert.equal(o.dock().owner, null);
     assert.equal(o.has("ide:1"), false);
   });
+  it("keeps the latest run's error for the Guide's Walk an error, with what it printed in order", () => {
+    const o = createOutputStore();
+    assert.equal(o.lastError(), null);
+    o.append("ide:1", { kind: "meta", text: "$ node app.js\n" });
+    o.append("ide:1", { kind: "out", text: "listening" });
+    assert.equal(o.lastError(), null); // nothing went wrong yet
+    o.append("ide:1", { kind: "err", text: "TypeError: x\n    at f (lib/a.ts:1:1)\n" });
+    assert.equal(o.lastError(), "listening\nTypeError: x\n    at f (lib/a.ts:1:1)\n");
+    assert.equal(o.lastError(), o.lastError()); // the same string until it changes (React reads it)
+    o.append("ide:2", { kind: "error", text: "boom" });
+    assert.equal(o.lastError(), "boom");
+    o.update("ide:2", { parts: [] }); // run again, cleanly
+    assert.equal(o.lastError(), null);
+    o.append("ide:1", { kind: "err", text: "again\n" });
+    o.remove("ide:1");
+    assert.equal(o.lastError(), null);
+  });
 });
 
 describe("the Output dock panel", () => {

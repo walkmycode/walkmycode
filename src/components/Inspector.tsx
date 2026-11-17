@@ -3,6 +3,7 @@
 import type { CodeMap, MapEdge, MapNode } from "@/analyzer/types";
 import { edgesOf, nodeById } from "@/lib/store";
 import { SettingsList } from "./PointsAt";
+import ImpactSection, { type ImpactProps } from "./ImpactSection";
 
 interface Props {
   map: CodeMap;
@@ -12,6 +13,8 @@ interface Props {
   onExplain: (node: MapNode) => void;
   onTrace: (node: MapNode) => void;
   onTour: (node: MapNode) => void;
+  /** "If you change it": the change impact section, when the room offers it. */
+  impact?: ImpactProps;
 }
 
 const OUT_WORDS: Record<string, string> = { imports: "uses code from", calls: "calls", "calls-route": "sends a request to", reads: "reads from", writes: "writes to", defines: "creates", "uses-service": "talks to", "calls-rpc": "calls (gRPC)", publishes: "puts messages on", consumes: "picks messages up from", "depends-on": "is started after", proxies: "passes requests on to" };
@@ -130,7 +133,7 @@ function EdgeRow({ map, e, dir, i, onOpen, onSelect }: { map: CodeMap; e: MapEdg
   );
 }
 
-export default function Inspector({ map, selected, onOpen, onSelect, onExplain, onTrace, onTour }: Props) {
+export default function Inspector({ map, selected, onOpen, onSelect, onExplain, onTrace, onTour, impact }: Props) {
   const n = selected ? nodeById(map, selected) : undefined;
   if (!n) {
     return (
@@ -179,6 +182,7 @@ export default function Inspector({ map, selected, onOpen, onSelect, onExplain, 
           Tour from here
         </button>
       </div>
+      {impact && <ImpactSection map={map} node={n} onOpen={onOpen} onSelect={onSelect} {...impact} />}
       {n.columns && n.columns.length > 0 && (
         <>
           <div className="label">

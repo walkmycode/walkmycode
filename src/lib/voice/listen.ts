@@ -168,20 +168,28 @@ export function hearWithBrowser(onWords?: (soFar: string) => void, Ctor: Recogni
 /** The longest clip sent for transcription. */
 export const MAX_CLIP_MS = 60_000;
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
 
-/** Record the microphone, then have the local server transcribe it with the transcriber chosen in Settings → Voice, on the user's key. */
-export async function hearWithServer(stt: ServerStt, fetchImpl: typeof fetch = fetch): Promise<Hearing> {
-  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new HearError("This browser can't record the microphone. Type your question instead.");
+/** The microphone being recorded: stop() hands back what it heard, as one clip. */
+export interface MicRecording {
+  stop(): Promise<Blob>;
+  cancel(): void;
+}
+
+/** Record the microphone (MediaRecorder) for at most `maxMs`; also used to record a shared tour's
+ * narration (src/lib/voice/clip.ts). Throws a HearError in `words` when the browser can't record,
+ * or the user didn't allow the microphone. */
+export async function recordMicrophone(maxMs: number, words: { unsupported: string; denied: string }): Promise<MicRecording> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new HearError(words.unsupported);
   let stream: MediaStream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   } catch {
-    throw new HearError(RECOGNITION_ERRORS["not-allowed"]);
+    throw new HearError(words.denied);
   }
   const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -194,15 +202,30 @@ export async function hearWithServer(stt: ServerStt, fetchImpl: typeof fetch = f
     for (const t of stream.getTracks()) t.stop();
   };
   rec.start(250);
-  const cap = setTimeout(() => rec.state !== "inactive" && rec.stop(), MAX_CLIP_MS);
+  const cap = setTimeout(() => rec.state !== "inactive" && rec.stop(), maxMs);
   return {
-    via: stt,
     stop: async () => {
       clearTimeout(cap);
       if (rec.state !== "inactive") rec.stop();
       await stopped;
       release();
-      const blob = new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
+      return new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
+    },
+    cancel: () => {
+      clearTimeout(cap);
+      if (rec.state !== "inactive") rec.stop();
+      release();
+    },
+  };
+}
+
+/** Record the microphone, then have the local server transcribe it with the transcriber chosen in Settings → Voice, on the user's key. */
+export async function hearWithServer(stt: ServerStt, fetchImpl: typeof fetch = fetch): Promise<Hearing> {
+  const rec = await recordMicrophone(MAX_CLIP_MS, { unsupported: "This browser can't record the microphone. Type your question instead.", denied: RECOGNITION_ERRORS["not-allowed"] });
+  return {
+    via: stt,
+    stop: async () => {
+      const blob = await rec.stop();
       if (!blob.size) return "";
       const audio = toBase64(new Uint8Array(await blob.arrayBuffer()));
       const res = await fetchImpl("/api/voice/transcribe", { method: "POST", headers: { "content-type": "application/json" }, body: transcribeRequest(stt, audio, blob.type) });
@@ -210,10 +233,6 @@ export async function hearWithServer(stt: ServerStt, fetchImpl: typeof fetch = f
       if (!res.ok) throw new HearError(typeof body.error === "string" ? body.error : body.error ? `${body.error.title ?? "Transcription failed"}. ${body.error.message ?? ""}`.trim() : `WalkMyCode's server answered ${res.status}.`);
       return typeof body.text === "string" ? body.text.trim() : "";
     },
-    cancel: () => {
-      clearTimeout(cap);
-      if (rec.state !== "inactive") rec.stop();
-      release();
-    },
+    cancel: () => rec.cancel(),
   };
 }

@@ -175,3 +175,39 @@
   .cm-blame .when .y { display: none; }
   .cm-blame .when .t::before { content: " "; }
 }
+
+/* "How did this line get here?" (LineStory.tsx): the button beside the cursor line's note, a block's blame
+   that opens it, and the popover beside the line: the line's commits, oldest first, the newest marked. */
+.cm-line-note-box { white-space: normal; }
+.cm-line-story { display: inline-block; white-space: nowrap; margin-left: 1.5ch; padding: 0 calc(6px * var(--sp)); border: 1px solid var(--hair-2); border-radius: 0; background: transparent; color: var(--ui-faint); font: .92em var(--sans); cursor: pointer; pointer-events: auto; user-select: none; vertical-align: baseline; }
+.cm-line-story:hover, .cm-line-story:focus-visible { color: var(--yellow); border-color: var(--yellow); }
+.cm-blame.story { cursor: pointer; }
+.dock-panel.code { position: relative; }
+.line-story { position: absolute; z-index: 40; width: min(560px, calc(100% - 16px)); max-height: calc(100% - 16px); overflow: auto; display: flex; flex-direction: column; padding: calc(14px * var(--sp)) calc(16px * var(--sp)); background: var(--ui); color: var(--ui-text); border: 1px solid var(--yellow); box-shadow: 0 18px 50px rgba(0, 0, 0, .5); font: var(--text)/1.45 var(--sans); }
+.line-story:focus { outline: none; }
+.line-story header { display: flex; align-items: center; gap: calc(10px * var(--sp)); margin-bottom: calc(12px * var(--sp)); }
+.line-story header .sp { flex: 1; }
+.line-story .label { margin: 0; font: 600 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.line-story .faint { color: var(--ui-faint); font: var(--text) var(--mono); }
+.line-story .x { flex: none; width: calc(24px * var(--ctl)); height: calc(24px * var(--ctl)); border: 0; border-radius: 0; background: transparent; color: var(--ui-dim); font-size: var(--text); font-weight: 650; cursor: pointer; }
+.line-story .x:hover { background: var(--ui-2); color: var(--ui-text); }
+.line-story .note { margin: 0 0 calc(12px * var(--sp)); color: var(--ui-dim); }
+.line-story .note.small { color: var(--ui-faint); }
+.line-story ol { list-style: none; margin: 0; padding: 0; }
+.line-story li { position: relative; display: flex; gap: calc(14px * var(--sp)); padding-bottom: calc(14px * var(--sp)); }
+.line-story li > div { min-width: 0; flex: 1; }
+.line-story li::before { content: ""; position: absolute; left: 5px; top: 16px; bottom: 0; width: 1px; background: var(--ui-line); }
+.line-story li:last-child::before { display: none; }
+.line-story .dot { flex: none; width: 11px; height: 11px; margin-top: calc(4px * var(--sp)); border-radius: 50%; border: 2px solid var(--yellow); background: var(--ui); box-sizing: border-box; }
+.line-story li.now .dot { background: var(--yellow); }
+.line-story code { font: var(--text) var(--mono); color: var(--ui-faint); }
+.line-story .pr { color: var(--ui-faint); }
+.line-story .pr a { color: var(--blue); }
+.line-story .tag { margin-left: calc(8px * var(--sp)); padding: 0 calc(5px * var(--sp)); border: 1px solid var(--yellow); color: var(--yellow); font: 600 var(--text) var(--sans); text-transform: uppercase; letter-spacing: .06em; }
+.line-story .subj { color: var(--ui-dim); overflow-wrap: anywhere; }
+.line-story .mini { margin-top: calc(6px * var(--sp)); padding: calc(4px * var(--sp)) calc(8px * var(--sp)); border: 1px solid var(--ui-line); background: var(--out, transparent); font: var(--text)/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.line-story .mini .add { color: var(--green); }
+.line-story .mini .del { color: var(--pink); }
+.line-story .mini .more { color: var(--ui-faint); }
+.line-story footer { display: flex; flex-wrap: wrap; gap: calc(8px * var(--sp)); padding-top: calc(12px * var(--sp)); border-top: 1px solid var(--ui-line); }
+.line-story footer a.ctl { text-decoration: none; }

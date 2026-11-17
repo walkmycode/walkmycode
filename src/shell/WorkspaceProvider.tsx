@@ -22,14 +22,18 @@ import { indexOf } from "@/lib/mapIndex";
 import type { RepoView, Tour } from "@/lib/claude/tools";
 import type { AskImage, PageRequest, RequestContext } from "@/lib/bridge/protocol";
 import { MCP } from "@/lib/adapters/target";
-import { FLY_REQUEST } from "@/lib/claude/prompts";
+import { FLY_REQUEST, IMPACT_REQUEST } from "@/lib/claude/prompts";
+import { fnAt, impactContext, impactLit, impactName, impactOf, impactTour, type ImpactAsk, type Reach } from "@/lib/impact";
 import { flyThrough, type FlyRoom } from "@/lib/flythrough";
+import { causeQuestion, walkLit, walkTrace, type WalkState } from "@/lib/stackTrace";
+import { changeLit as litOfChange, storyAsk, type TouredChange } from "@/lib/diffTour";
 import { PANELS, basename, editorId, isEditorId, type PanelId } from "./panels";
 import type { PresetName } from "./layout";
 import { parseDeepLink, resolveDeepLink, withoutDeepLink } from "./deeplink";
 import { bindKeys, type Command, type ShellCommands } from "./keys";
 import { capabilities } from "./theme";
 import { claimTab, tourMayShowGuide, tourTabStep } from "./tourTabs";
+import { emptyLog, groupViews, pickTarget, pressed, watchFocus, type FocusLog } from "./openTarget";
 import { debugAt } from "@/ide/debugAt";
 import { cycleGroup, cycleTab, dockGroup, floatGroup, groupOf, maximiseGroup, popoutGroup, resizeGroup, type GroupTarget } from "./actions";
 
@@ -108,13 +112,42 @@ export interface WorkspaceState {
   onEdge(e: MapEdge): void;
   onLinks(links: ServiceLink[]): void;
   explainSelection(sel: Selection): void;
+  /** "Explain this history" (src/ide/localrun/git/LineStory.tsx): the guide tells how these lines got
+   * here, from their commits. `shown` is what the guide shows as asked; `question` carries the commits. */
+  explainHistory(o: { path: string; from: number; shown: string; question: string }): void;
   explainNode(n: MapNode): void;
   explainService(s: ServiceDef): void;
   traceNode(n: MapNode): void;
   traceSvc(s: ServiceDef): void;
   tourNode(n: MapNode): void;
   tourLinks(links: ServiceLink[]): void;
+  /** "Tour a change" (src/lib/diffTour.ts): the change on screen, marked on the map while its tour plays. */
+  change: TouredChange | null;
+  /** Start touring a change (its tour from the first step), or stop (null). */
+  startChange(c: TouredChange | null): void;
+  /** Ask the guide to tell the change as a story, step by step, and review it. */
+  explainChange(): void;
   askFree(q: string, images?: AskImage[]): void;
+  /** The change impact last asked for, or null. */
+  impact: ImpactAsk | null;
+  /** Work out a card's impact; `light`: show it on the map (false puts its light out). */
+  showImpact(a: { id: string; fn?: string; reach: Reach; light: boolean }): void;
+  /** "Show impact of the selection": the card that owns the lines, narrowed to the function they are in.
+   * False when no card on the map owns them. */
+  impactSelection(sel: Selection): boolean;
+  /** "Tour the impact": a tour written from the map, played by the guide (no AI). */
+  tourImpact(a: { id: string; fn?: string; reach: Reach }): void;
+  /** "Explain the risks": the guide is asked, with the impact's lists. */
+  explainImpact(a: { id: string; fn?: string; reach: Reach }): void;
+  /** "Walk an error" (src/lib/stackTrace.ts): the error walked last, while the Guide shows it. */
+  walk: WalkState | null;
+  /** Walk a pasted error: light its path on the map, open where it threw, ask the guide for the likely cause. */
+  walkError(text: string): void;
+  /** Put the walk away, and its lights with it. */
+  endWalk(): void;
+  /** Hotspots' "Why is it hot?": the guide reads the file, with the commits that changed it in the span
+   * (src/lib/hotspots.ts, whyHotContext), and says what keeps changing, citing lines. */
+  askWhyHot(path: string, commits: string): void;
   /** A question said out loud (WalkMyCode for Claude: a spoken request to the user's Claude). */
   /** A question said out loud; `continues`: the unanswered one before it with more said after, which it replaces. */
   askSpoken(q: string, opts?: { continues?: boolean }): void;
@@ -210,7 +243,11 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
   const [lit, setLit] = useState<Lit | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [tour, setTour] = useState<Tour | null>(null);
+  const [walk, setWalk] = useState<WalkState | null>(null);
   const [step, setStep] = useState(0);
+  // The change impact asked for, with the light it put on the map (null while it isn't shown).
+  const [impactState, setImpactState] = useState<{ id: string; fn?: string; reach: Reach; lit: Lit | null } | null>(null);
+  const [change, setChange] = useState<TouredChange | null>(null);
   const [view, setViewState] = useState<MapViewState>(init.view);
   const [detail, setDetail] = useState<Detail>(null);
   const [mapReveal, setMapReveal] = useState<{ id: string; at: number } | null>(init.mapReveal);
@@ -218,7 +255,8 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
   const [files, setFiles] = useState<OpenFile[]>(init.files);
   const [activePath, setActivePathState] = useState<string | null>(init.activePath);
   // Asks for the dock, carried out in an effect (they can come from a render, like a tour step).
-  const [editorReq, setEditorReq] = useState<{ path: string; n: number } | null>(init.activePath ? { path: init.activePath, n: 0 } : null);
+  // `group`: where a file the user opened goes (./openTarget.ts); none puts it beside the Code tab.
+  const [editorReq, setEditorReq] = useState<{ path: string; n: number; group?: string } | null>(init.activePath ? { path: init.activePath, n: 0 } : null);
   // `tour`: asked for by a playing tour, which gives way to an open Settings (./tourTabs.ts).
   const [panelReq, setPanelReq] = useState<{ id: PanelId; n: number; tour?: boolean } | null>(init.panel ? { id: init.panel, n: 0 } : null);
   const [presetName, setPresetName] = useState<PresetName | "custom">("explore");
@@ -230,6 +268,9 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
 
   const api = useRef<DockviewApi | null>(null);
   const restoring = useRef(false);
+  // The groups the user last pressed in, for where the next file they open goes (./openTarget.ts).
+  const focusLog = useRef<FocusLog>(emptyLog());
+  useEffect(() => watchFocus(() => api.current, (p) => (focusLog.current = pressed(focusLog.current, p))), []);
   const handlers = useRef<DockHandlers | null>(null);
   const filesRef = useRef(files);
   const viewRef = useRef(view);
@@ -278,23 +319,25 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
   );
 
   const syncEditors = useCallback(
-    (a: DockviewApi, activate?: string | null) => {
-      let ref = [...a.panels].reverse().find((p) => isEditorId(p.id))?.id ?? "code:home";
-      if (!a.getPanel(ref)) addHome(a, "code:home");
+    (a: DockviewApi, activate?: string | null, group?: string) => {
+      // A new tab goes beside the Code tab (or the last file, when Code is closed), unless the user
+      // opened it into a group of their own (./openTarget.ts).
+      if (!a.getPanel("code:home") && ![...a.panels].some((p) => isEditorId(p.id))) addHome(a, "code:home");
+      const home = (a.getPanel("code:home") ?? [...a.panels].reverse().find((p) => isEditorId(p.id)))?.group.id;
+      const target = group && a.getGroup(group) ? group : undefined;
       for (const f of filesRef.current) {
         const id = editorId(f.path);
-        if (!a.getPanel(id)) {
-          a.addPanel({
-            id,
-            component: "code",
-            title: basename(f.path),
-            params: { path: f.path },
-            renderer: "always",
-            inactive: true,
-            position: { referencePanel: ref, direction: "within" },
-          });
-        }
-        ref = id;
+        if (a.getPanel(id)) continue;
+        const into = (f.path === activate && target) || home;
+        a.addPanel({
+          id,
+          component: "code",
+          title: basename(f.path),
+          params: { path: f.path },
+          renderer: "always",
+          inactive: true,
+          ...(into ? { position: { referenceGroup: into, direction: "within" as const } } : {}),
+        });
       }
       if (activate) {
         const p = a.getPanel(editorId(activate));
@@ -311,9 +354,9 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
   useEffect(() => {
     const a = api.current;
     if (!a || restoring.current) return;
-    const want = editorReq && editorReq.n !== handledEditor.current ? editorReq.path : null;
+    const fresh = editorReq && editorReq.n !== handledEditor.current ? editorReq : null;
     if (editorReq) handledEditor.current = editorReq.n;
-    syncEditors(a, want);
+    syncEditors(a, fresh?.path ?? null, fresh?.group);
   }, [files, editorReq, syncEditors]);
   const handledPanel = useRef(-1);
   useEffect(() => {
@@ -324,9 +367,10 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
 
   const shellSync = useCallback(
     (a: DockviewApi) => {
-      const want = editorReq && editorReq.n !== handledEditor.current ? editorReq.path : filesRef.current.length ? activePath : null;
+      const fresh = editorReq && editorReq.n !== handledEditor.current ? editorReq : null;
+      const want = fresh ? fresh.path : filesRef.current.length ? activePath : null;
       if (editorReq) handledEditor.current = editorReq.n;
-      syncEditors(a, want);
+      syncEditors(a, want, fresh?.group);
       if (panelReq && panelReq.n !== handledPanel.current) {
         handledPanel.current = panelReq.n;
         doReveal(panelReq.id, panelReq.tour);
@@ -351,17 +395,21 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
   const setActivePath = useCallback((path: string | null) => setActivePathState(path), []);
 
   /** Open a file at lines (a tour step opens through this one directly). */
-  const openFile = useCallback((path: string, start?: number, end?: number) => {
+  const openFile = useCallback((path: string, start?: number, end?: number, group?: string) => {
     const highlight = toHighlight(start, end);
     setFiles((fs) => (fs.some((f) => f.path === path) ? fs.map((f) => (f.path === path ? { ...f, highlight } : f)) : [...fs, { path, highlight }]));
     setActivePathState(path);
-    setEditorReq((r) => ({ path, n: (r?.n ?? 0) + 1 }));
+    setEditorReq((r) => ({ path, n: (r?.n ?? 0) + 1, ...(group ? { group } : {}) }));
   }, []);
   /** The user opens a file (a card, a citation, the file tree): if a tour had opened it, it is theirs now. */
   const openAt = useCallback(
     (path: string, start?: number, end?: number) => {
       setTourOwned((o) => claimTab(o, path));
-      openFile(path, start, end);
+      // Into the group the user was working in (./openTarget.ts). A tour step opens through openFile
+      // directly, so the tour's code stays beside the Code tab while the map and the guide play.
+      const a = api.current;
+      const group = a ? (pickTarget(focusLog.current, groupViews(a), performance.now()) ?? undefined) : undefined;
+      openFile(path, start, end, group);
     },
     [openFile],
   );
@@ -470,13 +518,18 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
     const nodes = new Set(named);
     const owner = nodeAt(map, s.file, s.start_line);
     if (owner) nodes.add(owner.id);
-    const edges = new Set(map.edges.filter((e) => nodes.has(e.from) && nodes.has(e.to)).map((e) => e.id));
-    const services = new Set<string>();
-    for (const id of nodes) {
-      const sv = nodeById(map, id)?.service;
-      if (sv) services.add(sv);
+    if (tour.change && change) {
+      // A change's tour: the whole change stays marked (what changed, what uses it), this step's cards ringed.
+      setLit(litOfChange(map, change.plan, [...nodes]));
+    } else {
+      const edges = new Set(map.edges.filter((e) => nodes.has(e.from) && nodes.has(e.to)).map((e) => e.id));
+      const services = new Set<string>();
+      for (const id of nodes) {
+        const sv = nodeById(map, id)?.service;
+        if (sv) services.add(sv);
+      }
+      setLit({ nodes, edges, services });
     }
-    setLit({ nodes, edges, services });
     // As a tour: an open Settings stays open (./tourTabs.ts).
     revealPanel("guide", "tour");
     if (hasSystem(map)) {
@@ -585,6 +638,21 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
     [map, contextFor, revealPanel, withScreen],
   );
 
+  const explainHistory = useCallback(
+    (o: { path: string; from: number; shown: string; question: string }) => {
+      const owner = nodeAt(map, o.path, o.from);
+      setJob({
+        id: Date.now(),
+        mode: "ask",
+        shown: o.shown,
+        user: `${contextFor(owner)}\n\n${o.question}`,
+        request: withScreen({ kind: "question", payload: { text: o.question.slice(0, 20_000) } }),
+      });
+      revealPanel("guide");
+    },
+    [map, contextFor, revealPanel, withScreen],
+  );
+
   const explainNode = useCallback(
     (n: MapNode) => {
       setJob({
@@ -630,12 +698,40 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
     [map, contextFor, revealPanel, withScreen],
   );
 
-  // Ending a tour also puts its lights out (MOTION.md §4.7): the glow was the tour's.
+  // Ending a tour also puts its lights out (MOTION.md §4.7): the glow was the tour's. A change is
+  // marked only while its own tour (or the guide's telling of it) is on screen.
   const changeTour = useCallback((t: Tour | null) => {
     if (t) flyThrough.close({ clear: false });
     setTour(t);
     if (!t) setLit(null);
+    if (!t?.change) setChange(null);
   }, []);
+
+  const startChange = useCallback(
+    (c: TouredChange | null) => {
+      if (!c) return changeTour(null);
+      flyThrough.close({ clear: false });
+      setChange(c);
+      setTour(c.tour);
+      setStep(0);
+      revealPanel("guide");
+    },
+    [changeTour, revealPanel],
+  );
+
+  const explainChange = useCallback(() => {
+    if (!change) return;
+    const user = storyAsk(change, map);
+    setJob({
+      id: Date.now(),
+      mode: "tour",
+      shown: `Explain and review: ${change.label}`,
+      user,
+      change: change.tour,
+      request: withScreen({ kind: "question", payload: { text: user.slice(0, 20_000) } }),
+    });
+    revealPanel("guide");
+  }, [change, map, revealPanel, withScreen]);
 
   /** "Clear trace" also ends a fly-through, whose lights they are. */
   const changeLit = useCallback((l: Lit | null) => {
@@ -712,6 +808,122 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
       setJob({ id: Date.now(), mode: pics ? "ask" : wantsTour ? "tour" : "ask", shown: question, user: `${contextFor(n, looking)}\n\n${question}`, request: withScreen({ kind: "question", payload: { text: question.slice(0, 20_000), ...(pics ? { images: pics } : {}) } }), ...(pics ? { images: pics } : {}) });
     },
     [map, contextFor, withScreen],
+  );
+
+  // ── change impact (src/lib/impact.ts) ──
+
+  const impactRef = useRef(impactState);
+  useEffect(() => {
+    impactRef.current = impactState;
+  }, [impactState]);
+  const showImpact = useCallback(
+    (a: { id: string; fn?: string; reach: Reach; light: boolean }) => {
+      const l = a.light ? impactLit(map, impactOf(map, a.id, { fn: a.fn }), a.reach) : null;
+      if (l) {
+        // The impact takes the lights over from a trace, a tour or a fly-through.
+        flyThrough.close({ clear: false });
+        setTour(null);
+        setLit(l);
+      } else {
+        const was = impactRef.current?.lit;
+        setLit((cur) => (cur && cur === was ? null : cur));
+      }
+      setImpactState({ id: a.id, ...(a.fn ? { fn: a.fn } : {}), reach: a.reach, lit: l });
+    },
+    [map],
+  );
+
+  const impactSelection = useCallback(
+    (sel: Selection) => {
+      const owner = nodeAt(map, sel.path, sel.start);
+      if (!owner) return false;
+      const fn = owner.kind === "route" ? undefined : fnAt(map, sel.path, sel.start);
+      // Selected without opening its code again: the lines the user picked stay picked.
+      setSelected(owner.id);
+      setDetail(null);
+      showImpact({ id: owner.id, fn, reach: impactRef.current?.reach ?? 2, light: true });
+      revealPanel("details");
+      return true;
+    },
+    [map, showImpact, revealPanel],
+  );
+
+  const tourImpact = useCallback(
+    (a: { id: string; fn?: string; reach: Reach }) => {
+      const t = impactTour(map, impactOf(map, a.id, { fn: a.fn, files: repo.files }), a.reach, repo.files);
+      if (!t) return;
+      changeTour(t);
+      setStep(0);
+      revealPanel("guide", "tour");
+    },
+    [map, repo.files, changeTour, revealPanel],
+  );
+
+  const explainImpact = useCallback(
+    (a: { id: string; fn?: string; reach: Reach }) => {
+      const imp = impactOf(map, a.id, { fn: a.fn, files: repo.files });
+      const text = `${impactContext(map, imp, a.reach)}
+
+${IMPACT_REQUEST}`;
+      setJob({
+        id: Date.now(),
+        mode: "ask",
+        shown: `What could break if I change ${impactName(map, imp)}?`,
+        user: text,
+        request: withScreen({ kind: "question", payload: { text: text.slice(0, 20_000) } }),
+      });
+      revealPanel("guide");
+    },
+    [map, repo.files, revealPanel, withScreen],
+  );
+  // "Walk an error": the lights the walk put on, so putting it away leaves a later trace's alone.
+  const walkLights = useRef<Lit | null>(null);
+  const walkError = useCallback(
+    (text: string) => {
+      const result = walkTrace(text, Object.keys(repo.files));
+      const id = Date.now();
+      setWalk({ id, text, result });
+      // The walk before goes out first, even when this one finds nothing to walk.
+      const before = walkLights.current;
+      walkLights.current = null;
+      if (!result.frames.length) {
+        setLit((l) => (l && l === before ? null : l));
+        return;
+      }
+      // The path lights as a trace does: it takes the lights over from a fly-through or a tour.
+      const l = walkLit(map, result.frames);
+      walkLights.current = l;
+      flyThrough.close({ clear: false });
+      setTour(null);
+      setLit(l);
+      const first = result.frames[0];
+      openAt(first.file, first.line, first.line);
+      // The likely cause is the guide's answer, asked as any question is (so it works through every route).
+      const question = causeQuestion(result, repo.files);
+      setJob({ id, mode: "ask", walk: id, shown: "What most likely caused this error?", user: question, request: withScreen({ kind: "question", payload: { text: question.slice(0, 20_000) } }) });
+    },
+    [map, repo.files, openAt, withScreen],
+  );
+  const endWalk = useCallback(() => {
+    setWalk(null);
+    setLit((l) => (l && l === walkLights.current ? null : l));
+    walkLights.current = null;
+  }, []);
+
+  const askWhyHot = useCallback(
+    (path: string, commits: string) => {
+      const n = map.nodes.find((x) => x.file === path && x.id === askState.current.selected) ?? map.nodes.find((x) => x.file === path);
+      const shown = `Why is ${path} a hotspot?`;
+      setJob({
+        id: Date.now(),
+        mode: "ask",
+        shown,
+        user: `${contextFor(n, commits)}\n\nWhy does ${path} change so often? Read it first. From its code and these commit messages, say in plain words what keeps changing in it and why, citing path:line for each claim, and what to watch for when reviewing or testing it. Say so if the commit messages don't tell.`,
+        request: withScreen({ kind: "question", payload: { text: `${shown}\n\n${commits}`.slice(0, 20_000) } }),
+      });
+      revealPanel("guide");
+    },
+    [map, contextFor, revealPanel, withScreen],
   );
 
   const askSpoken = useCallback(
@@ -959,6 +1171,11 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
     const links = detail.links.map((l) => map.system.links.find((x) => x.id === l.id) ?? l);
     return links.every((l, i) => l === detail.links[i]) ? detail : { kind: "links", links };
   }, [detail, map]);
+  // On while the map's light is the one the impact put there (a trace, a tour or "Clear trace" ends it).
+  const shownImpact = useMemo<ImpactAsk | null>(
+    () => (impactState ? { id: impactState.id, ...(impactState.fn ? { fn: impactState.fn } : {}), reach: impactState.reach, on: !!impactState.lit && impactState.lit === lit } : null),
+    [impactState, lit],
+  );
   const value = useMemo<WorkspaceState>(
     () => ({
       repo,
@@ -989,14 +1206,27 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
       onEdge,
       onLinks,
       explainSelection,
+      explainHistory,
       explainNode,
       explainService,
       traceNode,
       traceSvc,
       tourNode,
       tourLinks,
+      change,
+      startChange,
+      explainChange,
       askFree,
+      impact: shownImpact,
+      showImpact,
+      impactSelection,
+      tourImpact,
+      explainImpact,
+      askWhyHot,
       askSpoken,
+      walk,
+      walkError,
+      endWalk,
       palette,
       openPalette: (initial) => setPalette({ initial }),
       closePalette: () => setPalette(null),
@@ -1030,14 +1260,27 @@ export default function WorkspaceProvider({ repo, children }: { repo: Repo; chil
       onEdge,
       onLinks,
       explainSelection,
+      explainHistory,
       explainNode,
       explainService,
       traceNode,
       traceSvc,
       tourNode,
       tourLinks,
+      change,
+      startChange,
+      explainChange,
       askFree,
+      shownImpact,
+      showImpact,
+      impactSelection,
+      tourImpact,
+      explainImpact,
+      askWhyHot,
       askSpoken,
+      walk,
+      walkError,
+      endWalk,
       palette,
       onPick,
       onGo,

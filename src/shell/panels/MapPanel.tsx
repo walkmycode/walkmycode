@@ -6,7 +6,8 @@
 // this point?" asks about settings with no value (docs/SERVICES.md §13), and
 // the fly-through's bar shows where the map is travelling (FlyBar). A map made
 // before WalkMyCode could draw a language its folder holds says so, and maps
-// the folder again in one click (MapAgain).
+// the folder again in one click (MapAgain). On the toolbar, "Colour by: Kind | Hotspots" colours the
+// cards by how often their code changed × how large it is (src/components/Hotspots.tsx).
 import { useEffect, useMemo, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import MapView from "@/components/MapView";
@@ -15,6 +16,7 @@ import { AskBar } from "@/components/PointsAt";
 import FlyBar from "@/components/FlyBar";
 import { CodeMissingBanner } from "@/components/AddFolder";
 import MapAgain from "@/components/MapAgain";
+import { HotTools, useHotLegend, useHotspots } from "@/components/Hotspots";
 import { drawnSince } from "@/analyzer/migrate";
 import { useWorkspace } from "@/lib/store";
 import { useShell } from "../WorkspaceProvider";
@@ -29,6 +31,9 @@ export default function MapPanel({ api }: IDockviewPanelProps) {
   const [shown, setShown] = useState(api.isVisible);
   const since = useMemo(() => drawnSince(s.map), [s.map]);
   const empty = s.map.nodes.length === 0;
+  const hotspots = useHotspots();
+  const legend = useHotLegend();
+  const tools = useMemo(() => <HotTools />, []);
 
   useEffect(() => {
     const a = api.onDidLocationChange((e) => setWhere(e.location.type));
@@ -74,6 +79,10 @@ export default function MapPanel({ api }: IDockviewPanelProps) {
           onView={s.changeView}
           onJump={s.jumpTo}
           onPalette={s.openPalette}
+          heat={hotspots.heat?.cards ?? null}
+          hot={hotspots.hot}
+          tools={tools}
+          legend={legend}
         />
         <FlyBar />
         {empty && (since.length ? <MapAgain langs={since} empty /> : <MapEmpty other={s.map.stats.otherCode} />)}

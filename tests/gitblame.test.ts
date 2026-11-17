@@ -124,7 +124,7 @@ describe("git blame: the parsers", () => {
     const h = "a".repeat(40);
     const out = [`${h} 1 1 2`, "author Ama", "author-mail <ama@x>", "author-time 1700000000", "summary Hi", "filename f", "\tone", `${h} 2 2`, "\ttwo", `${"0".repeat(40)} 3 3 1`, "author Not Committed Yet", "author-time 1800000000", "summary Version of f from f", "filename f", "\tthree"].join("\n");
     assert.deepEqual(parseBlame(out), [
-      { start: 1, lines: 2, hash: "aaaaaaa", author: "Ama", email: "ama@x", time: 1700000000, summary: "Hi" },
+      { start: 1, lines: 2, hash: "aaaaaaa", author: "Ama", email: "ama@x", time: 1700000000, summary: "Hi", sha: h, orig: [1, 2] },
       { start: 3, lines: 1, hash: "", author: "", email: "", time: 0, summary: "" },
     ]);
   });

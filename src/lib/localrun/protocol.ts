@@ -44,6 +44,9 @@ export interface LocalRunStatus {
 }
 
 import type { GitBlameHunk, GitBranch, GitCommit, GitFileCommit, GitStatus } from "./git";
+import type { LineStory } from "./lineStory";
+import type { ChangeBases, RangeChange } from "../diffParse";
+import type { Churn, Span } from "../hotspots";
 import type { AdapterOffer } from "./debug/adapters";
 import type { DebugCommand, PausedView, VarView } from "./debug/session";
 export type { AdapterOffer, DebugCommand, PausedView, VarView };
@@ -117,6 +120,14 @@ export type ServerMsg =
       me?: string;
       /** "file-log": the file's own commits. */
       history?: GitFileCommit[];
+      /** "line-log": the commits that changed one line (or a function), newest first. */
+      story?: LineStory;
+      /** "bases": what a change can be toured against (src/lib/diffParse.ts). */
+      bases?: ChangeBases;
+      /** "change": the change against a base, its counts and its diff. */
+      change?: RangeChange;
+      /** "churn": how often each file changed over the span (Hotspots, src/lib/hotspots.ts). */
+      churn?: Churn;
     };
 
 export type DebugServerMsg =
@@ -132,7 +143,7 @@ export type DebugServerMsg =
   | { type: "debug-install-progress"; id: string; got: number; total: number; phase: "download" | "check" | "unpack" }
   | { type: "debug-install-done"; id: string; ok: boolean; message?: string };
 
-export type GitOp = "status" | "diff" | "draft" | "commit" | "discard" | "push" | "pull" | "branches" | "switch" | "log" | "resolve" | "finish" | "blame" | "file-log";
+export type GitOp = "status" | "diff" | "draft" | "commit" | "discard" | "push" | "pull" | "branches" | "switch" | "log" | "resolve" | "finish" | "blame" | "file-log" | "line-log" | "bases" | "change" | "churn";
 
 export interface GitAsk {
   op: GitOp;
@@ -152,6 +163,16 @@ export interface GitAsk {
   merge?: boolean;
   /** finish: abort instead. */
   abort?: boolean;
+  /** line-log: the lines, from 1, or a function's name; `at`, the commit that last changed the line,
+   * and then from/to are its number in that commit. */
+  from?: number;
+  to?: number;
+  func?: string;
+  at?: string;
+  /** change: the branch or commit to measure the change against; left out, the uncommitted changes. */
+  base?: string;
+  /** churn: over which span (one of src/lib/hotspots.ts's SPANS). */
+  span?: Span;
 }
 
 export interface NewProjectAsk {

@@ -7,14 +7,9 @@
 import type { Lesson } from "./types";
 import { plain } from "./markup";
 
-export type Card = {
-  id: string;
-  lessonId: string;
-  course: string;
-  q: string;
-  a: string;
-  /** A picture that goes with the answer, as Mermaid source. */
-  diagram?: string;
+/** What spaced repetition keeps on anything it asks again: a recall card here, a
+ *  question about the user's own code in repoQuiz.ts. */
+export type Spaced = {
   /** 0 is new; each right answer moves it up, to the last box at most. */
   box: number;
   /** When it is next asked (ms since 1970). */
@@ -24,12 +19,22 @@ export type Card = {
   right: number;
 };
 
+export type Card = Spaced & {
+  id: string;
+  lessonId: string;
+  course: string;
+  q: string;
+  a: string;
+  /** A picture that goes with the answer, as Mermaid source. */
+  diagram?: string;
+};
+
 export const DAY = 24 * 60 * 60 * 1000;
 /** Days until a card in each box comes back. A new card is due at once. */
 export const INTERVALS = [0, 1, 3, 7, 16, 35];
 
-/** The card after an answer. */
-export function review(card: Card, knew: boolean, now: number): Card {
+/** The card (or question) after an answer. */
+export function review<T extends Spaced>(card: T, knew: boolean, now: number): T {
   const box = knew ? Math.min(card.box + 1, INTERVALS.length - 1) : 1;
   return { ...card, box, due: now + INTERVALS[box] * DAY, seen: card.seen + 1, right: card.right + (knew ? 1 : 0) };
 }

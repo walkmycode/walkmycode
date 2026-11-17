@@ -73,10 +73,23 @@ export async function saveFile(ws: Workspace, path: string, text: string): Promi
   return { kind: "downloaded", path, why };
 }
 
-function download(path: string, text: string) {
+function download(path: string, text: string, type = "text/plain") {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = path.split("/").pop() ?? "file.txt";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/** Hand the user a file WalkMyCode made (a shared tour, its Markdown): a download in the browser,
+ * the app and WalkMyCode for Claude's page; in WalkMyCode Lite, Claude's download prompt, else the
+ * clipboard (src/lib/adapters/source.ts). */
+export async function offerDownload(name: string, text: string, type = "text/plain"): Promise<{ kind: "downloaded" | "copied" | "denied"; why?: string }> {
+  if (TARGET === "lite") {
+    const { offerFile } = await import("./adapters/source");
+    const r = await offerFile(name, text);
+    return r.kind === "downloaded" ? { kind: "downloaded" } : r.kind === "copied" ? { kind: "copied", why: `WalkMyCode Lite can't save files here, so ${name} was copied to the clipboard.` } : { kind: "denied", why: "WalkMyCode Lite can't save files here, and the copy was blocked." };
+  }
+  download(name, text, type);
+  return { kind: "downloaded" };
 }

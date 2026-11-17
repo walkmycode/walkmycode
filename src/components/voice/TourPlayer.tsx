@@ -6,6 +6,8 @@
 // lit when the narrator gives timings, with the CSS Custom Highlight API, so
 // no word ever re-renders the board. The next step's audio is fetched while
 // this one plays, and every step is cached per map, so a replay is free.
+// A step of a tour opened from a file that carries its maker's recorded voice
+// plays that clip instead (src/lib/voice/clip.ts), unless Explore is muted.
 // Loaded only once a tour is on screen.
 import { openSettings as openSettingsPane } from "@/lib/settingsNav";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,6 +17,7 @@ import { getNarrator, VoiceError, type Scope } from "@/lib/voice/narrate";
 import type { Span } from "@/lib/voice/speech";
 import { useExploreMuted } from "@/lib/voice/mute";
 import { registerTour } from "@/lib/voice/tourBus";
+import { clipVoice, type StepVoice } from "@/lib/voice/clip";
 import { narratorInForce, unlockAudio, useVoiceView } from "@/lib/voice/view";
 
 interface Props {
@@ -93,6 +96,9 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
 
   const current = tour.steps[step];
   const last = step >= tour.steps.length - 1;
+  // The step's own recording, when it has one; else the narrator reads its words.
+  const clip = current?.clip;
+  const voice = useMemo<StepVoice | null>(() => (clip && !muted ? clipVoice(clip) : narrator), [clip, muted, narrator]);
   const stepKey = `${step}:${current?.say ?? ""}`;
   const status: Status = !want ? "idle" : paused ? "paused" : heard === stepKey ? "playing" : "loading";
 
@@ -106,10 +112,10 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
 
   // While playing, read the step on screen; at its end, move on (the effect runs again for the next one).
   useEffect(() => {
-    if (!want || !narrator || !current) return;
+    if (!want || !voice || !current) return;
     let live = true;
     forQuestion.current = false;
-    narrator
+    voice
       .speak(current.say, {
         scope,
         onStart: () => {
@@ -131,22 +137,22 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
       });
     // Gapless: the next step's audio is on its way while this one plays.
     const next = tour.steps[step + 1];
-    if (next) void narrator.prefetch(next.say, scope);
+    if (next && !next.clip && narrator) void narrator.prefetch(next.say, scope);
     return () => {
       live = false;
-      narrator.stop();
+      voice.stop();
       markWord(sayRef.current(), null);
     };
-  }, [want, narrator, tour, step, current, last, onStep, scope, stepKey]);
+  }, [want, voice, narrator, tour, step, current, last, onStep, scope, stepKey]);
 
   // The lecturer pauses the narration for a question and carries it on after.
   useEffect(() => {
-    if (!narrator) return;
+    if (!voice) return;
     registerTour({
       pauseForQuestion: () => {
         const s = statusRef.current;
         if (s !== "playing" && s !== "loading") return false;
-        narrator.pause();
+        voice.pause();
         setPaused(true);
         forQuestion.current = true;
         return true;
@@ -154,27 +160,27 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
       carryOn: () => {
         if (!forQuestion.current) return false;
         forQuestion.current = false;
-        narrator.resume();
+        voice.resume();
         setPaused(false);
         return true;
       },
       playing: () => statusRef.current === "playing",
     });
     return () => registerTour(null);
-  }, [narrator]);
+  }, [voice]);
 
   // Ending the tour stops the voice.
-  useEffect(() => () => narrator?.stop(), [narrator]);
+  useEffect(() => () => voice?.stop(), [voice]);
 
   const toggle = () => {
     unlockAudio();
-    if (!narrator) return;
+    if (!voice) return;
     if (status === "playing" || status === "loading") {
-      narrator.pause();
+      voice.pause();
       setPaused(true);
     } else if (status === "paused") {
       forQuestion.current = false;
-      narrator.resume();
+      voice.resume();
       setPaused(false);
     } else {
       setError(null);
@@ -193,8 +199,8 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
         className={`ctl compact${status === "playing" ? " on" : ""}`}
         aria-pressed={status === "playing" || status === "loading"}
         onClick={toggle}
-        disabled={!narrator}
-        title={narrator ? `Read the tour aloud with ${who}; it moves on by itself` : "Loading the voice…"}
+        disabled={!voice}
+        title={voice ? (clip && !muted ? "Play this step in the voice its maker recorded; the tour moves on by itself" : `Read the tour aloud with ${who}; it moves on by itself`) : "Loading the voice…"}
       >
         {label}
       </button>
@@ -203,7 +209,8 @@ export default function TourPlayer({ tour, step, onStep, scope, sayEl }: Props) 
           {error.title}
         </button>
       ) : (
-        inForce?.note && (
+        inForce?.note &&
+        !(clip && !muted) && (
           <button type="button" className="voice-note" title={inForce.note.message} onClick={openSettings}>
             browser voice
           </button>

@@ -497,7 +497,7 @@ html[data-desktop] [data-location="popout"] .dv-void-container { cursor: default
 .map { position: relative; }
 .map .react-flow { background: var(--out); border-radius: 0; }
 .map .react-flow__attribution { display: none; }
-.lanehead { font: 600 calc(11px * var(--fs)) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ui-dim); padding: calc(2px * var(--sp)) 0; pointer-events: none; }
+.lanehead { font: 700 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--ui-dim); padding: calc(2px * var(--sp)) 0; pointer-events: none; }
 .lanehead b { color: var(--lane); }
 .lanehead small { display: block; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ui-faint); }
 div.node { --lane: var(--ui-dim); width: 220px; background: var(--ui); border: 1px solid var(--ui-line); border-left: 4px solid var(--lane); border-radius: 0; padding: calc(6px * var(--sp)) calc(9px * var(--sp)); font: calc(13px * var(--fs))/1.3 var(--sans); color: var(--ui-text); cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
@@ -600,6 +600,39 @@ div.node:active { transform: scale(.985); }
 .node.portal { background: color-mix(in srgb, var(--ui) 55%, transparent); border-style: dashed; border-left-style: solid; }
 .node.portal .sub { color: var(--blue); }
 
+/* Hotspots (src/components/Hotspots.tsx, src/lib/hotspots.ts): "Colour by" is one class on the map's box
+   (.heat); each card carries its level (heat-0…4) and both sub-lines all the time, so switching lays nothing
+   out again. Five levels that differ in lightness, not hue alone: from the card's own surface to the theme's
+   yellow, mixed from the theme's tokens. A light theme would set --heat-hot darker than its cards. */
+:root { --heat-hot: var(--yellow); --heat-ink: #2a241b; }
+.flowbox .heat-sub, .flowbox.heat .kind-sub { display: none; }
+.flowbox.heat .heat-sub { display: block; }
+.flowbox.heat div.node { border-left-color: var(--ui-line); }
+.flowbox.heat div.node.heat-1, .ramp .heat-1 { background: color-mix(in oklab, var(--heat-hot) 10%, var(--ui)); }
+.flowbox.heat div.node.heat-2, .ramp .heat-2 { background: color-mix(in oklab, var(--heat-hot) 25%, var(--ui)); border-color: color-mix(in oklab, var(--heat-hot) 38%, var(--ui)); }
+.flowbox.heat div.node.heat-3, .ramp .heat-3 { background: color-mix(in oklab, var(--heat-hot) 48%, var(--ui)); border-color: color-mix(in oklab, var(--heat-hot) 64%, var(--ui)); }
+.flowbox.heat div.node.heat-4, .ramp .heat-4 { background: var(--heat-hot); border-color: var(--heat-hot); color: var(--heat-ink); }
+.flowbox.heat div.node.heat-3 .sub { color: var(--ui-text); }
+.flowbox.heat div.node.heat-4 .sub { color: color-mix(in oklab, var(--heat-ink) 78%, var(--heat-hot)); }
+.ramp .heat-0 { background: var(--ui); }
+.hot-tools { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); padding-left: calc(6px * var(--sp)); border-left: 1px solid var(--ui-line); }
+.hot-span { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
+.hot-span select.field { width: auto; padding-top: calc(4px * var(--sp)); padding-bottom: calc(4px * var(--sp)); }
+.legend.hot-legend { align-items: center; }
+.legend .ramp { display: inline-flex; width: calc(120px * var(--ctl)); height: calc(10px * var(--ctl)); border: 1px solid var(--ui-line); }
+.legend .ramp i { flex: 1; width: auto; margin: 0; border: 0; }
+.legend.hot-none { max-width: min(560px, calc(100% - 20px)); color: var(--ui-text); }
+.inspect.hotspots { border-bottom: 1px solid var(--ui-line); overflow: visible; }
+.hot-list { list-style: none; margin: 0; padding: 0; }
+.hot-row { display: grid; grid-template-columns: calc(18px * var(--fs)) minmax(0, 1fr) calc(64px * var(--fs)) auto; gap: calc(8px * var(--sp)); align-items: center; width: 100%; padding: calc(6px * var(--sp)) 0; background: none; border: 0; border-bottom: 1px solid var(--hair-2); color: var(--ui-text); font: var(--text) var(--sans); text-align: left; cursor: pointer; }
+.hot-row:hover .path, .hot-row.on .path { color: var(--yellow); }
+.hot-row .rank, .hot-row .num { color: var(--ui-faint); white-space: nowrap; }
+.hot-row .path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hot-row .bar { height: calc(6px * var(--ctl)); background: var(--hair-2); }
+.hot-row .bar i { display: block; height: 100%; background: var(--heat-hot); }
+.hot-note { border: 1px solid var(--yellow); padding: calc(8px * var(--sp)) calc(10px * var(--sp)); color: var(--ui-text); line-height: 1.45; }
+.hot-note .label { margin-bottom: calc(4px * var(--sp)); text-transform: none; letter-spacing: 0; font-family: var(--mono); }
+
 /* System view: one card per service */
 .svc { position: relative; width: 240px; min-height: 104px; padding: calc(10px * var(--sp)) calc(14px * var(--sp)) calc(12px * var(--sp)); border-radius: 0; cursor: pointer; font: calc(12px * var(--fs))/1.35 var(--sans); color: var(--ui-text); background: var(--ui); border: 1px solid var(--ui-line); box-shadow: 0 8px 22px rgba(0,0,0,.35); }
 .svc .nm { font: 650 calc(14.5px * var(--fs))/1.1 var(--sans); color: var(--chalk); margin-bottom: calc(4px * var(--sp)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -651,6 +684,17 @@ div.node:active { transform: scale(.985); }
 .edge .who { font-weight: 600; color: var(--ui-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .edge .how { color: var(--ui-dim); font-size: var(--text); }
 .edge .guess, .label .guess { color: var(--pink); font-size: var(--text); border: 1px dashed var(--pink); border-radius: 0; padding: 0 calc(5px * var(--sp)); }
+/* "If you change it" (ImpactSection.tsx): the counts as label and value rows, then the lists. */
+.impact { display: flex; flex-direction: column; gap: calc(8px * var(--sp)); padding-top: calc(4px * var(--sp)); border-top: 1px solid var(--ui-line); }
+.impact-head { display: flex; align-items: center; gap: calc(8px * var(--sp)); flex-wrap: wrap; justify-content: space-between; margin-top: calc(6px * var(--sp)); }
+.impact-head select.impact-fn { font: var(--text) var(--sans); letter-spacing: 0; text-transform: none; padding-top: calc(2px * var(--sp)); padding-bottom: calc(2px * var(--sp)); }
+.impact-stats { margin: 0; }
+.impact-stats > div { display: flex; justify-content: space-between; gap: calc(12px * var(--sp)); padding: calc(6px * var(--sp)) 0; border-bottom: 1px solid var(--ui-line); }
+.impact-stats dt { color: var(--ui-dim); }
+.impact-stats dd { margin: 0; font-weight: 600; color: var(--ui-text); text-align: right; }
+.impact-stats dd.none { color: var(--pink); }
+.impact .edge { flex-wrap: wrap; }
+.impact .edge .who { flex: none; max-width: 100%; }
 .trig { color: var(--yellow); font-size: var(--text); }
 .evchip { font: 600 var(--text)/1.6 var(--sans); letter-spacing: .04em; border-radius: 0; padding: 0 calc(6px * var(--sp)); border: 1px solid var(--ui-line); color: var(--ui-dim); background: none; white-space: nowrap; }
 button.evchip { cursor: pointer; }
@@ -1152,6 +1196,49 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
 .steps .progress button { flex: 1 1 6px; min-width: calc(6px * var(--ctl)); max-width: 18px; }
 .steps .sp { flex: 1 0 0; }
 .steps .tour-voice { display: inline-flex; gap: calc(6px * var(--sp)); align-items: center; }
+/* Shared tours (src/components/SaveTour.tsx, src/lib/walkTour.ts): what a tour opened from a file
+   says when its code changed since, the note after opening one, and "Open a tour file". */
+.board .tour-changed { margin: 0 0 calc(10px * var(--sp)); padding: calc(8px * var(--sp)) calc(10px * var(--sp)); border: 1px solid var(--pink); color: var(--ui-text); }
+.board .tour-file-note { display: flex; align-items: flex-start; gap: calc(8px * var(--sp)); margin: 0 0 calc(12px * var(--sp)); padding: calc(8px * var(--sp)) calc(10px * var(--sp)); border: 1px solid var(--ui-line); color: var(--ui-text); }
+.board .tour-file-note > span { flex: 1; min-width: 0; }
+.board .tour-file-note .ctl { flex: none; padding: 0 calc(6px * var(--sp)); }
+.board .open-tour { display: flex; align-items: center; gap: calc(10px * var(--sp)); flex-wrap: wrap; }
+/* "Save this tour": the steps on the left, what goes in and how to share on the right. */
+.sheet.save-tour { width: min(880px, 100%); padding: 0; display: flex; flex-direction: column; border-color: var(--yellow); background: var(--ui); }
+.save-tour .st-head { display: flex; align-items: center; gap: calc(12px * var(--sp)); padding: calc(16px * var(--sp)) calc(20px * var(--sp)); border-bottom: 1px solid var(--ui-line); }
+.save-tour .st-label { margin: 0; font: 600 var(--text)/1.2 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.save-tour .st-head .st-label { flex: 1; }
+.save-tour .st-sum { color: var(--ui-faint); }
+.save-tour .st-body { display: flex; min-height: 0; }
+.save-tour .st-left { flex: 1.2; min-width: 0; padding: calc(18px * var(--sp)) calc(20px * var(--sp)); border-right: 1px solid var(--ui-line); display: flex; flex-direction: column; gap: calc(12px * var(--sp)); }
+.save-tour .st-right { flex: 1; min-width: 0; padding: calc(18px * var(--sp)) calc(20px * var(--sp)); display: flex; flex-direction: column; gap: calc(14px * var(--sp)); }
+.save-tour .st-dim { color: var(--ui-dim); }
+.save-tour .st-mono, .save-tour .st-where, .save-tour .st-n, .save-tour .st-name { font-family: var(--mono); }
+.save-tour .st-name { font-size: var(--text); color: var(--ui-text); background: var(--ui); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); width: 100%; box-sizing: border-box; }
+.save-tour .st-name:focus { outline: 1px solid var(--yellow); outline-offset: -1px; }
+.save-tour .st-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(8px * var(--sp)); max-height: min(52vh, 460px); overflow: auto; }
+.save-tour .st-step { display: flex; gap: calc(12px * var(--sp)); align-items: flex-start; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); border: 1px solid var(--ui-line); }
+.save-tour .st-step.rec { border-color: var(--pink); }
+.save-tour .st-step.hidden { opacity: .6; }
+.save-tour .st-n { flex: none; width: 40px; padding-top: calc(2px * var(--sp)); color: var(--ui-faint); font-size: .85em; }
+.save-tour .st-what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.save-tour .st-where { color: var(--ui-faint); font-size: .9em; }
+.save-tour .st-rec { display: flex; flex-wrap: wrap; align-items: center; gap: calc(6px * var(--sp)); margin-top: calc(6px * var(--sp)); }
+.save-tour .st-rec .ctl.on { border-color: var(--pink); color: var(--pink); }
+.save-tour .st-opt { display: flex; gap: calc(10px * var(--sp)); align-items: flex-start; }
+.save-tour .st-opt input { margin-top: calc(3px * var(--sp)); accent-color: var(--yellow); }
+.save-tour .st-opt label { cursor: pointer; }
+.save-tour .st-tick { flex: none; width: 13px; margin-top: calc(1px * var(--sp)); color: var(--yellow); text-align: center; }
+.save-tour .st-seg { display: flex; border: 1px solid var(--ui-line); }
+.save-tour .st-seg button { flex: 1; padding: calc(7px * var(--sp)) 0; font: var(--text) var(--sans); color: var(--ui-dim); background: none; border: 0; border-radius: 0; cursor: pointer; }
+.save-tour .st-seg button.on { background: var(--yellow); color: #2a241b; font-weight: 600; }
+.save-tour .st-safe { border: 1px solid var(--ui-line); padding: calc(10px * var(--sp)) calc(12px * var(--sp)); color: var(--ui-dim); }
+.save-tour .st-problem { margin: 0; color: var(--pink); }
+.save-tour .st-actions { display: flex; justify-content: flex-end; gap: calc(8px * var(--sp)); margin-top: auto; }
+@media (max-width: 720px) {
+  .save-tour .st-body { flex-direction: column; }
+  .save-tour .st-left { border-right: 0; border-bottom: 1px solid var(--ui-line); }
+}
 /* The guide's welcome for a project WalkMyCode just made. */
 /* What it should do, and Build it: first, and the one primary button on the board. */
 .board .made-build { display: flex; align-items: center; gap: calc(10px * var(--sp)) calc(14px * var(--sp)); flex-wrap: wrap; margin: calc(2px * var(--sp)) 0 calc(12px * var(--sp)); padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border: 1px solid rgba(243, 215, 122, .35); border-radius: 0; background: rgba(243, 215, 122, .06); }
@@ -1163,6 +1250,34 @@ html:has(.dv-dockview), html:has(.dv-dockview) body { height: 100%; overflow: hi
 .board .made-asks { display: flex; flex-wrap: wrap; gap: calc(6px * var(--sp)); }
 .board .made-asks .ctl { font: 500 var(--text) var(--sans); text-align: left; background: rgba(0, 0, 0, .22); border-color: rgba(255, 255, 255, .14); color: var(--chalk); }
 .board .made-asks .ctl:hover { border-color: var(--yellow); color: #fff; }
+
+/* "Walk an error" (src/components/ErrorWalk.tsx): the paste box, the numbered steps from where it threw
+   (the first in pink), and the likely cause in a yellow frame. */
+.board .board-tools { gap: calc(6px * var(--sp)); }
+.board .walk { display: flex; flex-direction: column; gap: calc(10px * var(--sp)); }
+.board .walk + .turn { margin-top: calc(18px * var(--sp)); padding-top: calc(14px * var(--sp)); border-top: 1px dashed rgba(241,239,230,.16); }
+.board .walk-head { display: flex; align-items: center; justify-content: space-between; gap: calc(10px * var(--sp)); }
+.board .walk-head h2 { margin: 0; }
+.board .walk-form { display: flex; flex-direction: column; gap: calc(6px * var(--sp)); }
+.board .walk-text { font: var(--text)/1.5 var(--mono); resize: vertical; white-space: pre; overflow: auto; }
+.board .walk-actions { display: flex; flex-wrap: wrap; gap: calc(8px * var(--sp)); }
+.board .walk-message { margin: 0; font: var(--text)/1.5 var(--mono); color: var(--pink); overflow-wrap: anywhere; }
+.board .walk-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(6px * var(--sp)); }
+.board .walk-step { display: flex; gap: calc(10px * var(--sp)); align-items: flex-start; width: 100%; padding: calc(8px * var(--sp)) calc(10px * var(--sp)); text-align: left; font: inherit; color: inherit; background: none; border: 1px solid var(--ui-line); border-radius: 0; cursor: pointer; transition: border-color var(--t-fade); }
+.board .walk-step:hover, .board .walk-step.on { border-color: var(--yellow); }
+.board .walk-num { flex: none; display: inline-grid; place-items: center; width: calc(20px * var(--fs)); height: calc(20px * var(--fs)); margin-top: calc(1px * var(--fs)); border-radius: 50%; background: var(--yellow); color: var(--ink); font: 700 var(--text)/1 var(--sans); }
+.board .walk-num.threw { background: var(--pink); }
+.board .walk-what { min-width: 0; flex: 1; }
+.board .walk-at { font: .92em var(--mono); color: var(--chalk-dim); overflow-wrap: anywhere; }
+.board .walk-threw { color: var(--pink); font-size: .92em; }
+.board .walk-step .walk-line { display: block; margin-top: calc(2px * var(--sp)); padding: 0; background: none; color: var(--chalk-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .walk-outside { margin: calc(-4px * var(--sp)) 0 0; }
+.board .walk-cause { padding: calc(10px * var(--sp)) calc(12px * var(--sp)); border: 1px solid var(--yellow); }
+.board .walk-cause > :last-child, .board .walk-cause .err > :last-child { margin-bottom: 0; }
+.board .walk-cause .err { display: grid; justify-items: start; gap: calc(8px * var(--sp)); }
+.board .walk-cause .err p { margin: 0; }
+.board .walk-label { margin: 0 0 calc(6px * var(--sp)); font: 700 var(--text) var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--yellow); }
+.board .walk-entry { display: flex; align-items: center; gap: calc(10px * var(--sp)); flex-wrap: wrap; }
 
 /* A diagram (src/learn/components/Diagram.tsx, dressed by src/lib/diagramStyle.ts): the blueprint style on the
    chalkboard. No dark window: a hairline frame on the board, a faint chalk dot grid, cards a shade darker than the

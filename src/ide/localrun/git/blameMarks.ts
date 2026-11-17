@@ -54,6 +54,7 @@ export function blameMarks(hunks: GitBlameHunk[], me: string, now = Date.now()):
       tip: `${h.author}${isMe ? " (you)" : ""}\n${LONG.format(d)} · ${ago(d, now)}\n${h.summary}\n${h.hash} · ${range}`,
       note: `${who}, ${when.day}${when.year} ${when.time}${h.summary ? ` · ${h.summary}` : ""}`,
       ...(isMe ? { tone: "me" as const } : {}),
+      ...(h.sha && h.orig?.length === h.lines ? { at: { sha: h.sha, orig: h.orig } } : {}),
     };
   });
 }

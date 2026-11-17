@@ -146,6 +146,16 @@ Leonardo ran the experiment himself instead of reading what others wrote about i
 - **Recall.** Each lesson's key ideas become cards that come back after 1, 3, 7, 16 and 35 days; a
   missed card starts again (`src/learn/lib/recall.ts`).
 - The quiz and the explain-back end every lesson, as before.
+- **Know your codebase.** With a project open in Explore, **Quiz on <project>** (the Learn home's top
+  bar, or `/learn?quiz`) has the AI write multiple-choice questions from the project's map and code,
+  grouped by part of the app, preferring "what happens when…" over trivia (`src/learn/lib/repoQuiz.ts`,
+  `RepoQuiz.tsx`). Each question cites `path:start-end` and quotes a few words from those lines; one
+  whose file, lines or quote don't check out against the code is thrown away. The answer shows why,
+  the cited lines, **Show it on the map** (Explore on those lines) and **Why not A?** (asked of the
+  same AI). Questions come back in the recall boxes: right later, wrong tomorrow. Only a hash of the
+  cited lines and a short excerpt are kept: lines that moved are followed, and a question whose lines
+  changed is stale, never asked until it is rewritten or dropped. With no AI set up it says so and
+  offers **Set up AI**; there is no offline quiz.
 
 ## 5. Learn from people
 
@@ -224,7 +234,7 @@ marked by the professor against the course's solution.
 
 | Build | Where | What |
 |---|---|---|
-| WalkMyCode (the app) | `.walkmycode/learn/` on this computer, one JSON file per document (`src/lib/learnStore.ts`, `/api/learn/store`) | `lessons/`, `courses/`, `profile.json`, and `extras/`: `chat-<lesson>.json`, `notebook.json`, `cards.json` |
+| WalkMyCode (the app) | `.walkmycode/learn/` on this computer, one JSON file per document (`src/lib/learnStore.ts`, `/api/learn/store`) | `lessons/`, `courses/`, `profile.json`, and `extras/`: `chat-<lesson>.json`, `notebook.json`, `cards.json`, `quiz-<project>.json` |
 | WalkMyCode Lite, in Claude | The viewer's own space in the artifact's database | The same documents |
 | Anything else (Lite outside Claude, a hosted server) | This browser's storage | The same documents |
 

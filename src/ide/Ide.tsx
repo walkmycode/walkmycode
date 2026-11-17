@@ -36,6 +36,7 @@ import LiveDebug, { GetDebugger } from "./LiveDebug";
 import { debugAt, useDebugAt } from "./debugAt";
 import { getWorkspace } from "@/lib/store";
 import Editor, { languageOf, type BlameMark, type Language, type Selection } from "./Editor";
+import type { OnLineStory } from "./lineHistory";
 import { JsRunner } from "./js";
 import { abortLaptop, debugPython, laptopAvailable, restartPython, runPython, runRust, stopPython, type DebugRun, type Engine, type OutPart } from "./python";
 import { resetSql, runSql } from "./sql";
@@ -51,6 +52,7 @@ import { SPLIT_DEFAULT, SPLIT_GUTTER, clampSplit, readSplit, stepSplit, writeSpl
 import "./ide.css";
 import { readPref } from "@/lib/prefs";
 import type { MdView } from "./mdView";
+import type { DiffMarks } from "@/lib/diffTour";
 
 /** Ask about the code another way than the professor's `sample`: "explain" for the Explain
  * buttons (the file, or the selected lines), "question" for typed words. Resolves to the answer. */
@@ -99,6 +101,10 @@ export type IdeProps = {
   view?: MdView;
   /** Who last changed each block of lines (git blame); hidden while the file is being edited. */
   blame?: BlameMark[] | null;
+  /** "How did this line get here?" (the Code panel's line history, src/ide/localrun/git/LineStory.tsx). */
+  onLineStory?: OnLineStory;
+  /** A change being toured (src/lib/diffTour.ts): its added and removed lines; hidden while the file is being edited. */
+  diff?: DiffMarks | null;
   /** No card of its own (border, padding, fixed editor height): it fills the panel it is put in, as in a dock. */
   frameless?: boolean;
   /** Explore wraps long lines for reading; code is not wrapped by default. */
@@ -197,6 +203,8 @@ export default function Ide({
   preview,
   view = "preview",
   blame = null,
+  onLineStory,
+  diff = null,
   frameless = false,
   wrap = false,
   fontSize,
@@ -754,6 +762,8 @@ export default function Ide({
       debugLine={dbg ? dbg.run.steps[dbg.index]?.line ?? null : (liveLine ?? atLine)}
       wrap={wrap}
       blame={editing || dirty ? null : blame}
+      onLineStory={onLineStory}
+      diff={editing || dirty ? null : diff}
       fontSize={fontSize}
       label={path ? `Code: ${path}` : "Code"}
     />

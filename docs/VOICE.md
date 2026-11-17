@@ -260,6 +260,15 @@ plus a 30-second one-time ticket HMAC'd with a per-launch secret. Prove Opus 5.5
 ## 6. Where voice appears
 - Explore: tour player (play/pause/next, auto-advance on audio end, step highlight while speaking; word highlight
   when the narrator gives timings), "Read aloud" on answers, the "Talk" button for the lecturer.
+- Shared tours (`src/lib/walkTour.ts`, `src/components/SaveTour.tsx`, `src/lib/voice/clip.ts`): "save this tour" on
+  the tour bar saves the tour on screen as a `.walktour` file (JSON, versioned, read back through zod) or as Markdown.
+  The file holds each step's file, lines, words and the lines it shows (never a whole file, never a real `.env`, a key
+  or a hidden folder; config values redacted), with a hash of those lines, and, if asked, the step's card names. Where
+  the app has the microphone (not Lite), the maker can record their own voice, one clip per step (MediaRecorder,
+  capped at 2 MB a clip and 16 MB a tour); a recorded step plays its clip, the others are read aloud by the narrator
+  above. "Open a tour file" in the Guide plays one on the open project: each step re-hashes its lines, says plainly
+  when the code changed since, and finds lines that moved by an exact search; a tour whose files are mostly missing
+  is not played and the Guide says it was made on another project.
 - Learn: its professor uses the same narrator setting via `src/lib/voice` (the Learn session wires it); its mic
   button hears on this computer when Parakeet is chosen (§4d), else with the browser's recognition.
 - Settings: a Voice section — narrator + voice + speed, lecturer + model, speech to text (each option with its price

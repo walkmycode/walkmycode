@@ -12,12 +12,16 @@ import { usedPictures } from "@/learn/lib/worlds";
 import { cardsFor, dueCards, mergeCards, review, type Card } from "@/learn/lib/recall";
 import { mapHref, readTeach, type TeachRequest } from "@/learn/links";
 import TopBar from "@/components/TopBar";
+import { LITE } from "@/lib/adapters/target";
+import { RoomLink, useGo } from "@/lib/adapters/nav";
+import type { Workspace } from "@/lib/store";
 import CodePanel from "./CodePanel";
 import FolderCourse from "./FolderCourse";
 import Library, { type Start } from "./Library";
 import NewLesson from "./NewLesson";
 import Player, { boardsSeen } from "./Player";
 import Recall from "./Recall";
+import RepoQuiz from "./RepoQuiz";
 
 type View =
   | { kind: "library" }
@@ -28,7 +32,9 @@ type View =
   /** Every recall card that is due, from every course. */
   | { kind: "recall" }
   /** A course from a folder of lessons on this computer. */
-  | { kind: "folder" };
+  | { kind: "folder" }
+  /** Questions written from the project open in Explore (?quiz in the address). */
+  | { kind: "quiz" };
 
 const ROOM_START = `# The Code room: try anything in Python here. Ctrl+Enter runs it.
 # "Run on: My laptop" gives you numpy, pandas, scikit-learn and plots.
@@ -37,12 +43,14 @@ fares = [8, 11, 14, 19, 25, 31]
 print("average fare:", sum(fares) / len(fares))
 `;
 
-/** The lesson open now is in the address (?lesson=<id>), so a reload comes back to it. */
-function rememberLesson(id: string | null) {
+/** The lesson open now is in the address (?lesson=<id>), or the quiz (?quiz), so a reload comes back to it. */
+function rememberLesson(id: string | null, quiz = false) {
   try {
     const url = new URL(window.location.href);
     if (id) url.searchParams.set("lesson", id);
     else url.searchParams.delete("lesson");
+    if (quiz) url.searchParams.set("quiz", "");
+    else url.searchParams.delete("quiz");
     for (const k of ["teach", "from", "snippet"]) url.searchParams.delete(k);
     window.history.replaceState(null, "", url);
   } catch {
@@ -59,22 +67,26 @@ export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
   const [view, setViewState] = useState<View>({ kind: "library" });
+  /** The project open in Explore (kept in this browser), for the quiz from its code. */
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [error, setError] = useState("");
   const now = useNow();
+  const go = useGo();
   const saveErr = useRef(false);
   const scratchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setView = useCallback((v: View) => {
     setViewState(v);
-    rememberLesson(v.kind === "lesson" ? v.id : null);
+    rememberLesson(v.kind === "lesson" ? v.id : null, v.kind === "quiz");
   }, []);
 
   useEffect(() => {
     let live = true;
     (async () => {
-      const [s, smp] = await Promise.all([openStore(), getSample()]);
+      const [s, smp, ws] = await Promise.all([openStore(), getSample(), import("@/lib/store").then((m) => m.restoreWorkspace()).catch(() => null)]);
       if (!live) return;
       setSample(() => smp);
+      setWorkspace(ws);
       try {
         let list = await s.listLessons();
         if (!list.length) {
@@ -104,6 +116,7 @@ export default function App() {
         // Arrived from the Explore room's "Teach me this": start that lesson. Else the lesson that was open.
         const teach = readTeach(window.location.search);
         if (teach) setViewState({ kind: "new", teach });
+        else if (new URLSearchParams(window.location.search).has("quiz")) setViewState({ kind: "quiz" });
         else if (reopened) setViewState({ kind: "lesson", id: reopened.id });
       } catch {
         setError("Your saved lessons could not be loaded. Reload the page to try again.");
@@ -208,14 +221,23 @@ export default function App() {
     : view.kind === "code" ? "Code room"
     : view.kind === "recall" ? "Recall"
     : view.kind === "folder" ? "A course from a folder"
+    : view.kind === "quiz" ? `${workspace?.name ?? "Your code"} · Quiz from your code`
     : view.kind === "new" ? (view.course ? `A new lesson in ${view.course}` : "A new lesson")
     : undefined;
 
+  // The quiz checks every answer against the code, so it needs the code itself, not just the map.
+  const hasCode = !!workspace && Object.keys(workspace.files).length > 0;
+
   return (
     <>
-      <TopBar title="Learn" detail={detail}>
+      <TopBar title="Learn" detail={detail} ai={view.kind === "quiz" && !LITE ? { onSettings: () => go("/#settings/ai") } : undefined}>
         {view.kind === "library" ? (
           <>
+            {hasCode && (
+              <button className="ctl compact" type="button" onClick={() => setView({ kind: "quiz" })} title={`Questions written from the code of ${workspace.name}, to learn how it works`}>
+                Quiz on {workspace.name}
+              </button>
+            )}
             {due > 0 && (
               <button className="ctl compact" type="button" onClick={() => setView({ kind: "recall" })} title="The ideas due to be remembered today">
                 Recall · {due} due
@@ -280,6 +302,23 @@ export default function App() {
           <div className="hall recall-room">
             <div className="frame"><section className="board"><h2>Recall</h2><Recall cards={openCards} onReview={onReview} /></section></div>
           </div>
+        ) : view.kind === "quiz" ? (
+          hasCode ? (
+            <RepoQuiz store={store} sample={sample} workspace={workspace} />
+          ) : (
+            <div className="hall recall-room">
+              <div className="frame">
+                <section className="board">
+                  <h2>Quiz from your code</h2>
+                  <div className="prof-empty">
+                    <p className="big">Open a project in Explore first.</p>
+                    <p>The questions are written from its map and its code, and every answer is checked against its lines.</p>
+                    <RoomLink className="ctl primary" href="/">Open a project</RoomLink>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )
         ) : view.kind === "folder" ? (
           <FolderCourse
             courses={courses}

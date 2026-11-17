@@ -53,6 +53,20 @@ export function addPart(parts: OutPart[], p: OutPart): OutPart[] {
   return [...parts, p];
 }
 
+/** A part that says something went wrong: what the program wrote to stderr, or a run that failed. */
+const isError = (p: OutPart) => p.kind === "err" || p.kind === "error";
+
+/** A run's printed text, in the order it came (stdout and stderr together, as a terminal shows them). */
+export function printedText(parts: OutPart[]): string {
+  let text = "";
+  for (const p of parts) {
+    if (!("text" in p) || p.kind === "meta" || p.kind === "value") continue;
+    if (text && !text.endsWith("\n")) text += "\n";
+    text += p.text;
+  }
+  return text;
+}
+
 const same = (a: OutputState, b: OutputState) =>
   (Object.keys(a) as (keyof OutputState)[]).every((k) => a[k] === b[k]);
 
@@ -61,6 +75,9 @@ export function createOutputStore() {
   let dock: DockState = { popped: false, owner: null, canPop: false, slot: null };
   let panels = 0;
   let host: OutputHost | null = null;
+  // The run that last printed an error, and its text (kept, so React reads the same string until it changes).
+  let errFrom: string | null = null;
+  let errText: { parts: OutPart[]; text: string } | null = null;
   const subs = new Set<() => void>();
   const emit = () => subs.forEach((f) => f());
   const setDock = (d: Partial<DockState>) => {
@@ -83,6 +100,7 @@ export function createOutputStore() {
       const next = { ...prev, ...(typeof patch === "function" ? patch(prev) : patch) };
       if (entries.has(id) && same(prev, next)) return;
       entries.set(id, next);
+      if (next.parts !== prev.parts && next.parts.some(isError)) errFrom = id;
       emit();
     },
     append(id: string, p: OutPart) {
@@ -91,8 +109,17 @@ export function createOutputStore() {
     /** An Ide went away: its output goes, and the panel stops showing it. */
     remove(id: string) {
       const had = entries.delete(id);
+      if (errFrom === id) errFrom = null;
       if (dock.owner === id) setDock({ owner: null });
       else if (had) emit();
+    },
+    /** What the run that last printed an error printed, for the Guide's "Walk an error" (src/lib/stackTrace.ts
+     * finds the trace in it). Null when no open editor's run has printed one, or it has been run again cleanly. */
+    lastError(): string | null {
+      const s = errFrom ? entries.get(errFrom) : undefined;
+      if (!s || !s.parts.some(isError)) return null;
+      if (errText?.parts !== s.parts) errText = { parts: s.parts, text: printedText(s.parts) };
+      return errText.text;
     },
 
     dock: () => dock,
