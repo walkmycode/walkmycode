@@ -6,7 +6,7 @@ Walk through any codebase: a map, guided tours and a voice that explains. Open a
 
 Built for people who made an app with an AI and now can't find their way around it.
 
-**Status:** early prototype. Map, explain, trace and text tours work on TypeScript/JavaScript (React, Next.js, Express, Cloudflare Pages), Python (FastAPI, Flask), Rust (axum, actix-web, Rocket), Dart (Flutter) and PHP (Laravel, Symfony) with SQL, Prisma and Supabase tables. The code can be one app, a monorepo of packages, or several services that talk over HTTP, gRPC or queues: WalkMyCode reads `docker-compose.yml`, Kubernetes files, Dockerfiles and the like to find the services, shows a system view with one card per service, and lets you open each one. Tours and answers can be read aloud, and you can talk to the guide. **WalkMyCode as an MCP server** (below) is the same page driven by your own AI app (Claude, Antigravity, Cursor…).
+**Status:** early prototype. Map, explain, trace and text tours work on TypeScript/JavaScript (React, Next.js, Express, Cloudflare Pages), Python (FastAPI, Flask), Rust (axum, actix-web, Rocket), Dart (Flutter), PHP (Laravel, Symfony), Java and Kotlin (Spring, JPA, Ktor), C# (ASP.NET Core, EF Core), C and C++ with SQL, Prisma and Supabase tables. The code can be one app, a monorepo of packages, or several services that talk over HTTP, gRPC or queues: WalkMyCode reads `docker-compose.yml`, Kubernetes files, Dockerfiles and the like to find the services, shows a system view with one card per service, and lets you open each one. Tours and answers can be read aloud, and you can talk to the guide. **WalkMyCode as an MCP server** (below) is the same page driven by your own AI app (Claude, Antigravity, Cursor…).
 
 ## Run it
 

@@ -2,13 +2,16 @@
 // reader (src/lib/folderRules.ts, src/lib/localFolder.ts): the desktop app's "Choose a
 // folder" opens the system's folder picker, which gives a path, not a handle the page
 // could read (docs/DESKTOP.md, "Folders"). What comes back is the same picked folder,
-// so it goes on through the same open-a-folder flow.
+// so it goes on through the same open-a-folder flow. Explore asks for the folder's list
+// again (sizes and times, no text) to notice a file added, changed or removed, and then
+// for those files' text only (src/lib/folderList.ts, src/lib/folderSync.ts).
 import "server-only";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { DOC_MAX_BYTES, isAssetPath, listsHiddenDir, MAX_ASSETS, MAX_OTHER, otherFileMode } from "@/analyzer/config/files";
 import type { SourceFile } from "@/analyzer/types";
 import { keep, MAX_FILE_BYTES, SKIP, skipDir } from "./folderRules";
+import { contentFor, listFolder, type Listed, type ListEntry } from "./folderList";
 import { MAX_FILES_PER_REPO } from "./workspace";
 
 export interface ReadFolder {
@@ -21,6 +24,41 @@ export interface ReadFolder {
 
 /** The folder at `path`, or why it can't be read. */
 export async function readFolderAt(path: string): Promise<ReadFolder | { error: string }> {
+  const root = await folderAt(path);
+  if (typeof root !== "string") return root;
+  const files: SourceFile[] = [];
+  const assets: SourceFile[] = [];
+  const others: SourceFile[] = [];
+  const capped = await walk(root, "", { out: files, assets, others }, false);
+  return { name: basename(root) || root, path: root, files: [...files, ...assets, ...others], capped };
+}
+
+/** The folder at `path` listed with the readers' rules: each file's size and time, no text. */
+export async function listFolderAt(path: string): Promise<{ path: string; files: Listed[]; capped: boolean } | { error: string }> {
+  const root = await folderAt(path);
+  if (typeof root !== "string") return root;
+  const { files, capped } = await listFolder(root, listDisk);
+  return { path: root, files, capped };
+}
+
+/** The text of some of the folder's files, read as the readers read them. Only files its list holds are read
+ * (`paths` from the folder down): never a skipped folder's, never a secret, never outside it. A file that is
+ * not text is left out. */
+export async function readFilesAt(path: string, paths: string[]): Promise<{ path: string; files: Listed[]; read: SourceFile[] } | { error: string }> {
+  const listed = await listFolderAt(path);
+  if ("error" in listed) return listed;
+  const want = new Set(paths);
+  const read: SourceFile[] = [];
+  for (const f of listed.files) {
+    if (!want.has(f.path)) continue;
+    const content = await contentFor(f, () => readFile(join(listed.path, ...f.path.split("/")), "utf8"));
+    if (content !== null) read.push({ path: f.path, content });
+  }
+  return { path: listed.path, files: listed.files, read };
+}
+
+/** The folder's absolute path, or why it can't be read. */
+async function folderAt(path: string): Promise<string | { error: string }> {
   if (!path || !isAbsolute(path)) return { error: "That is not a folder's full path." };
   const root = resolve(path);
   try {
@@ -28,11 +66,19 @@ export async function readFolderAt(path: string): Promise<ReadFolder | { error: 
   } catch {
     return { error: `${root} could not be opened.` };
   }
-  const files: SourceFile[] = [];
-  const assets: SourceFile[] = [];
-  const others: SourceFile[] = [];
-  const capped = await walk(root, "", { out: files, assets, others }, false);
-  return { name: basename(root) || root, path: root, files: [...files, ...assets, ...others], capped };
+  return root;
+}
+
+/** A folder on disk, for listFolder. */
+async function listDisk(dir: string): Promise<ListEntry<string>[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  return entries.map((e) => {
+    const full = join(dir, e.name);
+    if (e.isSymbolicLink()) return { name: e.name, link: true };
+    if (e.isDirectory()) return { name: e.name, dir: full };
+    if (e.isFile()) return { name: e.name, stat: () => stat(full) };
+    return { name: e.name };
+  });
 }
 
 interface Found {

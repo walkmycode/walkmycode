@@ -825,6 +825,8 @@
 .lh-lesson .s { color: var(--ui-faint); font-size: var(--text); }
 .lh-ring { --p: 0; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--ui-line) 0); }
 .lh-ring::after { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--ui); }
+/* The ring as strokes: only the flat dark theme shows it (src/app/dark.css), in place of the gradient. */
+.lh-ring .lh-arc { display: none; }
 .lh-lesson:hover .lh-ring::after { background: var(--ui-2); }
 .lh-score { font: 650 var(--text) var(--mono); color: var(--green); }
 .lh-del, .lh-confirm { align-self: flex-end; margin: 0 calc(16px * var(--sp)) calc(8px * var(--sp)); }

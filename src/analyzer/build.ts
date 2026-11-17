@@ -6,6 +6,11 @@ import { extractJs } from "./extract/js";
 import { extractPy } from "./extract/py";
 import { extractDart, linkDart } from "./extract/dart";
 import { extractRust } from "./extract/rust";
+import { extractC, linkC, settleInherited, settleMemberCalls } from "./extract/c";
+import { extractJava } from "./extract/java";
+import { extractCSharp } from "./extract/csharp";
+import { extractKotlin } from "./extract/kotlin";
+import { linkEntities } from "./extract/entities";
 import { extractPhp, extractTwig, linkPhp, phpResolver } from "./extract/php";
 import { TECH_LABEL } from "./extract/channels";
 import { serviceForEnv, serviceForHost, sqlColumns, sqlInString } from "./extract/common";
@@ -38,11 +43,12 @@ export interface BuildResult {
 }
 
 const SKIP_DIRS = /(^|\/)(node_modules|\.[^/]+|dist|build|out|target|__pycache__|venv|env|coverage|vendor|storybook-static|site-packages)(\/|$)/;
-const TEST_RE = /(^|\/)(tests?|__tests__|__mocks__|spec|e2e|cypress|playwright|integration_test|test_driver)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*_test\.dart)$/;
+const TEST_RE = /(^|\/)(tests?|__tests__|__mocks__|spec|e2e|cypress|playwright|integration_test|test_driver)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$|(^|\/)(test_[^/]*\.py|[^/]*_test\.py|conftest\.py|[^/]*_test\.dart)$|(^|\/)[^/]*(Test|Tests|IT)\.(java|kt)$|(^|\/)[^/]*Tests?\.cs$|(^|\/)[^/]+\.Tests?\/|(^|\/)(test_[^/]*|[^/]*_test)\.(c|cc|cpp|cxx)$/;
 const SECRET_RE = /(^|\/)(\.env(\..*)?|.*\.(pem|key|p12|pfx|jks|keystore)|id_rsa.*|id_ed25519.*|.*secrets?\.(json|ya?ml|toml))$/i;
 // Protobuf output (users_pb2.py, users_pb.js, users_grpc_pb.js, users.pb.go) is generated: its name says which gRPC service it is, the .proto says the rest.
-// Dart's build_runner writes booking.g.dart, booking.freezed.dart and the like next to the source.
-const GENERATED_RE = /\.(min|bundle|chunk)\.[cm]?js$|\.d\.ts$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock)$|_pb2(_grpc)?\.pyi?$|_(grpc_)?pb\.[cm]?js$|\.pb\.go$|\.(g|freezed|gr|mocks|pb|pbenum|pbgrpc|pbjson|pbserver)\.dart$|(^|\/)generated_plugin_registrant\.dart$/;
+// Dart's build_runner writes booking.g.dart, booking.freezed.dart and the like next to the source; .NET writes
+// X.Designer.cs and X.g.cs, EF Core its ModelSnapshot.cs, and the compiler's own files go in obj/.
+const GENERATED_RE = /\.(min|bundle|chunk)\.[cm]?js$|\.d\.ts$|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|poetry\.lock)$|_pb2(_grpc)?\.pyi?$|_(grpc_)?pb\.[cm]?js$|\.pb\.go$|\.(g|freezed|gr|mocks|pb|pbenum|pbgrpc|pbjson|pbserver)\.dart$|(^|\/)generated_plugin_registrant\.dart$|\.(g|[Dd]esigner|[Gg]enerated)\.cs$|(^|\/)obj\/.*\.cs$|ModelSnapshot\.cs$/;
 /** A path inside a hidden folder: the readers list such files (no text) for Files, never as the app's code. */
 const LISTED_HIDDEN = /(^|\/)\.[^/]+\//;
 /** Manifests the workspace reader needs (package.json workspaces, Cargo [workspace], go.mod). */
@@ -144,6 +150,8 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     // .gitlab-ci.yml) is checked from its repo's root up.
     if (SKIP_DIRS.test(ENV_EXAMPLE_RE.test(s.path) ? dirname(s.path) : CI_RE.test(s.path) ? s.path.replace(CI_RE, "") : s.path)) return "dependency or build output";
     if (GENERATED_RE.test(s.path)) return "generated";
+    // Gradle's Kotlin scripts say how the project is built: Kotlin by their ending, not the app's code.
+    if (/\.gradle\.kts$/.test(s.path)) return "build script";
     if (TEST_RE.test(s.path)) return "test";
     if (s.content.length > maxBytes) return "too big";
     if (s.content.length > 20_000 && s.content.length / lines > 400) return "minified";
@@ -185,7 +193,7 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
   const files: FileEntry[] = [];
   const facts: Record<string, FileFacts> = {};
   const parseable: SourceFile[] = [];
-  // Code in languages the map doesn't draw (Go, Java…): counted, so the map can say what it holds.
+  // Code in languages the map doesn't draw (Go, Kotlin…): counted, so the map can say what it holds.
   const otherCode: Record<string, number> = {};
   for (const s of sources) {
     const code = langOf(s.path);
@@ -249,10 +257,10 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
       } else if (lang === "twig") {
         facts[s.path] = extractTwig(s.content);
       } else {
-        const g = grammarFor(s.path);
+        const g = grammarFor(s.path, s.content);
         if (!g) continue;
         const root = await parse(g, s.content);
-        facts[s.path] = g === "python" ? extractPy(root, s.content) : g === "dart" ? extractDart(root, s.content) : g === "php" ? extractPhp(root, s.content, s.path) : g === "rust" ? extractRust(root, s.content) : extractJs(root, s.content);
+        facts[s.path] = g === "c" || g === "cpp" ? extractC(root, s.content, g === "cpp") : g === "java" ? extractJava(root, s.content) : g === "c_sharp" ? extractCSharp(root, s.content) : g === "kotlin" ? extractKotlin(root, s.content) : g === "python" ? extractPy(root, s.content) : g === "dart" ? extractDart(root, s.content) : g === "php" ? extractPhp(root, s.content, s.path) : g === "rust" ? extractRust(root, s.content) : extractJs(root, s.content);
       }
     } catch (e) {
       warnings.push(`could not parse ${s.path}: ${(e as Error).message}`);
@@ -260,6 +268,8 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
   }
   const parsed = Object.keys(facts);
   const parsedSet = new Set(parsed);
+  // Java (JPA) and C# (EF Core): classes that are tables, and the code that reads and writes them (extract/entities.ts).
+  linkEntities(facts);
 
   // ── file-based routes (Next.js, Cloudflare Pages, SvelteKit-ish) ──
   for (const p of parsed) {
@@ -437,6 +447,45 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     const item = segs[i];
     return { file: cur, item: item && item !== "*" ? item : null };
   };
+  // C and C++: `#include "cart.h"` is a path from the including file's folder; failing that (and for `<cart.h>`),
+  // from one of the package's include folders; failing that, the one file in the project that ends with it.
+  const isC = (p: string) => /\.(c|h|cc|cpp|cxx|hpp|hh|hxx)$/i.test(p);
+  const cFiles = parsed.filter(isC);
+  const resolveC = (from: string, spec: string): string | null => {
+    const rel = spec.replace(/^<|>$/g, "");
+    const area = areaOf(from);
+    const areaDir = manifestDirs.has(area) ? area : "";
+    const roots = [...(spec.startsWith("<") ? [] : [dirname(from)]), areaDir, `${areaDir}/include`, `${areaDir}/src`, `${areaDir}/inc`, "include", "src", ""];
+    for (const r of roots) {
+      const c = joinPath(r, rel);
+      if (parsedSet.has(c) && isC(c)) return c;
+    }
+    const hits = cFiles.filter((p) => p.endsWith(`/${rel}`));
+    return hits.length === 1 ? hits[0] : null;
+  };
+  // Java, Kotlin and C#: a type by its full name ("shop.core.OrderService"), from the package or namespace each file
+  // says it is in and the types it declares (Kotlin: its top-level functions too). A longer name is a nested type or
+  // a member of one (`import static`). Java and Kotlin name each other's classes, so they share one index.
+  const typeIndex = new Map<string, string>();
+  const typedKind = (p: string) => (p.endsWith(".cs") ? "cs" : "jvm");
+  /** What a name found in a file is bound to there: a function declared on its own by its name, a type by whatever follows it. */
+  const typedItem = (file: string, name: string) => (facts[file].fns.some((x) => x.name === name) ? name : "*");
+  for (const p of parsed) {
+    const t = facts[p].typed;
+    if (!t) continue;
+    for (const name of t.types) {
+      const key = `${typedKind(p)}:${t.namespace ? `${t.namespace}.` : ""}${name}`;
+      if (!typeIndex.has(key)) typeIndex.set(key, p);
+    }
+  }
+  const resolveTyped = (from: string, fqn: string): { file: string; item: string | null } | null => {
+    const segs = fqn.split(".");
+    for (let cut = segs.length; cut > 0 && cut >= segs.length - 2; cut--) {
+      const file = typeIndex.get(`${typedKind(from)}:${segs.slice(0, cut).join(".")}`);
+      if (file) return { file, item: cut < segs.length ? segs[segs.length - 1] : null };
+    }
+    return null;
+  };
   // PHP: a class by the file that declares it, else composer.json's PSR-4 map; `view:x` (Blade's @extends) by resources/views,
   // a Twig template's (`{% extends 'base.html.twig' %}`) by templates/.
   const resolvePhp = phpResolver(
@@ -449,6 +498,7 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
   /** local binding → file it comes from (and the exported name). */
   const bindings: Record<string, Map<string, { file: string; name: string }>> = {};
   const importEdges: { from: string; to: string; line: number; names: string[] }[] = [];
+  const cIncludes = new Map<string, { to: string; line: number }[]>();
   for (const p of parsed) {
     const f = facts[p];
     const b = new Map<string, { file: string; name: string }>();
@@ -474,6 +524,20 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
         if (!r) continue;
         for (const n of imp.names) if (n.local !== "*") b.set(n.local, { file: r.file, name: r.item ?? "*" });
         importEdges.push({ from: p, to: r.file, line: imp.line, names: r.item ? [r.item] : [] });
+      } else if (isC(p)) {
+        const target = resolveC(p, imp.spec);
+        if (!target || target === p) continue;
+        // What the header declares is what this file can call: a function by its name, a namespace or class by what follows it.
+        const scopes = facts[target].scopes ?? [];
+        for (const name of scopes) if (!b.has(name)) b.set(name, { file: target, name: "*" });
+        for (const name of facts[target].exports) if (!b.has(name)) b.set(name, { file: target, name });
+        cIncludes.set(p, [...(cIncludes.get(p) ?? []), { to: target, line: imp.line }]);
+        importEdges.push({ from: p, to: target, line: imp.line, names: [] });
+      } else if (f.typed) {
+        const r = resolveTyped(p, imp.spec);
+        if (!r || r.file === p) continue;
+        for (const n of imp.names) b.set(n.local, { file: r.file, name: r.item ?? typedItem(r.file, n.imported) });
+        importEdges.push({ from: p, to: r.file, line: imp.line, names: r.item ? [r.item] : [] });
       } else {
         const target = p.endsWith(".dart") ? resolveDart(p, imp.spec) : /\.(php|twig)$/.test(p) ? resolvePhp(p, imp.spec) : resolveJs(p, imp.spec);
         if (!target) continue;
@@ -481,6 +545,73 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
         importEdges.push({ from: p, to: target, line: imp.line, names: imp.names.map((n) => n.imported).filter((n) => n !== "*" && n !== "default") });
       }
     }
+  }
+
+  // Java and C#: a type the code names without importing it is in the file's own package or namespace (C#: or one
+  // around it), or in one it opens (`import a.b.*`, `using A.B;`). The line it is first named on is the evidence.
+  for (const p of parsed) {
+    const t = facts[p].typed;
+    if (!t) continue;
+    const b = bindings[p];
+    const around = [t.namespace];
+    if (typedKind(p) === "cs") {
+      for (let ns = t.namespace; ns.includes("."); ) around.push((ns = ns.slice(0, ns.lastIndexOf("."))));
+      if (t.namespace) around.push("");
+    }
+    const open = [...around, ...t.opens.map((o) => o.ns)];
+    for (const r of t.refs) {
+      if (b.has(r.name)) continue;
+      for (const ns of open) {
+        const file = typeIndex.get(`${typedKind(p)}:${ns ? `${ns}.` : ""}${r.name}`);
+        if (!file || file === p) continue;
+        b.set(r.name, { file, name: typedItem(file, r.name) });
+        importEdges.push({ from: p, to: file, line: r.line, names: [] });
+        break;
+      }
+    }
+  }
+  // C and C++: a header brings in the headers it includes. Each file's includes, direct or through another header
+  // (then on the line of the include that leads there); what those declare can be called here too.
+  const cReach = new Map<string, { to: string; line: number }[]>();
+  for (const p of cFiles) {
+    const seen = new Set([p]);
+    const out: { to: string; line: number }[] = [];
+    const follow = (from: string, through: number | null, depth: number) => {
+      for (const i of cIncludes.get(from) ?? []) {
+        if (seen.has(i.to)) continue;
+        seen.add(i.to);
+        out.push({ to: i.to, line: through ?? i.line });
+        if (depth < 6) follow(i.to, through ?? i.line, depth + 1);
+      }
+    };
+    follow(p, null, 0);
+    if (!out.length) continue;
+    cReach.set(p, out);
+    const b = bindings[p];
+    for (const { to } of out) {
+      for (const name of facts[to].scopes ?? []) if (!b.has(name)) b.set(name, { file: to, name: "*" });
+      for (const name of facts[to].exports) if (!b.has(name)) b.set(name, { file: to, name });
+    }
+  }
+  // C++: a call on a field, in a method written outside its class body, now that the class's fields are in sight.
+  for (const p of cFiles) settleMemberCalls(facts[p], (cls) => facts[p].members?.[cls] ?? (cReach.get(p) ?? []).map((i) => facts[i.to].members?.[cls]).find(Boolean));
+  // C++: `shop::total(c)` is `total(c)` once shop is known for a namespace, of this file's or of a header it includes.
+  for (const p of cFiles) {
+    const spaces = new Set([...(facts[p].spaces ?? []), ...(cReach.get(p) ?? []).flatMap((i) => facts[i.to].spaces ?? [])]);
+    if (!spaces.size) continue;
+    const plain = (call: string) => {
+      const segs = call.split(".");
+      while (segs.length > 1 && spaces.has(segs[0])) segs.shift();
+      return segs.join(".");
+    };
+    for (const fn of facts[p].fns) fn.calls = [...new Set(fn.calls.map(plain))];
+  }
+  // C++: a method a class does not name itself is its base's, the class and its bases found in this file or a header it includes.
+  for (const p of cFiles) settleInherited(facts[p], (cls) => facts[p].classes?.[cls] ?? (cReach.get(p) ?? []).map((i) => facts[i.to].classes?.[cls]).find(Boolean));
+  // C and C++: a call to a function a header declares runs code in the file that defines it (extract/c.ts, linkC).
+  for (const l of linkC(facts, cReach)) {
+    for (const n of l.names) bindings[l.from].set(n.local, { file: l.to, name: n.name });
+    importEdges.push({ from: l.from, to: l.to, line: l.line, names: [] });
   }
 
   // Dart: a Dio client's base URL, constants from imported files, routed screens (extract/dart.ts).
@@ -569,6 +700,10 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     if (rel.endsWith(".blade.php")) return rel.slice(0, -".blade.php".length);
     // A Twig template likewise: templates/todo/index.html.twig → templates/todo/index.
     if (rel.endsWith(".twig")) return rel.replace(/(\.html)?\.twig$/, "");
+    // Java and Kotlin: Maven's and Gradle's source folder says nothing: src/main/java/shop/api/Orders.java → shop/api/Orders.
+    rel = rel.replace(/^(.*\/)?src\/main\/(java|kotlin)\//, "");
+    // C and C++ keep the extension: cart.h and cart.c are two cards.
+    if (isC(p)) return rel.replace(/^(src|include|lib)\//, "");
     rel = rel.replace(/^(src|app|lib)\//, "").replace(/\.[^.]+$/, "").replace(/\/index$/, "");
     return rel;
   };
@@ -588,6 +723,13 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     // migrations, Doctrine entities and repositories are the data; the rest (controllers, services, jobs) is logic,
     // even beside a Vue or React front end in the same package.
     if (lang === "php") return /(^|\/)(models|migrations|entity|repository)\//i.test(p) && f.sql.length ? "data" : "logic";
+    // Java and C#: controllers are the API (above); entities, repositories and a DbContext are the data; services are logic.
+    if (lang === "java" || lang === "kotlin" || lang === "csharp") {
+      if (f.entity?.entities.length || f.columns?.length) return "data";
+      return f.sql.length && /(^|\/)(models?|entit(y|ies)|domain|repositor(y|ies)|data|persistence|dao|migrations)\//i.test(p) ? "data" : "logic";
+    }
+    // C and C++: the files that hold the queries are the data; everything else is logic.
+    if (lang === "c" || lang === "cpp") return /(^|\/)(db|database|data|storage|schema|models?)(\.[a-z]+$|\/)/i.test(p) && f.sql.length ? "data" : "logic";
     if (frontendAreas.has(a)) {
       if (nextLikeAreas.has(a)) return /(^|\/)(app|pages|components|hooks|ui)\//.test(p) ? "ui" : "logic";
       // A front-end package: plain .ts files are front-end helpers unless they clearly live server-side.
@@ -800,7 +942,8 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
       const calls = fn?.calls ?? [];
       for (const c of calls) {
         const [head, ...rest] = c.split(".");
-        const bnd = bindings[p].get(head);
+        // The whole call first: C++ follows `Cart.add` to the file that defines that one method.
+        const bnd = bindings[p].get(c) ?? bindings[p].get(head);
         if (!bnd || !nodeIds.has(fileNodeId(bnd.file))) continue;
         const toFn = bnd.name === "*" ? rest[0] : bnd.name;
         const at = rn.line ?? 1;
@@ -811,7 +954,7 @@ export async function buildMap(sources: SourceFile[], opts: BuildOptions): Promi
     for (const fn of f.fns) {
       for (const c of fn.calls) {
         const [head, ...rest] = c.split(".");
-        const bnd = bindings[p].get(head);
+        const bnd = bindings[p].get(c) ?? bindings[p].get(head);
         if (!bnd) continue;
         const e = edges.get(`imports:${fileNodeId(p)}->${fileNodeId(bnd.file)}`);
         if (!e) continue;

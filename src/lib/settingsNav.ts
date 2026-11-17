@@ -3,7 +3,7 @@
 // "Open settings" from anywhere (the window event, with the pane it is about).
 // Plain code, no React, so tests read it.
 
-export type PaneId = "ai" | "voice" | "privacy" | "computer" | "motion" | "about";
+export type PaneId = "ai" | "voice" | "privacy" | "computer" | "editor" | "motion" | "about";
 
 export const PANES: { id: PaneId; label: string }[] = [
   { id: "ai", label: "AI model" },
@@ -11,6 +11,8 @@ export const PANES: { id: PaneId; label: string }[] = [
   { id: "privacy", label: "Privacy" },
   // Running code and the terminal on this computer (src/lib/localrun): not in Lite, which has no server.
   { id: "computer", label: "This computer" },
+  // The code editor's switches: line history, suggestions while typing (src/lib/editorSettings.ts).
+  { id: "editor", label: "Editor" },
   { id: "motion", label: "Motion & look" },
   { id: "about", label: "About" },
 ];

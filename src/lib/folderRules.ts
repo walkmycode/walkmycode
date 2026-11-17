@@ -7,7 +7,7 @@ import { drawnLang, isConfigPath, isReadablePath } from "@/analyzer/config/files
  * .env.example, ...) by path. Never a real .env. */
 const MANIFEST = /(^|\/)(package\.json|pyproject\.toml|requirements\.txt|Cargo\.toml|go\.mod|pubspec\.yaml|composer\.json)$/;
 // The one hidden folder read is .github/workflows, for its config files only (a deploy's health check names the app's address).
-// Code in other languages (Go, Java…) is kept too, for the guide to read and search, though the map doesn't draw it.
+// Code in other languages (Go, Kotlin…) is kept too, for the guide to read and search, though the map doesn't draw it.
 export const keep = (path: string) => (path.startsWith(".github/") ? isConfigPath(path) : drawnLang(path) !== null || MANIFEST.test(path) || isConfigPath(path) || isReadablePath(path));
 export const HIDDEN_KEPT = /^\.github(\/workflows)?$/;
 export const SKIP = new Set(["node_modules", "dist", "build", "out", "target", "__pycache__", "venv", "coverage", "vendor", "storybook-static", "site-packages"]);

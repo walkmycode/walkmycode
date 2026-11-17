@@ -8,6 +8,10 @@ import { extractPy } from "../src/analyzer/extract/py";
 import { extractDart } from "../src/analyzer/extract/dart";
 import { extractPhp } from "../src/analyzer/extract/php";
 import { extractRust } from "../src/analyzer/extract/rust";
+import { extractC } from "../src/analyzer/extract/c";
+import { extractJava } from "../src/analyzer/extract/java";
+import { extractCSharp } from "../src/analyzer/extract/csharp";
+import { extractKotlin } from "../src/analyzer/extract/kotlin";
 import type { FileFacts } from "../src/analyzer/facts";
 import { GRAMMAR_FILES, grammarFor, parse, setGrammarLoader } from "../src/analyzer/parser";
 import type { SourceFile } from "../src/analyzer/types";
@@ -32,8 +36,12 @@ export async function readJson<T>(path: string): Promise<T> {
 
 /** Facts of one file given as a snippet, by the grammar its path picks. */
 export async function factsOf(path: string, content: string): Promise<FileFacts> {
-  const g = grammarFor(path);
+  const g = grammarFor(path, content);
   if (!g) throw new Error(`no grammar for ${path}`);
   const root = await parse(g, content);
+  if (g === "c" || g === "cpp") return extractC(root, content, g === "cpp");
+  if (g === "java") return extractJava(root, content);
+  if (g === "c_sharp") return extractCSharp(root, content);
+  if (g === "kotlin") return extractKotlin(root, content);
   return g === "python" ? extractPy(root, content) : g === "dart" ? extractDart(root, content) : g === "php" ? extractPhp(root, content, path) : g === "rust" ? extractRust(root, content) : extractJs(root, content);
 }

@@ -1,0 +1,6 @@
+tags:
+  url: http://tags:8080
+spring:
+  datasource:
+    url: jdbc:postgresql://db:5432/notes
+    password: hunter2

@@ -9,11 +9,11 @@ describe("Settings panes", () => {
   it("lists the panes of the mockup, in its order, with This computer after Privacy (not in Lite)", () => {
     assert.deepEqual(
       PANES.map((p) => p.label),
-      ["AI model", "Voice", "Privacy", "This computer", "Motion & look", "About"],
+      ["AI model", "Voice", "Privacy", "This computer", "Editor", "Motion & look", "About"],
     );
     assert.deepEqual(
       panesFor("lite").map((p) => p.id),
-      ["ai", "voice", "privacy", "motion", "about"],
+      ["ai", "voice", "privacy", "editor", "motion", "about"],
     );
     assert.equal(panesFor("full"), PANES);
     assert.equal(panesFor("mcp"), PANES);

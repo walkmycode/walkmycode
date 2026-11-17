@@ -34,7 +34,7 @@ describe("code in languages the map doesn't draw yet", () => {
   it("names the language from the extension", () => {
     assert.equal(readableLanguage("src/main.rs"), null, "Rust is drawn now");
     assert.equal(readableLanguage("cmd/api/main.go"), "Go");
-    assert.equal(readableLanguage("App.Kt"), "Kotlin");
+    assert.equal(readableLanguage("App.Scala"), "Scala");
     assert.equal(readableLanguage("app/page.tsx"), null, "the map's own languages are not 'other'");
     assert.equal(isReadablePath("notes.txt"), false);
   });

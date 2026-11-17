@@ -163,6 +163,10 @@
 .cm-blame.me .who { color: var(--yellow); }
 .cm-blame.new { color: var(--green); }
 .cm-blame:hover { color: var(--ui-text); }
+/* The note at the end of the cursor's line (src/ide/lineHistory.ts): who, when, the commit's message. Faint,
+   never selected or clicked: a click there lands on the line. */
+.cm-line-note { margin-left: 4ch; font: italic .92em var(--sans); color: var(--ui-faint); white-space: pre; pointer-events: none; user-select: none; }
+.cm-line-note.new { color: color-mix(in srgb, var(--green) 60%, transparent); }
 @container (max-width: 720px) {
   .cm-blame-gutter .cm-gutterElement { padding: 0 calc(6px * var(--sp)); }
   .cm-blame { gap: calc(6px * var(--sp)); }

@@ -8,9 +8,15 @@
  * - a highlighted line range (a tour step or a citation), scrolled into view;
  * - `onSelect`, reporting the lines the user selects (for "explain this");
  * - breakpoints in a gutter, and the debugger's current line.
- * - who last changed each block of lines, and when (git blame), in a gutter of its own.
+ * - who last changed each block of lines, and when (git blame), in a gutter of its own, and
+ *   in a faint note at the end of the line the cursor is on (./lineHistory.ts);
+ * - suggestions while typing, when it can be typed in (./suggest.ts).
  *
- * The language follows the file's extension, or `language` when there is no path.
+ * The switches in Settings → Editor (src/lib/editorSettings.ts) turn the last two on and off,
+ * in every open editor at once.
+ *
+ * The language follows the file's extension, or `language` when there is no path
+ * (./languages.ts has the list).
  */
 import { useEffect, useRef } from "react";
 import {
@@ -23,20 +29,20 @@ import {
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
+  tooltips,
   type DecorationSet,
 } from "@codemirror/view";
 import { Compartment, EditorState, RangeSet, StateEffect, StateField, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { javascript, javascriptLanguage, jsxLanguage, tsxLanguage, typescriptLanguage } from "@codemirror/lang-javascript";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { python, pythonLanguage } from "@codemirror/lang-python";
-import { rust, rustLanguage } from "@codemirror/lang-rust";
-import { StandardSQL, sql } from "@codemirror/lang-sql";
-import { Tag, styleTags, tags as t } from "@lezer/highlight";
+import { tags as t } from "@lezer/highlight";
+import { languageExtension, languageOf, listMark, type Language } from "./languages";
+import { lineNote, type BlameMark } from "./lineHistory";
+import { suggestions } from "./suggest";
+import { useEditorSettings } from "./useEditorSettings";
 
-/** The mark that starts a list item, coloured on its own (VS Code does). */
-const listMark = Tag.define();
+export type { BlameMark, Language };
+export { languageOf };
 
 const chalk = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.operatorKeyword], color: "#f3d77a", fontWeight: "600" },
@@ -82,80 +88,21 @@ const theme = EditorView.theme(
     ".cm-bp": { width: "10px", height: "10px", borderRadius: "50%", background: "#e8665a", boxShadow: "0 0 0 2px rgba(232,102,90,.25)" },
     ".cm-lit-line": { backgroundColor: "rgba(243,215,122,.14) !important", boxShadow: "inset 3px 0 0 #f3d77a" },
     ".cm-debug-line": { backgroundColor: "rgba(243,215,122,.22) !important", boxShadow: "inset 3px 0 0 #f3d77a" },
+    // The list of suggestions (./suggest.ts), in the panels' colours.
+    ".cm-tooltip": { backgroundColor: "var(--ui)", color: "var(--ui-text)", border: "1px solid var(--ui-line)", borderRadius: "0", boxShadow: "0 12px 32px rgba(0,0,0,.5)" },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul": { maxHeight: "16em", minWidth: "22ch" },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "2px 12px 2px 6px", lineHeight: "1.6" },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--ui-raise)", color: "var(--ui-text)", boxShadow: "inset 2px 0 0 #f3d77a" },
+    ".cm-completionMatchedText": { textDecoration: "none", color: "#f3d77a", fontWeight: "600" },
+    ".cm-completionIcon": { color: "var(--ui-dim)", opacity: "1" },
+    ".cm-completionDetail": { color: "var(--ui-faint)" },
+    ".cm-tooltip.cm-completionInfo": { padding: "6px 10px", maxWidth: "40ch" },
+    ".cm-snippetField": { backgroundColor: "rgba(159,211,240,.14)" },
   },
   { dark: true },
 );
 
-export type Language = "python" | "javascript" | "typescript" | "jsx" | "tsx" | "json" | "sql" | "rust" | "markdown" | "text";
-
-/** The language for a file, from its extension. */
-export function languageOf(path: string | null | undefined): Language {
-  if (!path) return "text";
-  if (/\.pyw?$/.test(path)) return "python";
-  if (/\.tsx$/.test(path)) return "tsx";
-  if (/\.(ts|mts|cts)$/.test(path)) return "typescript";
-  if (/\.jsx$/.test(path)) return "jsx";
-  if (/\.(js|mjs|cjs)$/.test(path)) return "javascript";
-  if (/\.json$/.test(path)) return "json";
-  if (/\.sql$/.test(path)) return "sql";
-  if (/\.rs$/.test(path)) return "rust";
-  if (/\.(md|markdown|mdx)$/i.test(path)) return "markdown";
-  return "text";
-}
-
-function languageExtension(lang: Language): Extension {
-  switch (lang) {
-    case "python":
-      return python();
-    case "tsx":
-      return javascript({ jsx: true, typescript: true });
-    case "typescript":
-      return javascript({ typescript: true });
-    case "jsx":
-      return javascript({ jsx: true });
-    case "javascript":
-    case "json":
-      return javascript();
-    case "sql":
-      return sql();
-    case "rust":
-      return rust();
-    case "markdown":
-      // GitHub's Markdown (tables, task lists, ~~strike~~), with each fenced block coloured in its own language.
-      return markdown({ base: markdownLanguage, codeLanguages: fencedLanguage, extensions: { props: [styleTags({ ListMark: listMark })] } });
-    default:
-      return [];
-  }
-}
-
-/** A fenced block's language in Markdown, from its info string (```ts, ```rust, ```python …). */
-function fencedLanguage(info: string) {
-  const name = info.trim().toLowerCase().split(/[\s{]/)[0];
-  if (["py", "python", "python3"].includes(name)) return pythonLanguage;
-  if (["ts", "typescript", "mts", "cts"].includes(name)) return typescriptLanguage;
-  if (name === "tsx") return tsxLanguage;
-  if (name === "jsx") return jsxLanguage;
-  if (["js", "javascript", "mjs", "cjs", "json", "jsonc", "json5"].includes(name)) return javascriptLanguage;
-  if (["rs", "rust"].includes(name)) return rustLanguage;
-  if (name === "sql") return StandardSQL.language;
-  return null;
-}
-
 /* Breakpoints: a marker per line, set from React. */
-/** One block of lines one commit last changed, as the blame gutter shows it (src/ide/localrun/git/FileGit.tsx). */
-export interface BlameMark {
-  /** Its first line, from 1, and how many lines. */
-  start: number;
-  lines: number;
-  /** "Ama Owusu", "You", "Not committed". */
-  who: string;
-  /** "2 Nov", " 2026" and "09:14": the year is left out where the editor is narrow. */
-  when: { day: string; year: string; time: string } | string;
-  /** The hover: full date, how long ago, the message, the commit. */
-  tip: string;
-  tone?: "me" | "new";
-}
-
 class BlameMarker extends GutterMarker {
   constructor(readonly mark: BlameMark | null) {
     super();
@@ -186,7 +133,7 @@ class BlameMarker extends GutterMarker {
   }
 }
 /** Sizes the gutter before any line is drawn. */
-const blameSpacer = new BlameMarker({ start: 0, lines: 0, who: "Not committed", when: { day: "28 Nov", year: " 2026", time: "22:41" }, tip: "" });
+const blameSpacer = new BlameMarker({ start: 0, lines: 0, who: "Not committed", when: { day: "28 Nov", year: " 2026", time: "22:41" }, tip: "", note: "" });
 
 /** The blame gutter: a label where each block begins, nothing on the block's other lines. */
 function blameGutter(marks: BlameMark[] | null): Extension {
@@ -277,7 +224,8 @@ export interface EditorProps {
   debugLine?: number | null;
   /** Long lines wrap instead of scrolling sideways (good for reading). */
   wrap?: boolean;
-  /** Who last changed each block of lines, and when (git blame): a gutter beside the line numbers. */
+  /** Who last changed each block of lines, and when (git blame): a gutter beside the line numbers,
+   * and a note at the end of the cursor's line. */
   blame?: BlameMark[] | null;
   fontSize?: number;
   label?: string;
@@ -309,12 +257,14 @@ export default function Editor({
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, path });
-  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment() });
+  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment(), note: new Compartment(), suggest: new Compartment(), tips: new Compartment() });
   useEffect(() => {
     cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, path };
   });
 
   const lang = language ?? languageOf(path);
+  // Suggestions are for typing: a read-only editor has none.
+  const suggest = useEditorSettings().suggestions && !readOnly;
   const hasBreaks = !!onToggleBreakpoint;
 
   useEffect(() => {
@@ -325,6 +275,14 @@ export default function Editor({
       return true;
     };
     const c = comp.current;
+    // The list of suggestions is drawn on the page's body, not inside the editor, whose box would
+    // cut it off. The code font is set further in than the body, so the list is told it. A panel can
+    // move to a pop-out window (another document): the list follows on focus.
+    const tipsOn = (el: HTMLElement): Extension => [
+      tooltips({ parent: el.ownerDocument.body }),
+      EditorView.theme({ ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: getComputedStyle(el).getPropertyValue("--mono").trim() || "monospace" } }),
+    ];
+    let tipDoc = host.current.ownerDocument;
     const v = new EditorView({
       parent: host.current,
       state: EditorState.create({
@@ -354,6 +312,16 @@ export default function Editor({
           syntaxHighlighting(chalk),
           theme,
           c.lang.of(languageExtension(lang)),
+          c.suggest.of(suggestions(lang, suggest)),
+          c.tips.of(tipsOn(host.current)),
+          EditorView.domEventHandlers({
+            focus: (_e, v) => {
+              if (v.dom.ownerDocument === tipDoc) return;
+              tipDoc = v.dom.ownerDocument;
+              v.dispatch({ effects: c.tips.reconfigure(tipsOn(v.dom)) });
+            },
+          }),
+          c.note.of(lineNote(blame)),
           c.lock.of(readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
           c.wrap.of(wrap ? EditorView.lineWrapping : []),
           c.size.of(EditorView.theme({ "&": { fontSize: fontSize ? `calc(${fontSize}px * var(--fs, 1))` : "var(--text, 13px)" } })),
@@ -408,8 +376,11 @@ export default function Editor({
     view.current?.dispatch({ effects: comp.current.wrap.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }, [wrap]);
   useEffect(() => {
-    view.current?.dispatch({ effects: comp.current.blame.reconfigure(blameGutter(blame)) });
+    view.current?.dispatch({ effects: [comp.current.blame.reconfigure(blameGutter(blame)), comp.current.note.reconfigure(lineNote(blame))] });
   }, [blame]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: comp.current.suggest.reconfigure(suggestions(lang, suggest)) });
+  }, [lang, suggest]);
   useEffect(() => {
     view.current?.dispatch({ effects: comp.current.size.reconfigure(EditorView.theme({ "&": { fontSize: fontSize ? `calc(${fontSize}px * var(--fs, 1))` : "var(--text, 13px)" } })) });
   }, [fontSize]);

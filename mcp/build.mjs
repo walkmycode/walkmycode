@@ -2,7 +2,7 @@
 //   server.mjs             the MCP server with everything it imports (the voice
 //                          routes' modules too), bundled by esbuild
 //   web-tree-sitter.wasm   the parser's runtime (web-tree-sitter looks for it beside the bundle)
-//   wasm/                  the grammars: tsx, typescript, javascript, python, dart, php
+//   wasm/                  the grammars: every one in public/wasm (tsx, typescript, javascript, python, dart, php, rust, c, cpp, c_sharp, java, kotlin)
 //   ui/                    the page it serves: the `mcp` front-end target (npm run build:mcp-ui → out-mcp)
 //   plugin/                the Claude Code plugin (mcp/plugin) with this server inside, ready for
 //                          `claude --plugin-dir mcp/dist/plugin`

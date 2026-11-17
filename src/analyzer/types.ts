@@ -15,6 +15,11 @@ export type Lang =
   | "py"
   | "dart"
   | "rust"
+  | "c"
+  | "cpp"
+  | "csharp"
+  | "java"
+  | "kotlin"
   | "php"
   /** A Twig template (Symfony): read by its tags, no grammar. */
   | "twig"
@@ -293,7 +298,7 @@ export interface FileEntry {
   /** Top-level functions: name → [startLine, endLine, localCalls[]]. */
   fns?: Record<string, [number, number, string[]]>;
   service?: string;
-  configKind?: "compose" | "k8s" | "helm" | "dockerfile" | "envfile" | "gateway" | "openapi" | "asyncapi" | "proto" | "workspace" | "declared" | "wrangler" | "deploy";
+  configKind?: "compose" | "k8s" | "helm" | "dockerfile" | "envfile" | "gateway" | "openapi" | "asyncapi" | "proto" | "workspace" | "declared" | "wrangler" | "deploy" | "settings";
 }
 
 export interface RepoRef {

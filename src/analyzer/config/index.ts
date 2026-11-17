@@ -3,7 +3,8 @@
 // .proto, OpenAPI and AsyncAPI, workspaces, wrangler, the team's own catalog
 // files, and the public addresses deploy files give a service (CI health
 // checks, Caddy, Traefik labels, fly.toml, render.yaml, app.yaml, vercel.json,
-// CNAME). Config files are never tree-sitter parsed and never leave
+// CNAME), and an app's own settings files (Spring's application.properties and
+// application.yml, ASP.NET Core's appsettings.json). Config files are never tree-sitter parsed and never leave
 // the browser; values that could be secrets are redacted as they are read.
 // Rewrites and proxies are read apart (gateway.ts), since next.config.js
 // needs the JavaScript parser.
@@ -15,6 +16,7 @@ import { readEnvFile, type EnvLine } from "./envfile";
 import { readHelm, readK8s } from "./k8s";
 import { readAsyncApi, readOpenApi } from "./openapi";
 import { readProto } from "./proto";
+import { readSettings } from "./settings";
 import { readWorkspaces, readWrangler } from "./workspaces";
 import { readDeploy } from "./hosting";
 import { configKindOf, dirOf } from "./files";
@@ -109,6 +111,20 @@ export function extractConfig(files: SourceFile[]): { facts: ConfigFacts; warnin
     if (w.service) facts.services.push(w.service);
     facts.envValues.push(...w.envValues);
     facts.bindings.push(...w.bindings);
+  }
+
+  // ── an app's own settings: the base file before its profiles, so the base value is the one found first ──
+  for (const f of byKind("settings").sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path))) {
+    const r = readSettings(f.path, f.content);
+    // `users.url=${USERS_URL:http://users:8080}`: the environment's value when a file gives one, else the default.
+    const fromEnv = new Set<string>();
+    for (const ref of r.refs) {
+      const env = facts.envValues.find((v) => v.name === ref.ref && !v.likely) ?? facts.envValues.find((v) => v.name === ref.ref);
+      if (!env) continue;
+      fromEnv.add(ref.name);
+      facts.envValues.push({ ...env, name: ref.name });
+    }
+    facts.envValues.push(...r.values.filter((v) => !fromEnv.has(v.name)));
   }
 
   // ── API descriptions ──

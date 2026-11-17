@@ -77,6 +77,22 @@
 .sv-seg button:disabled { cursor: progress; }
 .sv-chips + .sv-seg { margin-top: calc(10px * var(--sp)); }
 .sv-check { display: flex; align-items: center; gap: calc(8px * var(--sp)); margin-top: calc(14px * var(--sp)); color: var(--ui-text); font: 500 var(--text) var(--sans); cursor: pointer; }
+/* A list of switches (Settings → Editor): what it is and what it does on the left, the switch on the right. */
+.sv-switches { list-style: none; margin: 0; padding: 0; }
+.sv-switches li { display: flex; align-items: center; justify-content: space-between; gap: calc(20px * var(--sp)); padding: calc(14px * var(--sp)) 0; border-top: 1px solid var(--hair); }
+.sv-switches li:first-child { padding-top: 0; border-top: 0; }
+.sv-switches li:last-child { padding-bottom: 0; }
+.sv-switches li > div { min-width: 0; }
+.sv-switches b { color: var(--ui-text); font: 600 var(--text)/1.4 var(--sans); }
+.sv-switches .sv-hint { margin-top: calc(4px * var(--sp)); max-width: 64ch; }
+.sv-switch { position: relative; flex: none; width: max(56px, calc(72px * var(--ctl))); height: max(22px, calc(28px * var(--ctl))); padding: 0; border: 1px solid var(--hair-2); border-radius: 0; background: var(--out); color: var(--ui-dim); font: 600 var(--text)/1 var(--sans); cursor: pointer; transition: background var(--t-fade), border-color var(--t-fade), color var(--t-fade); }
+.sv-switch::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(40% - 2px); background: var(--ui-raise); transition: left var(--t-fade), background var(--t-fade); }
+.sv-switch span { position: absolute; top: 0; bottom: 0; right: 0; width: 60%; display: grid; place-items: center; }
+.sv-switch[aria-checked="true"] { border-color: var(--yellow); color: var(--yellow); }
+.sv-switch[aria-checked="true"]::before { left: 60%; background: var(--yellow); }
+.sv-switch[aria-checked="true"] span { right: auto; left: 0; }
+.sv-switch:hover { color: var(--ui-text); }
+.sv-switch:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
 .sv-check input { width: calc(16px * var(--ctl)); height: calc(16px * var(--ctl)); accent-color: var(--yellow); }
 .sv-status { margin-left: calc(6px * var(--sp)); color: var(--green); font-size: var(--text); animation: fade-in var(--t-fade) ease-out both; }
 .sv-status.bad { color: var(--pink); }
@@ -176,6 +192,11 @@
   .setv-pane { padding: calc(22px * var(--sp)) calc(16px * var(--sp)) calc(70px * var(--sp)); }
   .setv-head h2 { font-size: var(--text); font-weight: 650; }
   .sv-box { padding: calc(16px * var(--sp)); }
+  /* Keys and what they do stay side by side in a narrow tab: a narrower key column, not one under the other. */
+  .sv-keys-dl div { grid-template-columns: minmax(96px, auto) minmax(0, 1fr); gap: calc(8px * var(--sp)); }
+}
+/* Only where even that doesn't fit does the meaning go under its key. */
+@container setv (max-width: 420px) {
   .sv-keys-dl div { grid-template-columns: minmax(0, 1fr); gap: calc(2px * var(--sp)); }
 }
 

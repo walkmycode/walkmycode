@@ -69,6 +69,36 @@ export interface PhpFacts {
   wires?: { event: string; method: string; line: number }[];
 }
 
+/** Java and C#: the package or namespace a file is in, the types it declares and the types it names.
+ * A type is found by its full name, not by a path: build.ts (resolveTyped) looks a name up among the
+ * file's imports, then in its own namespace and the ones it opens (`import a.b.*`, `using A.B;`). */
+export interface TypedFacts {
+  /** "shop.api" (Java's package), "Shop.Api" (C#'s namespace), "" when the file names none. */
+  namespace: string;
+  /** The types declared at the top of the file. */
+  types: string[];
+  /** Namespaces whose types the file can name without more: `import a.b.*`, `using A.B;`. */
+  opens: { ns: string; line: number }[];
+  /** The type names the code uses, each with the first line it is used on. */
+  refs: { name: string; line: number }[];
+}
+
+/** JPA (Java) and EF Core (C#): classes that are tables, and the code that reads and writes them.
+ * linkEntities (extract/entities.ts) settles them across files into tables, columns and reads/writes. */
+export interface EntityFacts {
+  /** A class that is a table: an `@Entity` with its table's name, or the T of a `DbSet<T> Orders`
+   * (the table is then the DbSet's name, and `set` is true). */
+  entities: { cls: string; table: string; line: number; set?: boolean }[];
+  /** A table's name written apart from its DbSet: `[Table("orders")]` on the class, or
+   * `modelBuilder.Entity<Order>().ToTable("orders")`. It wins over the DbSet's name. */
+  names?: { cls: string; table: string; line: number }[];
+  /** Code that reads or writes a table, named by the entity's class (a Spring Data repository of
+   * Order) or by the DbSet (`db.Orders.Add(o)`). */
+  uses: { cls?: string; set?: string; op: "read" | "write"; line: number }[];
+  /** The fields of each class in the file: the columns of those that turn out to be tables. */
+  fields: Record<string, { line: number; columns: { name: string; type?: string }[] }>;
+}
+
 export interface IncludeFact {
   /** `audio.router`, `router`, `usersRouter` — resolved later. */
   target: string;
@@ -213,6 +243,21 @@ export interface FileFacts {
   columns?: ColumnsFact[];
   /** PHP: classes, model uses and views; linkPhp (extract/php.ts) turns them into tables and links. */
   php?: PhpFacts;
+  /** Java, C#: the file's package or namespace, its types and the types it names. */
+  typed?: TypedFacts;
+  /** Java (JPA), C# (EF Core): entities and their uses. */
+  entity?: EntityFacts;
+  /** C, C++: the classes and structs a file declares. A file that includes it reaches a function
+   * through them (`Cart::count()`); its other exports are functions called by name. */
+  scopes?: string[];
+  /** C++: the fields of each class in the file with the class each holds (`Cart cart;` in Checkout → { Checkout: { cart: "Cart" } }). */
+  members?: Record<string, Record<string, string>>;
+  /** C++: each class the file declares, with the classes it extends and the methods its body names
+   * (declared or written there). A method a class does not name is looked for in its bases. */
+  classes?: Record<string, { bases: string[]; methods: string[] }>;
+  /** C++: the namespaces a file declares. A name written with one in front (`shop::total()`) is the
+   * same name without it once the file's includes are known (build.ts). */
+  spaces?: string[];
 }
 
 export function emptyFacts(lines: number): FileFacts {

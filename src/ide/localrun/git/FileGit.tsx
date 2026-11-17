@@ -1,76 +1,62 @@
 "use client";
-// Who changed this file, and when (mockup: docs/design/git-history.html). In the
-// Code panel's header: "Blame" puts a gutter beside the line numbers with the
-// author and the exact date and time of the last change to each block of lines
-// (hover one for the commit); "History" lists the file's own commits. Both come
+// Who changed this file, and when (mockup: docs/design/git-history.html). Line
+// history is on by default (Settings → Editor, src/lib/editorSettings.ts): a
+// gutter beside the line numbers with the author and the exact date and time of
+// the last change to each block of lines (hover one for the commit), and a faint
+// note at the end of the line the cursor is on. In the Code panel's header,
+// "Blame" switches it for this file, for this visit; "History" lists the file's
+// own commits. By default it is quiet: it never asks to be allowed and says
+// nothing when git has no answer; pressing Blame asks and explains. Both come
 // from the user's own git (src/lib/localrun/git.ts: blame, fileLog), so only
 // where WalkMyCode can reach the project's folder on this computer: the desktop
 // app, which knows the folder it picked, or the full app once Source Control or
 // Set up was told where it is. Never in WalkMyCode Lite.
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { BlameMark } from "@/ide/Editor";
-import type { GitBlameHunk, GitFileCommit } from "@/lib/localrun/git";
+//
+// In the desktop app, for the folder it opened, both are read-only git with no
+// "run code on this computer" needed (POST /api/git/read, ./readGit.ts): they
+// only read the repo. Everywhere else they go through the local-run socket and
+// its consent, as before.
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { BlameMark } from "@/ide/lineHistory";
+import { useEditorSettings } from "@/ide/useEditorSettings";
+import { useDesktop } from "@/lib/desktop";
+import { editorSettings, onEditorSettings } from "@/lib/editorSettings";
+import type { GitFileCommit } from "@/lib/localrun/git";
 import type { GitOp } from "@/lib/localrun/protocol";
 import { useWorkspace } from "@/lib/store";
 import { toast } from "@/shell/Toast";
 import { gitOp, LOCAL_BUILD, setupRoot, type GitAnswer } from "../client";
 import { useConsent } from "../Consent";
 import { useLocalStatus } from "../OutputArea";
+import { ago, blameMarks, LONG, shortDate } from "./blameMarks";
+import { readGit } from "./readGit";
 import "./git.css";
 
-const DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const LONG = new Intl.DateTimeFormat("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const AGO = new Intl.RelativeTimeFormat("en-GB", { numeric: "auto" });
+export { shortDate };
 
-/** "2 Nov 2026, 09:14" in this computer's time zone. */
-export const shortDate = (d: Date) => DAY.format(d);
-
-const PARTS = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-/** The gutter's date in pieces: "2 Nov", " 2026", "09:14". */
-function dateParts(d: Date): { day: string; year: string; time: string } {
-  const p = Object.fromEntries(PARTS.formatToParts(d).map((x) => [x.type, x.value]));
-  return { day: `${p.day} ${p.month}`, year: ` ${p.year}`, time: `${p.hour}:${p.minute}` };
+/** Files where Blame was pressed, for this visit (true on, false off): a panel rebuilt by a layout
+ * change keeps it. A file not here follows Settings → Editor. */
+const picked = new Map<string, boolean>();
+const pickedListeners = new Set<() => void>();
+const onPicked = (f: () => void) => {
+  pickedListeners.add(f);
+  return () => {
+    pickedListeners.delete(f);
+  };
+};
+function pick(path: string, on: boolean) {
+  picked.set(path, on);
+  pickedListeners.forEach((f) => f());
 }
-
-/** "two weeks ago". */
-export function ago(d: Date, now = Date.now()): string {
-  const s = (d.getTime() - now) / 1000;
-  const steps: [number, Intl.RelativeTimeFormatUnit][] = [
-    [60, "second"],
-    [3600, "minute"],
-    [86_400, "hour"],
-    [604_800, "day"],
-    [2_629_800, "week"],
-    [31_557_600, "month"],
-  ];
-  for (let i = 0; i < steps.length; i++) {
-    const [limit, unit] = steps[i];
-    if (Math.abs(s) < limit) return AGO.format(Math.round(s / (i ? steps[i - 1][0] : 1)), unit);
-  }
-  return AGO.format(Math.round(s / 31_557_600), "year");
-}
-
-/** git's blocks of lines as the gutter shows them: the user's own commits as "You", lines not committed in green. */
-export function blameMarks(hunks: GitBlameHunk[], me: string, now = Date.now()): BlameMark[] {
-  const mine = me.trim().toLowerCase();
-  return hunks.map((h) => {
-    const range = h.lines > 1 ? `lines ${h.start}–${h.start + h.lines - 1}` : `line ${h.start}`;
-    if (!h.hash) return { start: h.start, lines: h.lines, who: "Not committed", when: "your change", tip: `Changed since the last commit (${range}).`, tone: "new" };
-    const d = new Date(h.time * 1000);
-    const isMe = !!mine && h.email.toLowerCase() === mine;
-    return {
-      start: h.start,
-      lines: h.lines,
-      who: isMe ? "You" : h.author,
-      when: dateParts(d),
-      tip: `${h.author}${isMe ? " (you)" : ""}\n${LONG.format(d)} · ${ago(d, now)}\n${h.summary}\n${h.hash} · ${range}`,
-      ...(isMe ? { tone: "me" as const } : {}),
-    };
-  });
-}
-
-/** Files with Blame switched on, for this visit: a panel rebuilt by a layout change keeps it. */
-const blamed = new Set<string>();
+// The switch in Settings is the newer wish: when it changes, every open file follows it again.
+let wasDefault = typeof window === "undefined" ? true : editorSettings().lineHistory;
+onEditorSettings(() => {
+  const d = editorSettings().lineHistory;
+  if (d === wasDefault) return;
+  wasDefault = d;
+  picked.clear();
+  pickedListeners.forEach((f) => f());
+});
 
 /** The folder the desktop app picked for this workspace, when it has one (src/lib/localFolder.ts, readPath). */
 function pickedFolder(ws: ReturnType<typeof useWorkspace>): string | null {
@@ -91,65 +77,89 @@ export function useFileGit(path: string, content: string | undefined): { tools: 
   const { ask, dialog } = useConsent();
   const available = LOCAL_BUILD && !!local?.available;
 
-  const [blameOn, setBlameOnState] = useState(() => blamed.has(path));
-  const setBlameOn = useCallback(
-    (on: boolean) => {
-      if (on) blamed.add(path);
-      else blamed.delete(path);
-      setBlameOnState(on);
-    },
-    [path],
+  // The desktop app reads line history straight from the folder it opened: no consent needed.
+  const desktop = useDesktop();
+  const folder = desktop ? pickedFolder(ws) : null;
+  const allowed = !!local?.allowed || !!folder;
+  // On because Settings says so, or because Blame was pressed here (then it may ask and explain).
+  const settings = useEditorSettings();
+  const pickedHere = useSyncExternalStore(
+    onPicked,
+    () => picked.get(path),
+    () => undefined,
   );
+  const explicit = pickedHere === true;
+  const want = pickedHere ?? settings.lineHistory;
   const [blame, setBlame] = useState<BlameMark[] | null>(null);
+  /** Asked for by default and git had no answer: Blame shows as off, and pressing it says why. */
+  const [missed, setMissed] = useState(false);
   const [histOpen, setHistOpen] = useState(false);
   const [history, setHistory] = useState<GitFileCommit[] | null>(null);
   const [busy, setBusy] = useState<GitOp | null>(null);
   const box = useRef<HTMLSpanElement>(null);
 
-  /** One op on this file; null (and a toast saying why) when it can't be had. */
+  /** One op on this file; null (and a toast saying why, unless `quiet`) when it can't be had. */
   const call = useCallback(
-    async (op: "blame" | "file-log"): Promise<GitAnswer | null> => {
-      if (!local?.allowed && !(await ask())) return null;
+    async (op: "blame" | "file-log", quiet = false): Promise<Pick<GitAnswer, "ok" | "blame" | "me" | "history" | "output"> | null> => {
+      if (folder) {
+        // Desktop: read-only, from the folder the app opened; never asks to run code.
+        try {
+          const r = await readGit(op, folder, path);
+          if (!r.ok) {
+            if (!quiet && r.output) toast(r.output);
+            return null;
+          }
+          return r;
+        } catch (e) {
+          if (!quiet) toast((e as Error).message);
+          return null;
+        }
+      }
+      if (!local?.allowed && (quiet || !(await ask()))) return null;
       try {
         let r = await gitOp({ op, path, ...(workspace ? { workspace } : {}) });
         // The desktop app knows the folder it picked: tell the server once, then ask again.
         const folder = pickedFolder(ws);
         if (!r.located && workspace && folder && (await setupRoot(workspace, folder)).ok) r = await gitOp({ op, path, workspace });
         if (!r.located) {
-          toast("WalkMyCode doesn't know where this project is on this computer yet: open Source Control in the top bar and give it the project's folder.");
+          if (!quiet) toast("WalkMyCode doesn't know where this project is on this computer yet: open Source Control in the top bar and give it the project's folder.");
           return null;
         }
         if (!r.ok) {
-          toast(r.output || "git couldn't do that.");
+          if (!quiet) toast(r.output || "git couldn't do that.");
           return null;
         }
         return r;
       } catch (e) {
-        toast((e as Error).message);
+        if (!quiet) toast((e as Error).message);
         return null;
       }
     },
-    [ask, local?.allowed, path, workspace, ws],
+    [ask, folder, local?.allowed, path, workspace, ws],
   );
 
-  // Blame on, and again when the file is saved or mapped again.
+  // Line history on, and again when the file is saved or mapped again. By default only once
+  // running on this computer is allowed, and quietly; pressed, it asks and says what went wrong.
   useEffect(() => {
-    if (!blameOn) return;
+    if (!available || !want || (!explicit && !allowed)) return;
     let gone = false;
-    void call("blame").then((r) => {
+    void call("blame", !explicit).then((r) => {
       setBusy(null);
       if (gone) return;
-      if (r?.blame) setBlame(blameMarks(r.blame, r.me ?? ""));
-      else {
+      if (r?.blame) {
+        setBlame(blameMarks(r.blame, r.me ?? ""));
+        setMissed(false);
+      } else {
         setBlame(null);
-        setBlameOn(false);
+        if (explicit) pick(path, false);
+        else setMissed(true);
       }
     });
     return () => {
       gone = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the file's text and the switch
-  }, [content, blameOn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the file's text, the switch, and being allowed
+  }, [content, want, explicit, available, allowed]);
 
   // History closes on Escape or a click elsewhere.
   useEffect(() => {
@@ -167,13 +177,16 @@ export function useFileGit(path: string, content: string | undefined): { tools: 
 
   if (!available) return { tools: null, blame: null };
 
+  // Shown as on only when it can be: wanted, allowed (or asked for here), and git had an answer.
+  const blameOn = want && !missed && (explicit || allowed);
   const toggleBlame = () => {
     if (blameOn) {
-      setBlameOn(false);
+      pick(path, false);
       setBlame(null);
     } else {
       setBusy("blame");
-      setBlameOn(true);
+      setMissed(false);
+      pick(path, true);
     }
   };
   const toggleHistory = async () => {

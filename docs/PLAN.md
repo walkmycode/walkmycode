@@ -148,10 +148,12 @@ as a fragment plus `files.json`, ready for the artifact publisher (about 180 fil
 walkthroughs on other people's repos at no cost to the owner, (3) full-app voice, then (4) hosted accounts + credits.
 
 ## How the map is built (the parser decides the links, the AI only labels them)
-1. **Parse** every source file with tree-sitter (WASM grammars for TS/JS/TSX, Python, Dart, PHP, Rust) to get imports, exports,
+1. **Parse** every source file with tree-sitter (WASM grammars for TS/JS/TSX, Python, Dart, PHP, Rust, Java, Kotlin, C#, C, C++) to get imports, exports,
    functions, JSX elements and Flutter widgets, and call sites. The Dart grammar is built from source and kept in
    `vendor/tree-sitter-dart` (its README says where it came from); PHP's is npm's `tree-sitter-php` (the full grammar,
-   so Blade views and HTML around `<?php` parse); Rust's is npm's `tree-sitter-rust` 0.24, which web-tree-sitter 0.27 loads.
+   so Blade views and HTML around `<?php` parse); Rust's is npm's `tree-sitter-rust` 0.24, which web-tree-sitter 0.27 loads,
+   as do npm's `tree-sitter-java`, `tree-sitter-c-sharp`, `tree-sitter-c` and `tree-sitter-cpp` (a `.h` is parsed as C
+   unless it holds C++). Kotlin's is `@tree-sitter-grammars/tree-sitter-kotlin` (npm's `tree-sitter-kotlin` ships no wasm).
 2. **Framework extractors** turn syntax into architecture:
    - *Routes*: Next.js `app/**/route.ts` + `pages/api`, Express `app.get/post`, FastAPI `@router.get(...)` +
      `include_router` prefixes.
@@ -232,7 +234,8 @@ travels there live.
   the app only). Measured: Enter → the camera's first move 41 ms (was 298 ms), docs/PERFORMANCE.md.
 
 ## More languages for the map (owner, 1 Oct)
-Today the map reads JavaScript/TypeScript, Python and Dart/Flutter (plus SQL, Prisma and config files). Next, in this
+Today the map reads JavaScript/TypeScript, Python, Dart/Flutter, PHP, Rust, Java, Kotlin, C#, C and C++ (plus SQL, Prisma and
+config files). Next, in this
 order, each one build: a tree-sitter grammar (as Dart's, built for web-tree-sitter 0.27 if npm has none that loads), an
 extractor, and its popular frameworks' routes, calls and data:
 1. **Go**: net/http, chi, gin, echo, fiber; database/sql, sqlx, gorm; net/http clients.
@@ -243,7 +246,44 @@ extractor, and its popular frameworks' routes, calls and data:
    files, each route calling the module its handler calls); actix-web and Rocket `#[get("/x")]` routes; SQL in strings
    (sqlx, rusqlite, diesel's sql_query) as tables; reqwest calls and env reads. A crate's root (src/main.rs, lib.rs)
    always has a card. Not yet: Rocket's `mount` prefix, actix `web::scope`, diesel's `table!` schema, sea-orm entities.
-3. **Java/Kotlin**: Spring (MVC, WebFlux), Ktor; JPA/Hibernate, JDBC; RestTemplate, WebClient, OkHttp.
+3. **Java/Kotlin**: Spring (MVC, WebFlux), Ktor; JPA/Hibernate, JDBC; RestTemplate, WebClient, OkHttp. Java is in
+   since 16 Nov (extract/java.ts): a class is found by its full name (package + class), so imports, `import a.b.*`
+   and classes of the same package are arrows; methods are `Class.method`, and a call on a field, parameter or local
+   with a declared type is followed to that type's file; Spring MVC routes (`@GetMapping` under the class's
+   `@RequestMapping`) and JAX-RS (`@Path`, `@GET`), each calling what its method calls; JPA `@Entity`/`@Table` as tables
+   with their columns, a Spring Data repository reading and writing its entity's table, JPQL by entity name;
+   RestTemplate, WebClient (the verb before `.uri(…)`, the client's one base in front of a path), OkHttp and
+   java.net.http calls, `System.getenv`, SQL in strings. Settings: `@Value("${users.url}")` on a field or a
+   constructor's parameter is read as the setting `users.url`, and `application.properties` / `application.yml`
+   (config/settings.ts) give it its value, a `${USERS_URL:default}` taking the environment's value when a compose or
+   env file has one; a profile's file (`application-dev.yml`) is a guess beside the base file. Lombok needs nothing:
+   fields are read where they are written. Not yet: WebFlux's router functions, `@ConfigurationProperties` classes,
+   Feign clients, Maven/Gradle modules as packages.
+   **Kotlin** is in since 16 Nov too (extract/kotlin.ts), in one world of names with Java (each finds the other's
+   classes): classes, objects, companions and functions declared on their own (found by import or from the same
+   package), calls followed through declared types and `Type(…)`, Spring MVC routes, Ktor routes (`get("/x") { }`
+   under `routing`, `route("/api")` or a `fun Route.x()`), JPA entities (constructor and body properties as columns)
+   and Spring Data repositories, RestTemplate, WebClient, OkHttp and Ktor's client with string templates as URLs,
+   `@Value` settings. Gradle's `.gradle.kts` scripts are listed, not drawn. Not yet: extension functions as calls,
+   Exposed's tables, a type only the compiler knows (`val x = make()`), Ktor's typed `resources`.
+3b. **C#** (owner, 16 Nov; extract/csharp.ts): a type is found by namespace (`using`, the file's own and the ones
+   around it); ASP.NET Core controllers (`[HttpGet("{id}")]` under `[Route("api/[controller]")]`) and minimal APIs
+   (`app.MapGet`, `MapGroup` prefixes); EF Core `DbSet<T>` as tables with the entity's properties as columns, and
+   `db.Orders…` chains as reads or writes, the table named by `[Table("x")]` or `.ToTable("x")` and a column by
+   `[Column("y")]` when the code names them; HttpClient calls and Refit interfaces (`[Get("/users/{id}")]`),
+   `Environment.GetEnvironmentVariable`, SQL in strings. Settings: `configuration["Users:Url"]`, `GetValue`,
+   `GetSection(…)[…]` and `GetConnectionString` are read by key, and `appsettings.json` (config/settings.ts) gives
+   the value; `appsettings.Development.json` is a guess beside it. Not yet: the options pattern (`IOptions<T>`),
+   a Refit client's base address, Razor pages and views, .csproj projects of a solution as packages.
+3c. **C and C++** (owner, 16 Nov; extract/c.ts): `#include` as arrows (from the file's folder, then the package's
+   include folders), functions and methods (`Cart::count`), structs, classes and namespaces; a call to a function
+   a header declares is followed to the one file that includes that header and defines it; `getenv`, SQL in strings,
+   libcurl's URL. In C++ a method called on a value (`cart.add()`, `p->total()`) is followed by the declared class
+   of the value (a parameter, a local, a smart pointer, a field of the class) to the one file that defines that
+   method; a method the class does not name itself is followed to the nearest base class that names it (two bases
+   at the same distance is no answer). No framework facts. Not yet: macros that define functions, CMake targets as
+   packages, a value whose class only the compiler knows (`auto x = make()`), template and CRTP bases, an override
+   reached through a base pointer (only the static type is followed).
 4. **PHP**: Laravel, Symfony; Eloquent, Doctrine; Guzzle. Laravel is in (extract/php.ts): routes/web.php and api.php
    (closures, controller methods, resources, groups), Eloquent models and migrations as tables (with their columns),
    Blade and Inertia pages, Blade forms and links to routes (by route name or path, @method), Livewire components

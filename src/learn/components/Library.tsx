@@ -335,7 +335,13 @@ export default function Library({ lessons, profile, canWrite, store, cards, onRe
                           {l.feedback ? (
                             <span className="lh-score" title="Your explain-back mark">{l.feedback.score}/10</span>
                           ) : (
-                            <span className="lh-ring" style={{ "--p": Math.round((Math.min(l.seen.length, l.boards.length) / Math.max(1, l.boards.length)) * 100) } as CSSProperties} title={`${Math.min(l.seen.length, l.boards.length)} of ${l.boards.length} boards seen`} />
+                            <span className="lh-ring" style={{ "--p": Math.round((Math.min(l.seen.length, l.boards.length) / Math.max(1, l.boards.length)) * 100) } as CSSProperties} title={`${Math.min(l.seen.length, l.boards.length)} of ${l.boards.length} boards seen`}>
+                              {/* The same ring drawn with strokes, for the flat dark theme, which has no gradients (src/app/dark.css). */}
+                              <svg className="lh-arc" viewBox="0 0 26 26" aria-hidden>
+                                <circle cx="13" cy="13" r="11" />
+                                <circle cx="13" cy="13" r="11" pathLength={100} strokeDasharray={`${Math.round((Math.min(l.seen.length, l.boards.length) / Math.max(1, l.boards.length)) * 100)} 100`} />
+                              </svg>
+                            </span>
                           )}
                         </button>
                         {canWrite && manage === name && (confirm === l.id ? (

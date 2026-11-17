@@ -1,6 +1,6 @@
 "use client";
 // Settings (docs/design/home-redesign.html, screen 3): a side menu (AI model,
-// Voice, Privacy, Motion & look, About) and the pane it opens, filling the
+// Voice, Privacy, Editor, Motion & look, About) and the pane it opens, filling the
 // width right of the menu. Below about 760 px of width the menu becomes a strip
 // of tabs over the pane. Two places use it: the home page, full screen under
 // the top bar ("page"), and the dock's Settings tab, more compact ("dock").
@@ -24,6 +24,7 @@ import { loadVoiceView, VOICE_SAVED } from "@/lib/voice/view";
 import AboutPane from "./AboutPane";
 import AiPane from "./AiPane";
 import ComputerPane from "./ComputerPane";
+import EditorPane from "./EditorPane";
 import MotionPane from "./MotionPane";
 import PrivacyPane from "./PrivacyPane";
 
@@ -40,6 +41,7 @@ const LEADS: Record<PaneId, { claude?: string; providers: string }> = {
   voice: { providers: "Who reads tours aloud, and who answers when you talk." },
   computer: { providers: "Run code with the toolchains installed here, and open a terminal: off until you allow it." },
   privacy: { providers: "The map is drawn on this computer by a parser, not an AI. Only the lines a question needs leave it — to the provider you chose.", claude: "The map is drawn in this browser by a parser, not an AI. Only the lines a question needs leave it — to Claude, inside Claude." },
+  editor: { providers: "What the code editor does for you as you read and type. Each switch works at once, in every open file." },
   motion: { providers: "How much things move, and the map's shortcuts." },
   about: { providers: "Which WalkMyCode this is, its licence, and where its docs are." },
 };
@@ -156,6 +158,7 @@ export default function SettingsView({ variant, pane, onPane, answers = answersF
             )}
             {here.id === "privacy" && <PrivacyPane claude={claude} />}
             {here.id === "computer" && <ComputerPane />}
+            {here.id === "editor" && <EditorPane />}
             {here.id === "motion" && <MotionPane />}
             {here.id === "about" && <AboutPane target={TARGET} />}
           </div>

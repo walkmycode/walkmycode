@@ -6,6 +6,7 @@ import "dockview-react/dist/styles/dockview.css";
 import "./globals.css";
 import "./home.css";
 import "./settings.css";
+import "./dark.css";
 import LanternLight from "@/components/LanternLight";
 import { MOTION_BOOT } from "@/lib/motion";
 import { LOOK_BOOT } from "@/lib/look";

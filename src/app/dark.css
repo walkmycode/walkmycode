@@ -1,0 +1,393 @@
+/* The dark theme, flat (mockup: docs/design/flat-dark.html; the owner, 17 Nov 2026: "dark means dark,
+   no place should look darker than the other"). Its tokens are in globals.css (:root[data-theme="dark"]):
+   every surface is one colour, #141414. This file is the rest of it, a dark answer for each rule in
+   the other stylesheets that paints something the tokens cannot flatten:
+
+   - a gradient (a glow, a sheen, a grid, a fade, gradient text, a striped bar) becomes none or one colour;
+   - a shadow with blur, a text shadow or a drop shadow goes; an edge drawn with a shadow (inset, or a
+     ring with no blur) stays, since it is a border;
+   - a fill that marked a state (hover, selected, pressed) or tinted a badge goes, and the state is shown
+     by an edge or by its text: selected is yellow (a 2px edge and yellow text), hover is a hairline box or
+     brighter text, a badge is an outline in its own colour; a yellow button is a yellow outline;
+   - what dims the page behind a sheet is the same dark, see-through, so nothing behind it gets darker.
+
+   What keeps its colour: small marks that carry meaning (dots, lane edges, count badges, progress fills,
+   step marks), the window's close button on hover, and pictures.
+
+   Each rule is its source's selector with :root[data-theme="dark"] in front, so it wins by being more
+   specific, wherever its stylesheet loads. The Warm theme has no rule here and looks as it did.
+   tests/flatDark.test.ts fails when a gradient or a blurred shadow is added anywhere without its answer here. */
+
+/* ── src/app/globals.css ── */
+:root[data-theme="dark"] body { background: var(--wall); }
+:root[data-theme="dark"] .ctl.primary { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .stack-chip { background: none; }
+:root[data-theme="dark"] .stack-chip:first-child { background: none; }
+:root[data-theme="dark"] .proj-chip .stack-chip { background: none; }
+:root[data-theme="dark"] .proj-card { box-shadow: none; }
+:root[data-theme="dark"] .winctl button:active { box-shadow: inset 0 0 0 1px var(--hair-3); }
+@media (min-width: 1025px) {
+  :root[data-theme="dark"] .top-actions .ctl:hover:not(:disabled), :root[data-theme="dark"] .top-actions .ctl[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--hair-3); }
+}
+:root[data-theme="dark"] .top .brand-dot { box-shadow: none; }
+@media (max-width: 1024px) {
+  :root[data-theme="dark"] .top-actions { box-shadow: none; }
+}
+:root[data-theme="dark"] .frame { background: none; box-shadow: none; padding: 0; border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .board { background: var(--board); box-shadow: none; }
+:root[data-theme="dark"] .board::after { display: none; background: none; box-shadow: none; }
+:root[data-theme="dark"] .board code { background: none; }
+:root[data-theme="dark"] .board .diagram.failed pre { background: none; }
+:root[data-theme="dark"] .board pre.chalk-code { background: none; }
+:root[data-theme="dark"] .rooms a.on { box-shadow: inset 0 -2px 0 var(--yellow), inset 0 0 0 1px var(--hair-2); color: var(--yellow); }
+:root[data-theme="dark"] .tool-btn.on { background: none; }
+:root[data-theme="dark"] .lantern [data-location="floating"] > .dv-tabs-and-actions-container::before, :root[data-theme="dark"] .lantern [data-location="popout"] > .dv-tabs-and-actions-container::before { box-shadow: none; }
+:root[data-theme="dark"] .toast { box-shadow: none; }
+:root[data-theme="dark"] .menu { box-shadow: none; }
+:root[data-theme="dark"] .menu button:hover, :root[data-theme="dark"] .menu button:focus-visible { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .shortcuts kbd { background: none; }
+:root[data-theme="dark"] div.node { box-shadow: none; }
+:root[data-theme="dark"] .node.lit { box-shadow: 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .trace-dot { filter: none; }
+:root[data-theme="dark"] .legend { background: var(--ui); }
+:root[data-theme="dark"] .nbadge { box-shadow: none; }
+:root[data-theme="dark"] .node.portal { background: none; }
+:root[data-theme="dark"] .svc { box-shadow: none; }
+:root[data-theme="dark"] .svc.app { background: var(--dg-card); box-shadow: none; border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .svc.lit { box-shadow: 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .groupbox { background: none; }
+:root[data-theme="dark"] .crumb button:hover { background: none; }
+:root[data-theme="dark"] .edge { background: none; }
+:root[data-theme="dark"] .edge:hover { background: none; }
+:root[data-theme="dark"] .pointrow { background: none; }
+:root[data-theme="dark"] .palette-wrap { background: rgba(20,20,20,.72); }
+:root[data-theme="dark"] .palette { box-shadow: none; }
+:root[data-theme="dark"] .goto-row .mic.on .talk-dot { box-shadow: none; }
+:root[data-theme="dark"] .flybar { background: var(--ui); box-shadow: none; }
+:root[data-theme="dark"] .ask-pic button { background: var(--ui); }
+:root[data-theme="dark"] .lecture.hearing .talk-dot { box-shadow: none; }
+:root[data-theme="dark"] .lecture.speaking .talk-dot { box-shadow: none; }
+:root[data-theme="dark"] .talk-rec i { box-shadow: none; }
+:root[data-theme="dark"] .talk-btn.end { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .tree-tools button:hover:not(:disabled) { background: none; }
+:root[data-theme="dark"] .tree button[role="treeitem"]:hover { background: none; }
+:root[data-theme="dark"] .tree .file.debugging { background: none; box-shadow: inset 2px 0 0 var(--yellow); }
+:root[data-theme="dark"] .tree .dbg-ptr { background: none; }
+:root[data-theme="dark"] .files-sync-go:hover:not(:disabled) { background: none; }
+:root[data-theme="dark"] .tree-clear:hover { background: none; }
+:root[data-theme="dark"] .tree-chips button[aria-pressed="true"] { background: none; }
+:root[data-theme="dark"] .tree-hit:hover { background: none; box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .tree-hit.sel { background: none; box-shadow: inset 2px 0 0 rgb(243,215,122); }
+:root[data-theme="dark"] .progressbar .fill::after { display: none; background: none; }
+:root[data-theme="dark"] .settings h4 i { background: none; box-shadow: inset 0 0 0 1px rgba(243,215,122,.45); }
+:root[data-theme="dark"] .settings .banner { background: none; }
+:root[data-theme="dark"] .chip { background: none; }
+:root[data-theme="dark"] .chip.on { background: none; color: var(--yellow); border-color: var(--yellow); box-shadow: none; }
+:root[data-theme="dark"] .chips.seg .chip.on { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .keyrow code { background: none; }
+:root[data-theme="dark"] .edge-pill { box-shadow: none; }
+:root[data-theme="dark"] .wipe-para { -webkit-mask-image: none; mask-image: none; }
+:root[data-theme="dark"] .guide .board .scribing::after { box-shadow: none; }
+:root[data-theme="dark"] .tree .file.beacon::before { display: none; background: none; }
+:root[data-theme="dark"] .top .brand-full::after { box-shadow: none; }
+:root[data-theme="dark"] .progress button.on { box-shadow: none; }
+:root[data-theme="dark"] .map-wait .glow { box-shadow: none; }
+:root[data-theme="dark"] .code-missing { background: none; }
+:root[data-theme="dark"] .board .made-build { background: none; }
+:root[data-theme="dark"] .board .made-asks .ctl { background: none; }
+:root[data-theme="dark"] .dg { background: none; }
+:root[data-theme="dark"] .dg-head { background: none; }
+:root[data-theme="dark"] .dg-tools .hdr-act:hover { background: none; }
+:root[data-theme="dark"] .dg-view { background: none; }
+:root[data-theme="dark"] .dg-dialog { background: var(--board); box-shadow: none; border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .dg-dialog::backdrop { background: rgba(20,20,20,.72); }
+:root[data-theme="dark"] .map-empty { box-shadow: none; }
+
+/* ── src/app/home.css ── */
+:root[data-theme="dark"] .ai-pill.ready .ai-led { box-shadow: none; }
+:root[data-theme="dark"] .ai-pill.setup { background: none; }
+:root[data-theme="dark"] .ai-pill.setup:hover { background: none; }
+:root[data-theme="dark"] .ai-pill.setup .ai-led { box-shadow: none; }
+:root[data-theme="dark"] .hbtn:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .hbtn.primary { background: none; color: var(--yellow); border-color: var(--yellow); box-shadow: none; }
+:root[data-theme="dark"] .hbtn.primary:hover:not(:disabled) { background: none; box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .sheet-backdrop { background: rgba(20,20,20,.72); backdrop-filter: none; -webkit-backdrop-filter: none; }
+:root[data-theme="dark"] .sheet { box-shadow: none; }
+:root[data-theme="dark"] .su-opt.sel { background: var(--ui); box-shadow: none; }
+:root[data-theme="dark"] .su-badge { background: none; }
+:root[data-theme="dark"] .su-badge.y { background: none; }
+:root[data-theme="dark"] .su-seg button.on { box-shadow: inset 0 -2px 0 var(--yellow); color: var(--yellow); }
+:root[data-theme="dark"] .pv-r.g { background: none; }
+:root[data-theme="dark"] .pv-r.a { background: none; }
+:root[data-theme="dark"] .pv-r.p { background: none; }
+:root[data-theme="dark"] .home-scroll { background: none; }
+:root[data-theme="dark"] .drop { background: none; }
+:root[data-theme="dark"] .drop:hover, :root[data-theme="dark"] .drop.over { box-shadow: none; }
+:root[data-theme="dark"] .drop.over { background: none; }
+:root[data-theme="dark"] .drop-halo { display: none; background: none; }
+:root[data-theme="dark"] .drop.over .drop-halo, :root[data-theme="dark"] .drop.busy .drop-halo { display: none; background: none; }
+:root[data-theme="dark"] .mcard:hover { box-shadow: none; }
+:root[data-theme="dark"] .ex { background: none; }
+
+/* ── src/app/mcp.css ── */
+:root[data-theme="dark"] .mcp-gone { background: rgba(20,20,20,.72); }
+:root[data-theme="dark"] .claude-alert { background: none; }
+
+/* ── src/app/settings.css ── */
+:root[data-theme="dark"] .setv-page { background: var(--wall); }
+:root[data-theme="dark"] .setv-nav { background: none; }
+:root[data-theme="dark"] .sv-mark.lamp { background: none; box-shadow: inset 0 0 0 2px var(--yellow); border-radius: 50%; }
+:root[data-theme="dark"] .sv-warn { background: none; }
+:root[data-theme="dark"] .sv-seg button.on { box-shadow: inset 0 -2px 0 var(--yellow); color: var(--yellow); }
+:root[data-theme="dark"] .sv-switch::before { box-shadow: inset 0 0 0 1px var(--ui-dim); }
+:root[data-theme="dark"] .sv-switch[aria-checked="true"]::before { background: none; box-shadow: inset 0 0 0 2px var(--yellow); }
+:root[data-theme="dark"] .sv-badge.a { background: none; }
+:root[data-theme="dark"] .sv-badge.g { background: none; }
+:root[data-theme="dark"] .sv-doc:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }
+
+/* ── src/components/markdown-preview.css ── */
+:root[data-theme="dark"] .mdp code { background: none; }
+:root[data-theme="dark"] .mdp th { background: none; }
+:root[data-theme="dark"] .mdp tbody tr:nth-child(2n) td { background: none; }
+
+/* ── src/components/scene/player/player.css ── */
+:root[data-theme="dark"] .sp-kind { background: none; color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .sp-stage { background: var(--out); }
+:root[data-theme="dark"] .sp-zoom { background: var(--ui); }
+:root[data-theme="dark"] .sp-zoom button:hover { background: none; }
+:root[data-theme="dark"] .sp-stage.xray { background: var(--out); box-shadow: inset 0 0 0 1px var(--blue); }
+:root[data-theme="dark"] .sp-stage .cchip { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .runner { filter: none; }
+:root[data-theme="dark"] .sp-stage .tl .band { background: none; }
+:root[data-theme="dark"] .sp-stage .tl .bar.dangle { background: none !important; border: 1px dashed var(--pink); color: var(--pink); }
+:root[data-theme="dark"] .sp-stage .tl .now { box-shadow: none; }
+:root[data-theme="dark"] .sp-stage .node.lit { box-shadow: 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .sp-stage .mover { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .slot.top { box-shadow: none; }
+:root[data-theme="dark"] .sp-stage .ret { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .dn.lit { box-shadow: 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .sp-stage.xray .dn.lit { box-shadow: 0 0 0 1px var(--blue); }
+:root[data-theme="dark"] .sp-stage .dn.s-root { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .dn.s-topic { background: none; }
+:root[data-theme="dark"] .sp-stage.xray .elabel { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .band { background: none; }
+:root[data-theme="dark"] .sp-stage .band.lit { background: none; }
+:root[data-theme="dark"] .sp-stage.xray .divider > span { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .inset { background: var(--ui); }
+:root[data-theme="dark"] .sp-stage .legend { background: var(--ui); }
+:root[data-theme="dark"] .sp-ask { box-shadow: none; }
+:root[data-theme="dark"] .sp-end { background: var(--ui); }
+:root[data-theme="dark"] .sp-code .ln.on { background: none; }
+:root[data-theme="dark"] .sp-facts li.on { background: none; }
+
+/* ── src/components/scene/scene.css ── */
+:root[data-theme="dark"] .wscene .cell.aside.stop { background: none; }
+:root[data-theme="dark"] .wscene .thing { background: none; }
+:root[data-theme="dark"] .wscene .thing.lent { background: none; }
+:root[data-theme="dark"] .wscene svg.links .dot { filter: none; }
+:root[data-theme="dark"] .wscene .srow.now { background: none; box-shadow: inset 2px 0 0 rgb(243,215,122); }
+:root[data-theme="dark"] .wscene pre .ln.now { background: none; }
+:root[data-theme="dark"] .wscene pre .ln.now.bad { background: none; }
+:root[data-theme="dark"] .wscene .word.now { background: none; box-shadow: inset 2px 0 0 rgb(243,215,122); }
+:root[data-theme="dark"] .wscene .word:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .wpic .pd-line .dot { filter: none; }
+
+/* ── src/components/update.css ── */
+:root[data-theme="dark"] .update-hero { background: var(--ui); }
+:root[data-theme="dark"] .update-hero::after { display: none; background-image: none; mask-image: none; -webkit-mask-image: none; }
+:root[data-theme="dark"] .update-mark { box-shadow: none; }
+:root[data-theme="dark"] .update-x:hover { background: none; }
+:root[data-theme="dark"] .update-foot .ctl.primary { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .update-foot .ctl.primary:hover { box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .update-bar i { background: var(--yellow); }
+:root[data-theme="dark"] .update-bar i::after { display: none; background: none; }
+:root[data-theme="dark"] .update-err { background: none; }
+:root[data-theme="dark"] .update-chip { background: none; }
+:root[data-theme="dark"] .update-chip:hover { background: none; box-shadow: inset 0 0 0 1px rgba(243,215,122,.45); }
+:root[data-theme="dark"] .update-chip i { box-shadow: none; }
+
+/* ── src/ide/ide.css ── */
+:root[data-theme="dark"] .ide .ctl.primary { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .ide .pill.warn { background: none; box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .ide .output { background: var(--ui); }
+:root[data-theme="dark"] .ide .check.ok { background: none; box-shadow: inset 2px 0 0 var(--green); }
+:root[data-theme="dark"] .ide .check.no { background: none; box-shadow: inset 2px 0 0 var(--pink); }
+:root[data-theme="dark"] .ide .answer code { background: none; }
+:root[data-theme="dark"] .ide .answer .snippet { background: var(--ui); }
+:root[data-theme="dark"] .ide .debug { background: var(--ui); }
+:root[data-theme="dark"] .ide .vars tr.changed { background: none; box-shadow: inset 0 0 0 1px rgba(243,215,122,.45); }
+:root[data-theme="dark"] .ide select option:checked, :root[data-theme="dark"] .ide .engine select option:checked { background-color: var(--ui); color: var(--yellow); }
+:root[data-theme="dark"] .ide .dstate i { box-shadow: none; }
+:root[data-theme="dark"] .ide .dstate.run i { box-shadow: none; }
+:root[data-theme="dark"] .ide .dbtn:hover:not(:disabled) { background: none; }
+:root[data-theme="dark"] .ide .dvar:hover:not(:disabled) { background: none; box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .ide .dstack button:hover { background: none; box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .ide .dstack button.on { background: none; }
+:root[data-theme="dark"] .ide .get-debugger header { background: var(--ui-2); }
+:root[data-theme="dark"] .ide .getdbg-progress i { background: none; box-shadow: inset 0 -2px 0 var(--yellow); }
+:root[data-theme="dark"] .md-switch button[aria-pressed="true"] { background: none; box-shadow: inset 0 -2px 0 rgb(243,215,122); }
+
+/* ── src/ide/localrun/git/git.css ── */
+:root[data-theme="dark"] .git-btn[data-tip]:hover::after, :root[data-theme="dark"] .git-btn[data-tip]:focus-visible::after { box-shadow: none; }
+:root[data-theme="dark"] .git-sheet { box-shadow: none; }
+:root[data-theme="dark"] .git-files li:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .git-files li.on { box-shadow: inset 2px 0 0 var(--yellow); color: var(--yellow); }
+:root[data-theme="dark"] .git-diff > .a { background: none; box-shadow: inset 2px 0 0 var(--green); }
+:root[data-theme="dark"] .git-diff > .d { background: none; box-shadow: inset 2px 0 0 var(--pink); }
+:root[data-theme="dark"] .git-title:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .git-branches li > button:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .git-merge { background: none; }
+:root[data-theme="dark"] .git-confirm button.yes { background: none; color: var(--pink); border-color: var(--pink); }
+:root[data-theme="dark"] .file-hist { box-shadow: none; }
+:root[data-theme="dark"] .file-hist li:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .cm-blame-gutter { background: var(--ui); }
+
+/* ── src/ide/localrun/localrun.css ── */
+:root[data-theme="dark"] .lr-consent { box-shadow: none; }
+:root[data-theme="dark"] .lr-consent::backdrop { background: rgba(20,20,20,.72); }
+:root[data-theme="dark"] .lr-btn.primary { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .lr-terms { background: var(--ui); }
+:root[data-theme="dark"] .lr-term-tab.on { box-shadow: inset 0 -2px 0 var(--yellow); color: var(--yellow); }
+:root[data-theme="dark"] .lr-state.on { background: none; box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .term-btn[data-tip]:hover::after, :root[data-theme="dark"] .term-btn[data-tip]:focus-visible::after { box-shadow: none; }
+
+/* ── src/ide/localrun/setup/setup.css ── */
+:root[data-theme="dark"] .segs i { background: none; box-shadow: inset 0 0 0 1px var(--ui-line); }
+:root[data-theme="dark"] .segs i.on { box-shadow: none; }
+:root[data-theme="dark"] .segs.failed i.on { box-shadow: none; }
+:root[data-theme="dark"] .segs.sweeping::after { display: none; background: none; }
+:root[data-theme="dark"] .stamp { background: var(--ui); }
+:root[data-theme="dark"] .stamp.ok { box-shadow: none; text-shadow: none; }
+:root[data-theme="dark"] .stamp.fail { box-shadow: none; text-shadow: none; }
+:root[data-theme="dark"] .setup-ring .fill { filter: none; }
+:root[data-theme="dark"] .setup-scrim { background: rgba(20,20,20,.72); }
+:root[data-theme="dark"] .setup-sheet { box-shadow: none; }
+:root[data-theme="dark"] .setup-head.swept::after { display: none; background: none; }
+:root[data-theme="dark"] .setup-row.live { box-shadow: none; }
+:root[data-theme="dark"] .setup-chip { background: none; }
+:root[data-theme="dark"] .setup-state { background: none; }
+:root[data-theme="dark"] .setup-state.needs-tool { background: none; }
+:root[data-theme="dark"] .setup-state.ready { background: none; }
+:root[data-theme="dark"] .setup-state.failed { background: none; }
+:root[data-theme="dark"] .setup-cmd { background: none; }
+:root[data-theme="dark"] .setup-feed::before { background: var(--ui-line); }
+:root[data-theme="dark"] .setup-light { box-shadow: none; }
+:root[data-theme="dark"] .setup-fail pre, :root[data-theme="dark"] .setup-log { background: none; }
+:root[data-theme="dark"] .setup-fail pre .hot { background: none; }
+:root[data-theme="dark"] .setup-status { background: none; }
+:root[data-theme="dark"] .setup-status .pulse { box-shadow: none; }
+:root[data-theme="dark"] .np-starter.on { box-shadow: 0 0 0 1px rgba(243, 215, 122, .35); }
+
+/* ── src/learn/learn.css ── */
+:root[data-theme="dark"] .learn .banner { background: none; border: 1px solid var(--pink); color: var(--pink); }
+:root[data-theme="dark"] .learn .frame { background: none; box-shadow: none; padding: 0; border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .learn .board { background: var(--board); box-shadow: none; }
+:root[data-theme="dark"] .learn .board::after { display: none; background: none; }
+:root[data-theme="dark"] .learn .line.now { text-shadow: none; }
+:root[data-theme="dark"] .learn .bc { background: var(--ui); }
+:root[data-theme="dark"] .learn .bc-bar { background: var(--ui); }
+:root[data-theme="dark"] .learn .ic { background: none; }
+:root[data-theme="dark"] .learn .chalk-btn { background: none; color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .learn .lab canvas { background: none; }
+:root[data-theme="dark"] .learn .opt { background: none; }
+:root[data-theme="dark"] .learn .explain textarea { background: none; }
+:root[data-theme="dark"] .learn .side-board { box-shadow: none; border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .learn .ctl.primary { background: none; color: var(--yellow); border-color: var(--yellow); }
+:root[data-theme="dark"] .learn .form input, :root[data-theme="dark"] .learn .form select, :root[data-theme="dark"] .learn .form textarea { background: none; }
+:root[data-theme="dark"] .learn .chalk-progress { background: none; }
+:root[data-theme="dark"] .learn .resume { background: none; color: var(--yellow); border: 1px solid var(--yellow); }
+:root[data-theme="dark"] .learn .pill.good { background: none; box-shadow: inset 0 0 0 1px var(--green); }
+:root[data-theme="dark"] .learn .library .resume:hover { box-shadow: none; }
+:root[data-theme="dark"] .learn .library .lessons li { background: none; }
+@media (max-width: 760px) {
+  :root[data-theme="dark"] .learn .board { background: var(--board); box-shadow: none; }
+}
+:root[data-theme="dark"] .learn .module-btn:hover { background: none; }
+:root[data-theme="dark"] .learn select option:checked, :root[data-theme="dark"] .learn .controls select option:checked, :root[data-theme="dark"] .learn .form select option:checked { background-color: var(--ui); color: var(--yellow); }
+:root[data-theme="dark"] .learn .form select { background-color: var(--ui); }
+:root[data-theme="dark"] .learn .form select:hover:not(:disabled) { background-color: var(--ui); }
+:root[data-theme="dark"] .learn .analogy { background: none; }
+:root[data-theme="dark"] .learn .verdict { background: none; }
+:root[data-theme="dark"] .learn .looked li { background: none; }
+:root[data-theme="dark"] .learn .msg-err { background: none; }
+:root[data-theme="dark"] .learn .md .eq { background: none; }
+:root[data-theme="dark"] .learn .md-analogy { background: none; }
+:root[data-theme="dark"] .learn .md-code { background: none; }
+:root[data-theme="dark"] .learn .composer { background: none; }
+:root[data-theme="dark"] .learn .jot { background: none; }
+:root[data-theme="dark"] .learn .recall .card { background: none; }
+:root[data-theme="dark"] .learn .fc-row input { background: none; }
+:root[data-theme="dark"] .learn .analogy-acts .own input { background: none; }
+:root[data-theme="dark"] .learn .studio-main > .frame > .presenter .who { background: var(--ui); }
+:root[data-theme="dark"] .learn .studio-main > .frame > .presenter .prof-face { filter: none; }
+:root[data-theme="dark"] .learn .written .question { background: none; }
+:root[data-theme="dark"] .learn .written textarea { background: none; }
+:root[data-theme="dark"] .learn .fc-guide pre { background: none; }
+:root[data-theme="dark"] .learn .points li { background: none; }
+:root[data-theme="dark"] .learn .thread .to-latest { background: var(--ui); color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .learn .thread .to-latest:hover { filter: none; box-shadow: inset 0 0 0 2px var(--yellow); }
+:root[data-theme="dark"] .lh-door { background: var(--ui); }
+:root[data-theme="dark"] .lh-door::after { display: none; background: none; mask: none; }
+:root[data-theme="dark"] .lh-door h1 em { background: none; -webkit-background-clip: border-box; background-clip: border-box; color: var(--yellow); }
+:root[data-theme="dark"] .lh-compose { background: none; }
+:root[data-theme="dark"] .lh-go { background: none; color: var(--yellow); box-shadow: inset 0 0 0 1px var(--yellow); }
+:root[data-theme="dark"] .lh-go:hover:not(:disabled) { background: none; color: var(--yellow); box-shadow: inset 0 0 0 2px var(--yellow); }
+:root[data-theme="dark"] .lh-go kbd { background: none; }
+:root[data-theme="dark"] .lh-resume:hover, :root[data-theme="dark"] .lh-course:hover { box-shadow: none; }
+:root[data-theme="dark"] .lh-cover { background: none; border-bottom: 2px solid var(--c); }
+:root[data-theme="dark"] .lh-cover::before { display: none; background: none; }
+:root[data-theme="dark"] .lh-cover .lh-big { filter: none; }
+:root[data-theme="dark"] .lh-from { background: none; }
+:root[data-theme="dark"] .lh-play { background: none; color: var(--ui-text); box-shadow: inset 0 0 0 1px var(--ui-text); }
+:root[data-theme="dark"] .lh-stats button:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .lh-seg button.on { box-shadow: inset 0 -2px 0 var(--yellow); color: var(--yellow); }
+:root[data-theme="dark"] .lh-lesson:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }
+:root[data-theme="dark"] .lh-ring { background: none; }
+:root[data-theme="dark"] .lh-ring .lh-arc { display: block; width: 26px; height: 26px; fill: none; stroke-width: 4; transform: rotate(-90deg); }
+:root[data-theme="dark"] .lh-ring .lh-arc circle { stroke: var(--ui-line); }
+:root[data-theme="dark"] .lh-ring .lh-arc circle + circle { stroke: var(--c); }
+:root[data-theme="dark"] .lh-ring::after { display: none; }
+:root[data-theme="dark"] .lh-lesson:hover .lh-ring::after { display: none; }
+:root[data-theme="dark"] .lh-btn.pri { background: none; border-color: var(--c); color: var(--c); }
+:root[data-theme="dark"] .lh-face { background: var(--ui); }
+:root[data-theme="dark"] .lh-week i.has { background: none; border-color: var(--green); }
+
+/* ── the dock (dockview's own variables, set on .lantern in globals.css) ── */
+:root[data-theme="dark"] .lantern { --dv-floating-box-shadow: none; --dv-drag-over-background-color: transparent; }
+
+/* ── animations that paint a glow or a tint: the mark they end on is enough ── */
+:root[data-theme="dark"] .node.lit, :root[data-theme="dark"] .svc.lit { animation-name: none; }
+:root[data-theme="dark"] .node.selected.lit, :root[data-theme="dark"] .svc.selected.lit { animation-name: ring-pop; }
+:root[data-theme="dark"] .ai-pill.setup .ai-led { animation-name: none; }
+:root[data-theme="dark"] .setup-light, :root[data-theme="dark"] .setup-status .pulse { animation-name: none; }
+:root[data-theme="dark"] .dock-panel.code.ignite .cm-line.cm-lit-line { animation-name: none; }
+:root[data-theme="dark"] .ide .dvar.changed .vl { animation-name: none; }
+:root[data-theme="dark"] .goto-row .mic.on .talk-dot, :root[data-theme="dark"] .lecture.hearing .talk-dot, :root[data-theme="dark"] .talk-rec i, :root[data-theme="dark"] .talk-pill.hand-up .talk-ring i { animation-name: none; }
+
+/* ── the code editor (its theme is in src/ide/Editor.tsx): the line the cursor is on and a lit range keep
+   their edge and lose their tint; the list of suggestions has no shadow, and its chosen row a yellow edge ── */
+:root[data-theme="dark"] .cm-editor .cm-activeLine, :root[data-theme="dark"] .cm-editor .cm-activeLineGutter { background-color: transparent; }
+:root[data-theme="dark"] .cm-editor .cm-lit-line, :root[data-theme="dark"] .cm-editor .cm-debug-line { background-color: transparent !important; }
+:root[data-theme="dark"] .cm-tooltip { box-shadow: none; }
+:root[data-theme="dark"] .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { color: var(--yellow); }
+:root[data-theme="dark"] .cm-editor .cm-snippetField { background-color: transparent; box-shadow: inset 0 -1px 0 var(--blue); }
+
+/* ── the map (React Flow's own variables and parts; MapView.tsx gives the small map its colours inline) ── */
+:root[data-theme="dark"] .react-flow { --xy-controls-button-background-color: var(--ui); --xy-controls-button-background-color-hover: var(--ui); --xy-controls-button-color: var(--ui-text); --xy-controls-button-color-hover: var(--yellow); --xy-controls-button-border-color: var(--ui-line); --xy-controls-box-shadow: none; --xy-edge-label-background-color: var(--ui); }
+:root[data-theme="dark"] .react-flow__controls { border: 1px solid var(--ui-line); }
+:root[data-theme="dark"] .react-flow__background { display: none; }
+:root[data-theme="dark"] .react-flow__minimap, :root[data-theme="dark"] .react-flow__minimap-svg { background-color: var(--ui) !important; }
+:root[data-theme="dark"] .react-flow__minimap { border: 1px solid var(--ui-line); }
+/* What is outside the part of the map on screen is dimmed with the same dark, so the part on screen is outlined. */
+:root[data-theme="dark"] .react-flow__minimap-mask { fill: rgba(20,20,20,.72); stroke: var(--yellow); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+
+/* ── the professor's face (learn.css): no lighter disc behind it; its ring stays ── */
+:root[data-theme="dark"] .learn .prof-face { --face-disc: transparent; }
+
+/* ── by hand: what lost its tint and had nothing else to show it ── */
+/* A badge or a note is outlined in its own colour. */
+:root[data-theme="dark"] .pv-r, :root[data-theme="dark"] .sv-badge, :root[data-theme="dark"] .setup-chip, :root[data-theme="dark"] .setup-state { box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 45%, transparent); }
+:root[data-theme="dark"] .chip { border-color: var(--ui-line); }
+/* Rows that were darker boxes are hairline boxes; the one under the pointer has a brighter hairline. */
+:root[data-theme="dark"] .edge, :root[data-theme="dark"] .pointrow { box-shadow: inset 0 0 0 1px var(--hair); }
+:root[data-theme="dark"] .edge:hover, :root[data-theme="dark"] .learn .module-btn:hover { box-shadow: inset 0 0 0 1px var(--hair-3); }

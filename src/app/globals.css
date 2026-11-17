@@ -59,35 +59,38 @@
 }
 
 /* The dark theme (Settings → Motion & look → Theme; look.ts sets data-theme on <html>, dark by default):
-   neutral graphite like an IDE's dark theme, the same yellow, blue, green and pink for meaning. The warm
-   wall, wood and chalkboard above stay as the "Warm" theme. */
+   one flat dark. Every surface is the same #141414, so nothing is lighter or darker than anything else;
+   thin borders separate, and the same yellow, blue, green and pink carry meaning. No gradient, glow or
+   shadow: dark.css answers each rule that paints one. The warm wall, wood and chalkboard above stay as
+   the "Warm" theme. (Mockup: docs/design/flat-dark.html.) */
 :root[data-theme="dark"] {
-  --wall: #1e1f22;
-  --wall-2: #232428;
-  --board: #1b1c1f;
-  --board-2: #26282c;
-  --dg-card: #141518;
-  --frame: #3c3f44;
-  --frame-2: #2b2d30;
-  --chalk: #dfe1e5;
-  --chalk-dim: #a3a7ae;
-  --ui: #2b2d30;
-  --ui-2: #35373c;
-  --ui-line: #43454a;
-  --ui-text: #dfe1e5;
-  --ui-dim: #9da0a8;
-  --out: #17181a;
-  --ui-raise: #3c3f44;
-  --ui-faint: #6f737a;
-  --hair: rgba(255,255,255,.06);
-  --hair-2: rgba(255,255,255,.11);
+  --wall: #141414;
+  --wall-2: #141414;
+  --board: #141414;
+  --board-2: #141414;
+  --dg-card: #141414;
+  --frame: #141414;
+  --frame-2: #141414;
+  --chalk: #e6e6e4;
+  --chalk-dim: #a3a3a1;
+  --ui: #141414;
+  --ui-2: #141414;
+  --ui-line: #333333;
+  --ui-text: #e6e6e4;
+  --ui-dim: #a3a3a1;
+  --out: #141414;
+  --ui-raise: #141414;
+  --ui-faint: #73736f;
+  --hair: rgba(255,255,255,.08);
+  --hair-2: rgba(255,255,255,.12);
   --hair-3: rgba(255,255,255,.2);
-  --ink: #1e1f22;
-  --bar: #2b2d30;
-  --code-bg: #1e1f22;
-  --code-gutter: #1e1f22;
-  --code-gutter-ink: #6f737a;
+  --ink: #141414;
+  --bar: #141414;
+  --code-bg: #141414;
+  --code-gutter: #141414;
+  --code-gutter-ink: #6a6a66;
   --lane-logic: #c9c2b4;
+  --glow: none;
 }
 
 /* ── Motion (docs/MOTION.md §2) ──
@@ -868,6 +871,15 @@ button.evchip { cursor: pointer; }
 .fic.big { display: grid; width: calc(72px * var(--fs)); height: calc(72px * var(--fs)); margin: 0 auto calc(10px * var(--sp)); }
 .tree .file.unmapped .name { color: var(--ui-faint); }
 .tree .file.unmapped:hover .name { color: var(--ui-dim); }
+/* Above the tree: when the map's folders were last read, and "Refresh files" (src/shell/folderWatch.tsx). */
+.files-sync { flex: none; display: flex; align-items: center; gap: calc(8px * var(--sp)); padding: calc(4px * var(--sp)) calc(4px * var(--sp)) calc(4px * var(--sp)) calc(10px * var(--sp)); border-bottom: 1px solid var(--hair); font: var(--text) var(--sans); color: var(--ui-faint); }
+.files-sync-when { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.files-sync-go { flex: none; display: inline-flex; align-items: center; gap: calc(5px * var(--sp)); height: calc(24px * var(--ctl)); padding: 0 calc(8px * var(--sp)); border: 1px solid var(--ui-line); background: none; color: var(--ui-dim); font: 600 var(--text) var(--sans); cursor: pointer; transition: color var(--t-tap), border-color var(--t-tap), background var(--t-tap); }
+.files-sync-go:hover:not(:disabled) { color: var(--ui-text); border-color: rgba(243,215,122,.45); background: var(--hair); }
+.files-sync-go:disabled { cursor: default; opacity: .7; }
+.files-sync-go .tool-ico { width: calc(13px * var(--fs)); height: calc(13px * var(--fs)); }
+.files-sync-go .tool-ico.spin { animation: files-spin calc(900ms * var(--m)) linear infinite; }
+@keyframes files-spin { to { transform: rotate(360deg); } }
 .tree-search { flex: none; padding: calc(8px * var(--sp)) calc(8px * var(--sp)) calc(6px * var(--sp)); border-bottom: 1px solid var(--hair); }
 .tree-field { display: flex; align-items: center; height: calc(28px * var(--ctl)); border: 1px solid var(--ui-line); background: var(--out); transition: border-color var(--t-tap), box-shadow var(--t-dim); cursor: text; }
 .tree-field:focus-within { border-color: rgba(243,215,122,.55); box-shadow: 0 0 0 3px rgba(243,215,122,.10); }

@@ -10,6 +10,7 @@ import { DOC_MAX_BYTES, isAssetPath, listsHiddenDir, MAX_ASSETS, MAX_OTHER, othe
 import type { SourceFile } from "@/analyzer/types";
 import { FLUTTER_PLATFORMS, keep, MAX_FILE_BYTES, PHP_CACHE, PHP_RUNTIME, SKIP, skipDir } from "./folderRules";
 import { isDesktop, pickFolderPath } from "./desktop";
+import { contentFor, listFolder, type Listed, type ListEntry } from "./folderList";
 import { MAX_FILES_PER_REPO } from "./workspace";
 
 type DirHandle = FileSystemDirectoryHandle & {
@@ -74,6 +75,59 @@ export async function rereadFolder(handle: FileSystemDirectoryHandle): Promise<P
   } catch {
     return null;
   }
+}
+
+/** A folder picked earlier, listed again (sizes and times, no text: src/lib/folderList.ts). Only where the
+ * browser already lets the page read it: Explore checks on its own, on a timer and when the window comes
+ * back, and must never make the browser ask. `ask` only for the user's own click (Refresh files). Null when
+ * it may not be read. */
+export async function listHandle(handle: FileSystemDirectoryHandle, opts: { ask: boolean }): Promise<{ files: Listed[]; capped: boolean } | null> {
+  const h = handle as DirHandle;
+  try {
+    let state = (await h.queryPermission?.({ mode: "read" })) ?? "granted";
+    if (state !== "granted" && opts.ask) state = (await h.requestPermission?.({ mode: "read" })) ?? "denied";
+    if (state !== "granted") return null;
+    return await listFolder(h, listHandleDir);
+  } catch {
+    return null;
+  }
+}
+
+/** A folder handle, for listFolder: a file's size and time come from its File, whose text is not read. */
+async function listHandleDir(dir: DirHandle): Promise<ListEntry<DirHandle>[]> {
+  const out: ListEntry<DirHandle>[] = [];
+  for await (const h of dir.values()) {
+    out.push(h.kind === "directory" ? { name: h.name, dir: h as DirHandle } : { name: h.name, stat: async () => statOfFile(await (h as FileSystemFileHandle).getFile()) });
+  }
+  return out;
+}
+const statOfFile = (f: File) => ({ size: f.size, mtimeMs: f.lastModified });
+
+/** The text of listed files of a folder picked earlier, read as the reader reads them (a file that is not
+ * text is left out). Called after listHandle, so the browser already lets the page read it. */
+export async function readHandleFiles(handle: FileSystemDirectoryHandle, files: Listed[]): Promise<SourceFile[]> {
+  const out: SourceFile[] = [];
+  for (const f of files) {
+    try {
+      const parts = f.path.split("/");
+      let dir: FileSystemDirectoryHandle = handle;
+      for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p);
+      const fh = await dir.getFileHandle(parts[parts.length - 1]);
+      const content = await contentFor(f, async () => (await fh.getFile()).text());
+      if (content !== null) out.push({ path: f.path, content });
+    } catch {
+      // gone since it was listed: left out
+    }
+  }
+  return out;
+}
+
+/** The desktop app's folder listed again by the server (/api/folder/list); with `read`, those files' text too. */
+export async function listPath(path: string, read?: string[]): Promise<{ files: Listed[]; capped?: boolean; read?: SourceFile[] }> {
+  const r = await fetch("/api/folder/list", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(read ? { path, read } : { path }) });
+  const body = (await r.json().catch(() => ({}))) as { files?: Listed[]; capped?: boolean; read?: SourceFile[]; error?: string };
+  if (!r.ok || !body.files) throw new Error(body.error ?? `${path} could not be listed.`);
+  return { files: body.files, capped: body.capped, read: body.read };
 }
 
 interface Found {

@@ -52,6 +52,8 @@ export function configKindOfPath(path: string): ConfigKind | null {
   if (/^(catalog-info|compass)\.ya?ml$/.test(lb) || lb === "workspace.dsl") return "declared";
   if (/^(pnpm-workspace\.yaml|turbo\.json|nx\.json|project\.json|go\.work|lerna\.json)$/.test(lb)) return "workspace";
   if (/^chart\.ya?ml$/.test(lb) || /^values([.-][^/]*)?\.ya?ml$/.test(lb)) return "helm";
+  // An app's own settings: Spring's application.properties / application.yml, ASP.NET Core's appsettings.json (settings.ts).
+  if (/^application(-[\w.-]+)?\.(properties|ya?ml)$/.test(lb) || /^appsettings(\.[\w-]+)?\.json$/.test(lb)) return "settings";
   if (/^kustomization\.ya?ml$/.test(lb)) return "k8s";
   if (YAML.test(lb) && K8S_DIR.test(path)) return "k8s";
   // CI workflows, Caddyfile, fly.toml, render.yaml, app.yaml, vercel.json, CNAME: only read when they name a public address.
@@ -86,14 +88,17 @@ export const DRAWN: Readonly<Record<string, { lang: Lang; name: string }>> = {
   cjs: { lang: "js", name: "JavaScript" }, jsx: { lang: "jsx", name: "JavaScript" }, py: { lang: "py", name: "Python" },
   sql: { lang: "sql", name: "SQL" }, prisma: { lang: "prisma", name: "Prisma" }, dart: { lang: "dart", name: "Dart" },
   php: { lang: "php", name: "PHP" }, twig: { lang: "twig", name: "Twig" }, rs: { lang: "rust", name: "Rust" },
+  c: { lang: "c", name: "C" }, h: { lang: "c", name: "C" }, cc: { lang: "cpp", name: "C++" }, cpp: { lang: "cpp", name: "C++" },
+  cxx: { lang: "cpp", name: "C++" }, hpp: { lang: "cpp", name: "C++" }, hh: { lang: "cpp", name: "C++" }, hxx: { lang: "cpp", name: "C++" },
+  cs: { lang: "csharp", name: "C#" }, java: { lang: "java", name: "Java" }, kt: { lang: "kotlin", name: "Kotlin" }, kts: { lang: "kotlin", name: "Kotlin" },
 };
-/** Source in a language the map doesn't draw yet (Go, Java, C#, Ruby…). The folder readers keep it,
+/** Source in a language the map doesn't draw yet (Go, Ruby, Swift, Scala…). The folder readers keep it,
  * so the guide can list, read and search it ("not on the map"); without this a Rust project was empty to it. */
 export const READABLE: Readonly<Record<string, string>> = {
-  go: "Go", java: "Java", kt: "Kotlin", kts: "Kotlin", scala: "Scala", groovy: "Groovy", swift: "Swift",
-  cs: "C#", fs: "F#", vb: "Visual Basic", rb: "Ruby", ex: "Elixir", exs: "Elixir", erl: "Erlang", hrl: "Erlang",
+  go: "Go", scala: "Scala", groovy: "Groovy", swift: "Swift",
+  fs: "F#", vb: "Visual Basic", rb: "Ruby", ex: "Elixir", exs: "Elixir", erl: "Erlang", hrl: "Erlang",
   hs: "Haskell", clj: "Clojure", cljs: "Clojure", lua: "Lua", pl: "Perl", pm: "Perl", r: "R", jl: "Julia", zig: "Zig",
-  nim: "Nim", c: "C", h: "C", cc: "C++", cpp: "C++", cxx: "C++", hpp: "C++", hh: "C++", m: "Objective-C", mm: "Objective-C",
+  nim: "Nim", m: "Objective-C", mm: "Objective-C",
   vue: "Vue", svelte: "Svelte", astro: "Astro", html: "HTML", htm: "HTML", css: "CSS", scss: "CSS", sass: "CSS", less: "CSS",
   sh: "Shell", bash: "Shell", ps1: "PowerShell", graphql: "GraphQL", gql: "GraphQL", sol: "Solidity",
 };
@@ -142,6 +147,9 @@ export const REDACTED = "•••";
 const SECRET_NAME = /(SECRET|TOKEN|KEY|PASSWORD|PASS|PWD|PRIVATE)/i;
 const SECRET_VALUE = /^(sk|pk|rk|ghp|xox|AKIA)[A-Za-z0-9_-]{8,}|^[A-Fa-f0-9]{32,}$|^[A-Za-z0-9_-]{40,}$/;
 const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@'"]+:)([^\s@/'"]+)@/gi;
+/** A connection string's password: `Server=db;User Id=sa;Password=…;` (ADO.NET, JDBC's `?password=…`). */
+const INLINE_PASSWORD = /(\b(?:password|pwd)\s*=\s*)([^;&"'\s]+)/gi;
+const hideInline = (s: string) => s.replace(URL_PASSWORD, `$1${REDACTED}@`).replace(INLINE_PASSWORD, `$1${REDACTED}`);
 
 /** A config value as WalkMyCode may show it: secrets become "•••", and a
  * password inside a URL becomes `://user:•••@`. */
@@ -151,7 +159,7 @@ export function redactValue(name: string, value: string): string {
   // A CI expression (`${{ secrets.VPS_SSH_KEY }}`) names where a secret is kept; it is not the secret.
   if (/^\$\{\{[^}]*\}\}$/.test(v)) return value;
   if (SECRET_NAME.test(name) || SECRET_VALUE.test(v)) return REDACTED;
-  return value.replace(URL_PASSWORD, `$1${REDACTED}@`);
+  return hideInline(value);
 }
 
 /** One line of a config file with any secret values hidden; line count and
@@ -174,7 +182,7 @@ function redactLine(line: string): string {
     const shown = redactValue(key, unquote(value));
     if (shown !== unquote(value)) return `${pre}${key}${sep}${quoted(value, shown)}${comment}${post}`;
   }
-  return line.replace(URL_PASSWORD, `$1${REDACTED}@`);
+  return hideInline(line);
 }
 
 function splitComment(raw: string): { value: string; comment: string } {

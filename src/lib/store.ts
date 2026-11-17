@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 import type { Assertion, CodeMap, MapEdge, MapNode } from "@/analyzer/types";
 import { upgradeMap } from "@/analyzer/migrate";
 import type { Tour } from "./claude/tools";
+import type { Seen } from "./folderList";
 import { TARGET } from "./adapters/target";
 import { indexOf, inOf, outOf } from "./mapIndex";
 
@@ -22,6 +23,10 @@ export interface RepoSource {
   path?: string;
   fileCount: number;
   addedAt: string;
+  /** When Explore last took the folder's changes in (src/lib/folderSync.ts); addedAt before that. */
+  readAt?: string;
+  /** Each file's size and time then (src/lib/folderList.ts), to notice the next change by. */
+  seen?: Seen;
 }
 
 export interface Workspace {

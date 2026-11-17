@@ -28,6 +28,7 @@ import SourceControl from "@/ide/localrun/git/SourceControl";
 import { useStack } from "@/components/StackChips";
 import ProjectChip, { type Metric } from "@/components/ProjectChip";
 import Toast from "@/shell/Toast";
+import FolderWatch from "@/shell/folderWatch";
 
 // WalkMyCode for Claude: Claude drives the room through the bridge, and the bar says whether Claude is listening.
 const BridgeDriver = MCP ? dynamic(() => import("@/components/mcp/BridgeDriver"), { ssr: false }) : () => null;
@@ -219,6 +220,8 @@ export default function MapPage() {
       </main>
       <PaletteHost />
       <Toast />
+      {/* New, changed and removed files in the map's folders, taken in where the user is. */}
+      <FolderWatch />
     </WorkspaceProvider>
   );
 }

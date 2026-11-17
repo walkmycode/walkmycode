@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flat dark theme</title>
+<!-- Mockup (owner, 17 Nov 2026): the dark theme as one dark, #141414, on every surface, with no gradient,
+     no glow and no shadow anywhere. Left: today's dark theme (its real colours and gradients, from
+     src/app/globals.css, home.css, learn.css, settings.css). Right: proposed. Three views: Explore, Learn,
+     Settings. The warm theme is untouched. -->
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0b; color: #e6e6e4; font: 13px/1.45 "Segoe UI", system-ui, sans-serif; }
+  .top { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid #2c2c2c; position: sticky; top: 0; background: #0b0b0b; z-index: 5; }
+  .top h1 { font-size: 14px; margin: 0; font-weight: 650; }
+  .top p { margin: 0; color: #9a9a98; }
+  .tabs { margin-left: auto; display: flex; gap: 4px; }
+  .tabs button { background: none; border: 1px solid #333; color: #cfcfcd; padding: 6px 12px; font: inherit; cursor: pointer; }
+  .tabs button.on { border-color: #f3d77a; color: #f3d77a; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 18px 20px 40px; }
+  .col h2 { font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: #9a9a98; margin: 0 0 8px; }
+  .col h2 b { color: #f3d77a; font-weight: 650; }
+  .notes { padding: 0 20px 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; color: #b5b5b3; }
+  .notes ul { margin: 6px 0 0; padding-left: 18px; }
+  .notes li { margin: 3px 0; }
+  .sw { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .sw span { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #333; padding: 3px 8px 3px 4px; font: 11px ui-monospace, Consolas, monospace; color: #cfcfcd; }
+  .sw i { width: 14px; height: 14px; display: inline-block; border: 1px solid rgba(255,255,255,.12); }
+
+  /* ── one app window, themed by the tokens on .app ── */
+  .app { height: 560px; display: grid; grid-template-rows: 32px 1fr; border: 1px solid #2c2c2c; overflow: hidden; color: var(--ui-text); background: var(--wall); }
+  .bar { display: flex; align-items: center; gap: 14px; padding: 0 10px; background: var(--bar); border-bottom: 1px solid var(--hair-2); font-size: 12px; }
+  .bar .brand { font-weight: 700; color: var(--yellow); }
+  .bar .tab { color: var(--ui-dim); } .bar .tab.on { color: var(--ui-text); }
+  .bar .pill { margin-left: auto; border: 1px solid var(--hair-2); padding: 2px 8px; color: var(--ui-dim); }
+  .body { display: grid; grid-template-columns: 34px 220px 1fr 1fr; min-height: 0; }
+  .rail { background: var(--ui); border-right: 1px solid var(--hair); display: grid; align-content: start; gap: 10px; padding-top: 10px; justify-items: center; }
+  .rail i { width: 14px; height: 14px; border: 1.5px solid var(--ui-dim); }
+  .rail i.on { border-color: var(--yellow); }
+  .side { background: var(--ui); border-right: 1px solid var(--hair); padding: 10px; font-size: 12px; overflow: hidden; }
+  .side .hd { color: var(--ui-faint); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; margin: 2px 0 8px; }
+  .file { padding: 3px 6px; color: var(--ui-dim); white-space: nowrap; }
+  .file.sel { color: var(--ui-text); background: var(--ui-2); }
+  .file.debugging { color: var(--ui-text); }
+  .search { border: 1px solid var(--ui-line); background: var(--out); color: var(--ui-faint); padding: 4px 8px; margin-bottom: 8px; }
+  .map { position: relative; border-right: 1px solid var(--hair); overflow: hidden; }
+  .lanes { position: absolute; inset: 18px 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .lane h4 { margin: 0 0 6px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  .card { border: 1px solid var(--ui-line); background: var(--dg-card); padding: 6px 7px; margin-bottom: 7px; font: 10px ui-monospace, Consolas, monospace; color: var(--chalk); }
+  .card.sel { border-color: var(--yellow); }
+  .card small { display: block; color: var(--chalk-dim); font: 9px system-ui; }
+  .code { background: var(--code-bg); font: 11.5px/1.6 ui-monospace, Consolas, monospace; display: grid; grid-template-columns: 30px 1fr; overflow: hidden; }
+  .code .g { background: var(--code-gutter); color: var(--code-gutter-ink); text-align: right; padding: 10px 6px 0 0; }
+  .code .t { padding: 10px 10px 0; white-space: pre; color: var(--chalk); }
+  .k { color: #c9a8e0; } .s { color: #a8e0a0; } .f { color: #9fd3f0; } .c { color: var(--ui-faint); }
+  .note { color: var(--ui-faint); font-style: italic; }
+
+  /* Learn */
+  .learn { display: grid; grid-template-columns: 1fr 260px; gap: 12px; padding: 14px; min-height: 0; }
+  .frame { padding: 10px; }
+  .board { height: 100%; padding: 18px 20px; color: var(--chalk); font: 15px/1.6 "Segoe Print", "Comic Sans MS", cursive; position: relative; }
+  .board h3 { margin: 0 0 8px; font-size: 18px; color: var(--yellow); }
+  .board .ledge { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 8px; }
+  .chat { background: var(--ui); border: 1px solid var(--hair-2); padding: 10px; font-size: 12px; display: grid; align-content: start; gap: 8px; }
+  .msg { padding: 7px 9px; background: var(--ui-2); }
+  .msg.me { background: var(--ui-raise); justify-self: end; }
+  .lh-title { font-size: 22px; font-weight: 700; margin: 6px 0 2px; }
+  .ring { width: 22px; height: 22px; border-radius: 50%; display: inline-block; vertical-align: middle; }
+
+  /* Settings */
+  .settings { display: grid; grid-template-columns: 160px 1fr; min-height: 0; }
+  .snav { background: var(--ui); border-right: 1px solid var(--hair); padding: 10px 0; font-size: 12px; }
+  .snav div { padding: 6px 12px; color: var(--ui-dim); }
+  .snav div.on { color: var(--ui-text); background: var(--ui-2); box-shadow: inset 2px 0 var(--yellow); }
+  .spane { padding: 16px; overflow: hidden; }
+  .box { border: 1px solid var(--hair-2); background: var(--ui); padding: 12px; margin-bottom: 10px; }
+  .box h5 { margin: 0 0 8px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ui-faint); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--hair); }
+  .row:first-of-type { border-top: 0; }
+  .row b { font-weight: 600; } .row span { color: var(--ui-dim); font-size: 11px; }
+  .switch { margin-left: auto; border: 1px solid var(--yellow); color: var(--ink); background: var(--yellow); padding: 1px 10px; font-size: 11px; font-weight: 600; }
+  .opt { border: 1px solid var(--ui-line); padding: 10px; margin-bottom: 6px; }
+  .opt.sel { border-color: rgba(243,215,122,.75); }
+  .mark { width: 26px; height: 26px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+
+  /* ── TODAY: the dark theme as shipped (graphite tokens + the gradients that apply in every theme) ── */
+  .today {
+    --wall: #1e1f22; --wall-2: #232428; --board: #1b1c1f; --board-2: #26282c; --dg-card: #141518;
+    --frame: #3c3f44; --frame-2: #2b2d30; --chalk: #dfe1e5; --chalk-dim: #a3a7ae;
+    --ui: #2b2d30; --ui-2: #35373c; --ui-line: #43454a; --ui-text: #dfe1e5; --ui-dim: #9da0a8;
+    --out: #17181a; --ui-raise: #3c3f44; --ui-faint: #6f737a; --ink: #1e1f22;
+    --hair: rgba(255,255,255,.06); --hair-2: rgba(255,255,255,.11); --bar: #2b2d30;
+    --code-bg: #1e1f22; --code-gutter: #1e1f22; --code-gutter-ink: #6f737a; --yellow: #f3d77a;
+    background: radial-gradient(120% 90% at 50% 0%, var(--wall-2), var(--wall));
+  }
+  .today .map { background: radial-gradient(circle, rgba(241,239,230,.07) 1px, transparent 1.2px) 0 0/18px 18px, var(--board); }
+  .today .file.debugging { background: linear-gradient(90deg, rgba(243,215,122,.16), rgba(243,215,122,.04) 75%, transparent); }
+  .today .frame { background: linear-gradient(145deg, var(--frame), var(--frame-2)); box-shadow: 0 30px 60px rgba(0,0,0,.45); }
+  .today .board { background: radial-gradient(60% 50% at 30% 20%, rgba(255,255,255,.05), transparent 70%), radial-gradient(50% 40% at 80% 70%, rgba(255,255,255,.035), transparent 70%), linear-gradient(160deg, var(--board-2), var(--board)); }
+  .today .board .ledge { background: linear-gradient(#5a3e26, #3b2716); }
+  .today .lh-title em { font-style: normal; background: linear-gradient(90deg, var(--yellow), #f0a94b); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .today .ring { background: conic-gradient(#a8e0a0 62%, var(--ui-line) 0); -webkit-mask: radial-gradient(circle, transparent 7px, #000 7.5px); mask: radial-gradient(circle, transparent 7px, #000 7.5px); }
+  .today .spane { background: radial-gradient(900px 480px at 60% -160px, rgba(243,215,122,.06), transparent 70%); }
+  .today .opt.sel { background: linear-gradient(180deg, rgba(243,215,122,.07), rgba(243,215,122,.02)), var(--ui); box-shadow: 0 0 0 3px rgba(243,215,122,.12); }
+  .today .mark { background: radial-gradient(circle, var(--yellow) 0 6px, rgba(243,215,122,.28) 7px, transparent 72%), var(--ui-2); border-radius: 50%; }
+  .today .msg { background: linear-gradient(140deg, var(--ui-2), var(--ui)); }
+
+  /* ── PROPOSED: one dark, everywhere. Every surface (page, panels, cards, code, board, inputs, menus) is the
+     same #141414; nothing is lighter or darker than anything else. Thin borders separate; selection and focus
+     are a yellow edge or yellow text, never a lighter fill. No gradient, no glow, no shadow. ── */
+  .flat {
+    --dark: #141414;
+    --wall: var(--dark); --board: var(--dark); --dg-card: var(--dark);
+    --ui: var(--dark); --ui-2: var(--dark); --ui-raise: var(--dark); --out: var(--dark); --bar: var(--dark);
+    --code-bg: var(--dark); --code-gutter: var(--dark);
+    --chalk: #e6e6e4; --chalk-dim: #a3a3a1;
+    --ui-line: #333333; --ui-text: #e6e6e4; --ui-dim: #a3a3a1; --ui-faint: #73736f;
+    --ink: var(--dark);
+    --hair: rgba(255,255,255,.08); --hair-2: rgba(255,255,255,.12);
+    --code-gutter-ink: #6a6a66; --yellow: #f3d77a;
+    background: var(--dark);
+  }
+  .flat .map { background: var(--dark); }
+  .flat .file.sel { background: none; color: var(--yellow); box-shadow: inset 2px 0 var(--yellow); }
+  .flat .file.debugging { background: none; box-shadow: inset 2px 0 var(--yellow); }
+  .flat .search { border-color: var(--hair-2); }
+  .flat .frame { background: none; border: 1px solid var(--ui-line); padding: 0; }
+  .flat .board { background: var(--dark); }
+  .flat .board .ledge { display: none; }
+  .flat .lh-title em { font-style: normal; color: var(--yellow); }
+  .flat .ring { border: 3px solid var(--ui-line); border-top-color: #a8e0a0; border-right-color: #a8e0a0; }
+  .flat .msg { background: none; border: 1px solid var(--hair-2); }
+  .flat .msg.me { border-color: var(--ui-line); }
+  .flat .snav div.on { background: none; color: var(--yellow); }
+  .flat .switch { background: none; color: var(--yellow); }
+  .flat .opt.sel { background: none; }
+  .flat .mark { background: none; border: 2px solid var(--yellow); border-radius: 50%; width: 20px; height: 20px; }
+  .flat .card.sel { border-color: var(--yellow); }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>Flat dark theme</h1>
+  <p>Left: the dark theme today. Right: proposed: one dark everywhere, borders only, no gradient.</p>
+  <div class="tabs" role="tablist">
+    <button class="on" data-v="explore">Explore</button>
+    <button data-v="learn">Learn</button>
+    <button data-v="settings">Settings</button>
+  </div>
+</div>
+
+<template id="explore">
+  <div class="app">
+    <div class="bar"><span class="brand">WalkMyCode</span><span class="tab on">Explore</span><span class="tab">Learn</span><span class="pill">AI · Claude Opus 5.5</span></div>
+    <div class="body">
+      <div class="rail"><i class="on"></i><i></i><i></i><i></i></div>
+      <div class="side">
+        <div class="hd">Files</div>
+        <div class="search">Search 12 files</div>
+        <div class="file">▾ src/</div>
+        <div class="file sel">&nbsp;&nbsp;main.rs</div>
+        <div class="file debugging">&nbsp;&nbsp;cart.rs ● debugging</div>
+        <div class="file">&nbsp;&nbsp;money.rs</div>
+        <div class="file">Cargo.toml</div>
+        <div class="file">README.md</div>
+      </div>
+      <div class="map">
+        <div class="lanes">
+          <div class="lane"><h4 style="color:#f3d77a">API routes</h4><div class="card sel">GET /api/orders<small>OrderController.java</small></div><div class="card">POST /api/orders<small>create</small></div></div>
+          <div class="lane"><h4 style="color:#c9c2b4">Logic</h4><div class="card">cart.rs<small>module</small></div><div class="card">OrderService<small>module</small></div></div>
+          <div class="lane"><h4 style="color:#a8e0a0">Database</h4><div class="card">orders<small>3 columns</small></div><div class="card">order_line<small>2 columns</small></div></div>
+        </div>
+      </div>
+      <div class="code"><div class="g">1<br>2<br>3<br>4<br>5<br>6<br>7</div><div class="t"><span class="k">pub fn</span> <span class="f">total</span>(cart: &amp;Cart) -&gt; <span class="k">u32</span> {
+    <span class="c">// sum every line</span>
+    cart.lines()
+        .<span class="f">map</span>(|l| l.cents)
+        .<span class="f">sum</span>()
+}  <span class="note">Kofi Mensah, 5 Nov 2026 16:02</span></div></div>
+    </div>
+  </div>
+</template>
+
+<template id="learn">
+  <div class="app">
+    <div class="bar"><span class="brand">WalkMyCode</span><span class="tab">Explore</span><span class="tab on">Learn</span><span class="pill">Rust mastery · lesson 4</span></div>
+    <div class="learn">
+      <div>
+        <div class="lh-title">Learn <em>Rust ownership</em> <span class="ring"></span> <small style="font-size:11px;color:var(--ui-dim);font-weight:400">62% of the course</small></div>
+        <div class="frame" style="height: 440px; margin-top: 8px">
+          <div class="board">
+            <h3>Who owns the value?</h3>
+            let a = String::from("hi");<br>
+            let b = a; &nbsp;// a moved to b<br>
+            println!("{}", b);<br><br>
+            💡 One owner at a time, like one key to one locker.
+            <div class="ledge"></div>
+          </div>
+        </div>
+      </div>
+      <div class="chat">
+        <div class="msg">So after <b>let b = a</b>, can I still use a?</div>
+        <div class="msg me">No: the value moved. The compiler stops you.</div>
+        <div class="msg">What if I clone it?</div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="settings">
+  <div class="app">
+    <div class="bar"><span class="brand">WalkMyCode</span><span class="tab">Explore</span><span class="tab">Learn</span><span class="pill">Settings</span></div>
+    <div class="settings">
+      <div class="snav"><div>AI model</div><div>Voice</div><div>Privacy</div><div>This computer</div><div class="on">Editor</div><div>Motion &amp; look</div><div>About</div></div>
+      <div class="spane">
+        <div class="box"><h5>Answering now</h5><span class="mark"></span><b>Claude Opus 5.5</b> <span style="color:var(--ui-dim)">· your key · ready</span></div>
+        <div class="box"><h5>While you read and write code</h5>
+          <div class="row"><div><b>Line history</b><br><span>Who changed each line, and when</span></div><span class="switch">On</span></div>
+          <div class="row"><div><b>Suggestions while typing</b><br><span>Names in the file and the language's words</span></div><span class="switch">On</span></div>
+        </div>
+        <div class="box"><h5>Set up AI</h5>
+          <div class="opt sel"><b>Use my Claude subscription</b><br><span style="color:var(--ui-dim);font-size:11px">No key, no extra cost</span></div>
+          <div class="opt"><b>Run a model on this computer</b><br><span style="color:var(--ui-dim);font-size:11px">Ollama or LM Studio</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<div class="pair">
+  <div class="col"><h2>Today · dark</h2><div class="slot today"></div></div>
+  <div class="col"><h2><b>Proposed</b> · flat dark</h2><div class="slot flat"></div></div>
+</div>
+
+<div class="notes">
+  <div>
+    <b>What changes (dark theme only; Warm stays as it is)</b>
+    <ul>
+      <li>One dark everywhere: page, side panels, cards, the map, the code, the Learn board, chat, inputs and menus are all <code>#141414</code>. Nothing is lighter or darker than anything else.</li>
+      <li>Thin borders separate things. Selected and active things (a file, a tab, a setting, a card) get a yellow edge or yellow text, never a lighter fill. Hover is a border, not a fill.</li>
+      <li>No gradient anywhere: no background glows, no board sheen, no wooden frame, no gradient text, no glowing selected cards, no shimmer on progress bars.</li>
+      <li>Patterns made with gradients go too: the map's dot grid and the stage's grid are plain; the progress ring is a flat ring.</li>
+      <li>No shadows: depth comes only from borders.</li>
+      <li>The yellow accent, and blue, green and pink for meaning (lanes, diffs), stay.</li>
+      <li>A test fails the build if a gradient comes back in the dark theme.</li>
+    </ul>
+  </div>
+  <div>
+    <b>Palette</b>
+    <div class="sw">
+      <span><i style="background:#141414"></i>#141414 every surface</span>
+      <span><i style="background:#333333"></i>#333333 borders</span>
+      <span><i style="background:#e6e6e4"></i>#e6e6e4 text</span>
+      <span><i style="background:#a3a3a1"></i>#a3a3a1 dim text</span>
+      <span><i style="background:#73736f"></i>#73736f faint text</span>
+      <span><i style="background:#f3d77a"></i>#f3d77a accent</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  const slots = document.querySelectorAll(".slot");
+  function show(v) {
+    document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+    slots.forEach((s) => s.replaceChildren(document.getElementById(v).content.cloneNode(true)));
+  }
+  document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.v)));
+  show(["explore", "learn", "settings"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "explore");
+</script>
+</body>
+</html>
