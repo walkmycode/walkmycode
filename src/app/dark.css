@@ -370,6 +370,7 @@
 :root[data-theme="dark"] .cm-editor .cm-activeLine, :root[data-theme="dark"] .cm-editor .cm-activeLineGutter { background-color: transparent; }
 :root[data-theme="dark"] .cm-editor .cm-lit-line, :root[data-theme="dark"] .cm-editor .cm-debug-line { background-color: transparent !important; }
 :root[data-theme="dark"] .cm-tooltip { box-shadow: none; }
+:root[data-theme="dark"] .file-git .ctl.icon[data-tip]:hover::after, :root[data-theme="dark"] .file-git .ctl.icon[data-tip]:focus-visible::after { box-shadow: none; }
 :root[data-theme="dark"] .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { color: var(--yellow); }
 :root[data-theme="dark"] .cm-editor .cm-snippetField { background-color: transparent; box-shadow: inset 0 -1px 0 var(--blue); }
 

@@ -8,14 +8,18 @@
  * - a highlighted line range (a tour step or a citation), scrolled into view;
  * - `onSelect`, reporting the lines the user selects (for "explain this");
  * - breakpoints in a gutter, and the debugger's current line.
- * - who last changed each block of lines, and when (git blame), in a gutter of its own, and
- *   in a faint note at the end of the line the cursor is on (./lineHistory.ts); with `onLineStory`,
- *   that note's "How did this line get here?" and a click on the blame gutter open a line's history;
+ * - who last changed each line, and when (git blame, ./lineHistory.ts): a faint note at the end of
+ *   the line the cursor is on, the details of a line pointed at or clicked, and with `blameGutter` a
+ *   gutter of its own; kept right through edits. With `onLineStory`, "How did this line get here?"
+ *   (in the note, the details, or a click on the gutter) opens a line's history;
  * - suggestions while typing, when it can be typed in (./suggest.ts);
- * - a change being toured (src/lib/diffTour.ts): added lines marked, removed ones shown where they were.
+ * - a change being toured (src/lib/diffTour.ts): added lines marked, removed ones shown where they were;
+ * - how the code is drawn (./codeView.ts): neat wrapping, indent guides, coloured brackets, and the
+ *   current line's band that glides;
+ * - `onFormat` on Shift+Alt+F (the Code panel's Format, src/ide/Ide.tsx).
  *
- * The switches in Settings → Editor (src/lib/editorSettings.ts) turn the last two on and off,
- * in every open editor at once.
+ * The switches in Settings → Editor (src/lib/editorSettings.ts) turn line history, suggestions and
+ * the way code is drawn on and off, in every open editor at once.
  *
  * The language follows the file's extension, or `language` when there is no path
  * (./languages.ts has the list).
@@ -28,7 +32,6 @@ import {
   WidgetType,
   drawSelection,
   gutter,
-  highlightActiveLine,
   highlightActiveLineGutter,
   keymap,
   lineNumbers,
@@ -40,9 +43,12 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, bracketMatching, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { languageExtension, languageOf, listMark, type Language } from "./languages";
-import { lineNote, type BlameMark, type OnLineStory } from "./lineHistory";
+import { blameGutter, lineNote, type BlameMark, type OnLineStory } from "./lineHistory";
 import { suggestions } from "./suggest";
 import { useEditorSettings } from "./useEditorSettings";
+import { codeView, type CodeLook } from "./codeView";
+import { litScrollDue } from "./litScroll";
+import "./codeView.css";
 import type { DiffMarks } from "@/lib/diffTour";
 
 export type { BlameMark, Language };
@@ -107,65 +113,6 @@ const theme = EditorView.theme(
 );
 
 /* Breakpoints: a marker per line, set from React. */
-class BlameMarker extends GutterMarker {
-  constructor(
-    readonly mark: BlameMark | null,
-    readonly story = false,
-  ) {
-    super();
-  }
-  eq(other: BlameMarker) {
-    return other.mark === this.mark && other.story === this.story;
-  }
-  toDOM() {
-    const el = document.createElement("div");
-    el.className = `cm-blame${this.mark?.tone ? ` ${this.mark.tone}` : ""}`;
-    const who = el.appendChild(document.createElement("span"));
-    who.className = "who";
-    const when = el.appendChild(document.createElement("span"));
-    when.className = "when";
-    if (this.mark) {
-      who.textContent = this.mark.who;
-      const w = this.mark.when;
-      if (typeof w === "string") when.textContent = w;
-      else
-        for (const [cls, text] of [["d", w.day], ["y", w.year], ["t", w.time]] as const) {
-          const s = when.appendChild(document.createElement("span"));
-          s.className = cls;
-          s.textContent = text;
-        }
-      el.title = this.story && this.mark.tone !== "new" ? `${this.mark.tip}\nClick: how did this line get here?` : this.mark.tip;
-      if (this.story && this.mark.tone !== "new") el.classList.add("story");
-    }
-    return el;
-  }
-}
-/** Sizes the gutter before any line is drawn. */
-const blameSpacer = new BlameMarker({ start: 0, lines: 0, who: "Not committed", when: { day: "28 Nov", year: " 2026", time: "22:41" }, tip: "", note: "" });
-
-/** The blame gutter: a label where each block begins, nothing on the block's other lines. With
- * `story`, a click on a block's label opens the history of its first line. */
-function blameGutter(marks: BlameMark[] | null, story: OnLineStory | null = null): Extension {
-  if (!marks?.length) return [];
-  const byStart = new Map(marks.map((m) => [m.start, new BlameMarker(m, !!story)]));
-  return gutter({
-    class: "cm-blame-gutter",
-    lineMarker: (v, line) => byStart.get(v.state.doc.lineAt(line.from).number) ?? null,
-    initialSpacer: () => blameSpacer,
-    domEventHandlers: story
-      ? {
-          click: (v, line, e) => {
-            const n = v.state.doc.lineAt(line.from).number;
-            const el = (e.target as HTMLElement).closest<HTMLElement>(".cm-blame.story");
-            if (!el || !byStart.has(n)) return false;
-            story(n, el);
-            return true;
-          },
-        }
-      : {},
-  });
-}
-
 class BreakMarker extends GutterMarker {
   toDOM() {
     const d = document.createElement("span");
@@ -277,14 +224,20 @@ export interface EditorProps {
   debugLine?: number | null;
   /** Long lines wrap instead of scrolling sideways (good for reading). */
   wrap?: boolean;
-  /** Who last changed each block of lines, and when (git blame): a gutter beside the line numbers,
-   * and a note at the end of the cursor's line. */
+  /** Who last changed each block of lines, and when (git blame): a note at the end of the cursor's
+   * line and the details of a line pointed at or clicked, kept right through edits. */
   blame?: BlameMark[] | null;
+  /** The Blame gutter beside the line numbers, every block's author and date (the user's choice). */
+  blameGutter?: boolean;
   /** "How did this line get here?": from the cursor line's note, or a click on a block's blame. */
   onLineStory?: OnLineStory;
   /** A change being toured: its added and removed lines in this file. */
   diff?: DiffMarks | null;
   fontSize?: number;
+  /** Shift+Alt+F: format the file (the Code panel's Format). */
+  onFormat?: () => void;
+  /** The CodeMirror view, once made (and null when it goes), for a host that edits it directly (Format). */
+  onView?: (v: EditorView | null) => void;
   label?: string;
   /** Size the editor from outside, e.g. to fill a dock panel. It fills its box; it has no height of its own. */
   className?: string;
@@ -308,26 +261,38 @@ export default function Editor({
   blame = null,
   onLineStory,
   diff = null,
+  blameGutter: gutterOn = false,
   fontSize,
+  onFormat,
+  onView,
   label = "Code",
   className = "",
   style,
 }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, path });
+  const cb = useRef({ onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, onFormat, onView, path });
   // One function for the editor's whole life, so the note and the gutter aren't drawn again when the page's own changes.
-  const [storyFn] = useState<OnLineStory>(() => (line: number, el: HTMLElement) => cb.current.onLineStory?.(line, el));
+  const [storyFn] = useState<OnLineStory>(() => (...a: Parameters<OnLineStory>) => cb.current.onLineStory?.(...a));
   const story = onLineStory ? storyFn : null;
-  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment(), diff: new Compartment(), note: new Compartment(), suggest: new Compartment(), tips: new Compartment() });
+  const comp = useRef({ lang: new Compartment(), lock: new Compartment(), wrap: new Compartment(), size: new Compartment(), blame: new Compartment(), diff: new Compartment(), note: new Compartment(), suggest: new Compartment(), tips: new Compartment(), look: new Compartment() });
   useEffect(() => {
-    cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, path };
+    cb.current = { onChange, onRun, onSave, onSelect, onToggleBreakpoint, onLineStory, onFormat, onView, path };
   });
 
   const lang = language ?? languageOf(path);
   // Suggestions are for typing: a read-only editor has none.
-  const suggest = useEditorSettings().suggestions && !readOnly;
+  const settings = useEditorSettings();
+  const suggest = settings.suggestions && !readOnly;
+  // How the code is drawn (./codeView.ts). Brackets are coloured in code, not in prose.
+  const prose = lang === "markdown" || lang === "text";
+  const look: CodeLook = { neat: settings.neatWrap, guides: settings.indentGuides, brackets: settings.colourBrackets && !prose, motion: settings.codeMotion };
+  const lookKey = `${look.neat}${look.guides}${look.brackets}${look.motion}`;
   const hasBreaks = !!onToggleBreakpoint;
+  /** The highlight last lit and scrolled to, and whether the text was replaced from outside since
+   * (./litScroll.ts): a new editor (made again, or twice in development) starts with neither. */
+  const litDone = useRef("");
+  const replaced = useRef(false);
 
   useEffect(() => {
     if (!host.current) return;
@@ -338,11 +303,17 @@ export default function Editor({
     };
     const c = comp.current;
     // The list of suggestions is drawn on the page's body, not inside the editor, whose box would
-    // cut it off. The code font is set further in than the body, so the list is told it. A panel can
-    // move to a pop-out window (another document): the list follows on focus.
+    // cut it off (so are a line's history details). The fonts are set further in than the body, so
+    // the list and the details are told them. A panel can move to a pop-out window (another
+    // document): the list follows on focus.
     const tipsOn = (el: HTMLElement): Extension => [
       tooltips({ parent: el.ownerDocument.body }),
-      EditorView.theme({ ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: getComputedStyle(el).getPropertyValue("--mono").trim() || "monospace" } }),
+      EditorView.theme({
+        ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: getComputedStyle(el).getPropertyValue("--mono").trim() || "monospace" },
+        // A line's history details (./lineHistory.ts) are words, in the page's own font.
+        ".cm-line-tip": { fontFamily: getComputedStyle(el).getPropertyValue("--sans").trim() || "sans-serif" },
+        ".cm-line-tip .lt-hash": { fontFamily: getComputedStyle(el).getPropertyValue("--mono").trim() || "monospace" },
+      }),
     ];
     let tipDoc = host.current.ownerDocument;
     const v = new EditorView({
@@ -361,10 +332,10 @@ export default function Editor({
                 }),
               ]
             : []),
-          c.blame.of(blameGutter(blame, story)),
+          c.blame.of(gutterOn ? blameGutter(blame, story) : []),
           lineNumbers({ domEventHandlers: { mousedown: (v, line) => toggle(v, line.from) } }),
           highlightActiveLineGutter(),
-          highlightActiveLine(),
+          c.look.of(codeView(look)),
           lit.field,
           debugMark.field,
           c.diff.of(diffMarks(diff)),
@@ -393,6 +364,7 @@ export default function Editor({
             { key: "Mod-Enter", run: () => (cb.current.onRun ? (cb.current.onRun(), true) : false) },
             { key: "Shift-Enter", run: () => (cb.current.onRun ? (cb.current.onRun(), true) : false) },
             { key: "Mod-s", preventDefault: true, run: () => (cb.current.onSave?.(), true) },
+            { key: "Shift-Alt-f", preventDefault: true, run: () => (cb.current.onFormat ? (cb.current.onFormat(), true) : false) },
             indentWithTab,
             ...defaultKeymap,
             ...historyKeymap,
@@ -412,19 +384,26 @@ export default function Editor({
       }),
     });
     view.current = v;
+    litDone.current = "";
+    cb.current.onView?.(v);
     return () => {
       v.destroy();
       view.current = null;
+      cb.current.onView?.(null);
     };
     // Built once per mount (and when a breakpoint gutter is added or removed);
     // everything else is applied by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasBreaks]);
 
-  // New text from outside (another file, a reset) replaces the document.
+  // New text from outside (another file, a reset) replaces the document. Typing here also gives a new
+  // `value`, which is already the document: nothing to do, and (below) no scrolling back to a highlight.
   useEffect(() => {
     const v = view.current;
-    if (v && v.state.doc.toString() !== value) v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
+    if (v && v.state.doc.toString() !== value) {
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
+      replaced.current = true;
+    }
   }, [value]);
 
   useEffect(() => {
@@ -439,8 +418,12 @@ export default function Editor({
     view.current?.dispatch({ effects: comp.current.wrap.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }, [wrap]);
   useEffect(() => {
-    view.current?.dispatch({ effects: [comp.current.blame.reconfigure(blameGutter(blame, story)), comp.current.note.reconfigure(lineNote(blame, story))] });
-  }, [blame, story]);
+    view.current?.dispatch({ effects: [comp.current.blame.reconfigure(gutterOn ? blameGutter(blame, story) : []), comp.current.note.reconfigure(lineNote(blame, story))] });
+  }, [blame, story, gutterOn]);
+  useEffect(() => {
+    view.current?.dispatch({ effects: comp.current.look.reconfigure(codeView(look)) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `look` is new each draw; lookKey says when it changed
+  }, [lookKey]);
   useEffect(() => {
     view.current?.dispatch({ effects: comp.current.diff.reconfigure(diffMarks(diff)) });
   }, [diff]);
@@ -456,10 +439,15 @@ export default function Editor({
     view.current?.dispatch({ effects: setBreaks.of(breakKey ? breakKey.split(",").map(Number) : []) });
   }, [breakKey]);
 
+  // A highlight is lit and scrolled to when it is new, or when the document was replaced from outside
+  // (the file's text arriving after the highlight): never because the user typed.
   const litKey = highlight ? `${highlight[0]}-${highlight[1]}` : "";
   useEffect(() => {
     const v = view.current;
     if (!v) return;
+    if (!litScrollDue(litKey, litDone.current, replaced.current)) return;
+    litDone.current = litKey;
+    replaced.current = false;
     const range = litKey ? (litKey.split("-").map(Number) as [number, number]) : null;
     v.dispatch({ effects: lit.set.of(range) });
     if (range) {

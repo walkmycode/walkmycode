@@ -1,0 +1,40 @@
+/* How the editor draws code (./codeView.ts; mockup: docs/design/code-view.html). The chalk colours of
+   the code itself, plus a peach and an orchid for the deeper levels. Every movement takes its time
+   from --m (src/app/globals.css), so it is instant when the computer or the app asks for less motion;
+   .cm-calm is the "Motion in the code" switch turned off. */
+.cm-editor {
+  --cv-peach: #f2c9a0;
+  --cv-orchid: #c98ff0;
+  --cv-ease: cubic-bezier(.3, .7, .2, 1);
+}
+
+/* Neat wrapping: the line's first row starts where it always did; the rows it wraps onto start --hang
+   columns in (its indentation, plus two). */
+.cm-editor .cm-line.cm-hang { padding-left: calc(6px + var(--hang) * 1ch); text-indent: calc(var(--hang) * -1ch); } /* look: fixed (CodeMirror's own 6px line padding, which codeView.ts measures from) */
+
+/* The current line: a band that glides to the line the cursor moves to. */
+.cm-editor .cm-band { position: absolute; top: 0; background: rgba(255, 255, 255, .045); box-shadow: inset 2px 0 0 var(--yellow); pointer-events: none; transition: transform calc(220ms * var(--m, 1)) var(--cv-ease), height calc(220ms * var(--m, 1)) var(--cv-ease); }
+.cm-editor:not(.cm-focused) .cm-band { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--yellow) 45%, transparent); }
+
+/* Indent guides: quiet at rest, a colour per level; the block the cursor is in bright, drawn top to bottom. */
+.cm-editor .cm-guide { position: absolute; width: 1px; background: var(--gc); opacity: .3; pointer-events: none; transform-origin: top; }
+.cm-editor .cm-guide.l0 { --gc: var(--yellow); }
+.cm-editor .cm-guide.l1 { --gc: var(--blue); }
+.cm-editor .cm-guide.l2 { --gc: var(--green); }
+.cm-editor .cm-guide.l3 { --gc: var(--cv-peach); }
+.cm-editor .cm-guide.l4 { --gc: var(--pink); }
+.cm-editor .cm-guide.l5 { --gc: var(--cv-orchid); }
+.cm-editor .cm-guide.cm-guide-on { width: 2px; margin-left: -.5px; opacity: .9; animation: cv-draw calc(380ms * var(--m, 1)) var(--cv-ease) both; }
+@keyframes cv-draw { from { transform: scaleY(0); opacity: .2; } to { transform: scaleY(1); opacity: .9; } }
+
+/* Coloured brackets: three colours by depth. The highlighter's own colour inside is overruled. */
+.cm-editor .cm-br-0, .cm-editor .cm-br-0 span { color: var(--yellow) !important; }
+.cm-editor .cm-br-1, .cm-editor .cm-br-1 span { color: var(--cv-orchid) !important; }
+.cm-editor .cm-br-2, .cm-editor .cm-br-2 span { color: var(--blue) !important; }
+/* The pair at the cursor: a small pop (a ring that shrinks away; nothing moves the text). */
+.cm-editor.cm-brackets .cm-matchingBracket { animation: cv-pop calc(420ms * var(--m, 1)) ease-out; }
+@keyframes cv-pop { 0% { box-shadow: 0 0 0 0 rgba(159, 211, 240, 0); } 35% { box-shadow: 0 0 0 3px rgba(159, 211, 240, .45); } 100% { box-shadow: 0 0 0 0 rgba(159, 211, 240, 0); } }
+
+/* "Motion in the code" off: everything arrives at once. */
+.cm-editor.cm-calm .cm-band { transition: none; }
+.cm-editor.cm-calm .cm-guide-on, .cm-editor.cm-calm .cm-matchingBracket { animation: none; }

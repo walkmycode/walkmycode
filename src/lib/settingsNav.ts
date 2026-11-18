@@ -11,7 +11,7 @@ export const PANES: { id: PaneId; label: string }[] = [
   { id: "privacy", label: "Privacy" },
   // Running code and the terminal on this computer (src/lib/localrun): not in Lite, which has no server.
   { id: "computer", label: "This computer" },
-  // The code editor's switches: line history, suggestions while typing (src/lib/editorSettings.ts).
+  // The code editor's switches: line history, suggestions, neat wrapping, guides, brackets, motion (src/lib/editorSettings.ts).
   { id: "editor", label: "Editor" },
   { id: "motion", label: "Motion & look" },
   { id: "about", label: "About" },

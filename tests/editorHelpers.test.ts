@@ -9,9 +9,9 @@ import { javascript } from "@codemirror/lang-javascript";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { sql } from "@codemirror/lang-sql";
-import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, Text, type Extension } from "@codemirror/state";
 import { EditorView, type DecorationSet } from "@codemirror/view";
-import { lineNote, markAt, noteFor } from "../src/ide/lineHistory";
+import { lineAt, lineNote, mapLines, markAt, noteFor } from "../src/ide/lineHistory";
 import { blameMarks } from "../src/ide/localrun/git/blameMarks";
 import type { Language } from "../src/ide/languages";
 import { SUGGEST, sourcesOf, suggestions } from "../src/ide/suggest";
@@ -28,17 +28,27 @@ before(async () => {
 });
 
 describe("Settings → Editor: one switch per helper", () => {
-  it("starts with line history and suggestions on, and has no switch for type-aware suggestions yet", () => {
-    assert.deepEqual(settings.DEFAULT_EDITOR, { lineHistory: true, suggestions: true });
+  it("starts with every switch on, and has no switch for type-aware suggestions yet", () => {
+    assert.deepEqual(settings.DEFAULT_EDITOR, { lineHistory: true, suggestions: true, neatWrap: true, indentGuides: true, colourBrackets: true, codeMotion: true });
     assert.deepEqual(
       settings.EDITOR_SWITCHES.map((s) => s.label),
-      ["Line history (who changed each line, and when)", "Suggestions while typing"],
+      ["Line history (who changed each line, and when)", "Suggestions while typing", "Neat wrapping", "Indent guides", "Coloured brackets", "Motion in the code"],
     );
     assert.deepEqual(settings.editorSettings(), settings.DEFAULT_EDITOR);
   });
 
+  it("says in one plain line what each of the code view's switches does", () => {
+    for (const id of ["neatWrap", "indentGuides", "colourBrackets", "codeMotion"] as const) {
+      const s = settings.EDITOR_SWITCHES.find((x) => x.id === id)!;
+      assert.ok(s.on, `${id} starts on`);
+      assert.ok(!s.local, `${id} needs nothing on this computer, so Lite has it too`);
+      assert.ok(s.hint.length > 20 && s.hint.length < 200 && !s.hint.includes("\n"), `${id}: one line`);
+    }
+    assert.ok(settings.EDITOR_KEYS.some((k) => k.keys === "Shift+Alt+F"), "Format's key is listed");
+  });
+
   it("shows Lite no switch for line history, which needs git on this computer", () => {
-    assert.deepEqual(settings.editorSwitchesFor("lite").map((s) => s.id), ["suggestions"]);
+    assert.deepEqual(settings.editorSwitchesFor("lite").map((s) => s.id), ["suggestions", "neatWrap", "indentGuides", "colourBrackets", "codeMotion"]);
     assert.equal(settings.editorSwitchesFor("full"), settings.EDITOR_SWITCHES);
     assert.equal(settings.editorSwitchesFor("mcp"), settings.EDITOR_SWITCHES);
   });
@@ -47,7 +57,9 @@ describe("Settings → Editor: one switch per helper", () => {
     assert.deepEqual(settings.parseEditor(null), settings.DEFAULT_EDITOR);
     assert.deepEqual(settings.parseEditor("not json"), settings.DEFAULT_EDITOR);
     assert.deepEqual(settings.parseEditor("[false]"), settings.DEFAULT_EDITOR);
-    assert.deepEqual(settings.parseEditor('{"suggestions":false,"lineHistory":"no","other":1}'), { lineHistory: true, suggestions: false });
+    assert.deepEqual(settings.parseEditor('{"suggestions":false,"lineHistory":"no","other":1}'), { ...settings.DEFAULT_EDITOR, suggestions: false });
+    assert.deepEqual(settings.parseEditor('{"lineHistory":false,"suggestions":true}'), { ...settings.DEFAULT_EDITOR, lineHistory: false }, "saved before the code view's switches: they start on");
+    assert.deepEqual(settings.parseEditor('{"indentGuides":false,"codeMotion":0}'), { ...settings.DEFAULT_EDITOR, indentGuides: false });
   });
 
   it("tells every listener when a switch changes, and remembers it", () => {
@@ -59,8 +71,8 @@ describe("Settings → Editor: one switch per helper", () => {
     assert.equal(settings.editorSettings(), before, "the same object until one changes");
     settings.setEditorSetting("lineHistory", false);
     assert.equal(heard, 1);
-    assert.deepEqual(settings.editorSettings(), { lineHistory: false, suggestions: true });
-    assert.deepEqual(JSON.parse(saved.get(settings.EDITOR_KEY)!), { lineHistory: false, suggestions: true });
+    assert.deepEqual(settings.editorSettings(), { ...settings.DEFAULT_EDITOR, lineHistory: false });
+    assert.deepEqual(JSON.parse(saved.get(settings.EDITOR_KEY)!), { ...settings.DEFAULT_EDITOR, lineHistory: false });
     // Another tab turned it back on.
     saved.set(settings.EDITOR_KEY, '{"lineHistory":true}');
     settings.rereadEditorSettings();
@@ -70,6 +82,17 @@ describe("Settings → Editor: one switch per helper", () => {
     settings.setEditorSetting("suggestions", false);
     assert.equal(heard, 2, "no longer listening");
     settings.setEditorSetting("suggestions", true);
+  });
+
+  it("turns each of the code view's switches off and on again, remembered with the rest", () => {
+    for (const id of ["neatWrap", "indentGuides", "colourBrackets", "codeMotion"] as const) {
+      settings.setEditorSetting(id, false);
+      assert.equal(settings.editorSettings()[id], false);
+      assert.equal(JSON.parse(saved.get(settings.EDITOR_KEY)!)[id], false);
+      settings.setEditorSetting(id, true);
+      assert.equal(settings.editorSettings()[id], true);
+    }
+    assert.deepEqual(settings.editorSettings(), settings.DEFAULT_EDITOR);
   });
 });
 
@@ -143,6 +166,80 @@ describe("line history: the note on the cursor's line", () => {
     assert.deepEqual(lineNote([]), [], "no marks: nothing added to the editor");
     state = state.update({ effects: note.reconfigure(lineNote(marks)) }).state;
     assert.equal(notes(state).length, 1);
+  });
+});
+
+describe("line history while the file is edited", () => {
+  const doc = "mod a;\nmod b;\n\nfn main() {\n    run();\n    stop();\n}\n";
+  // Committed lines know their commit and their number in it, as git blame says.
+  const withAt = blameMarks(
+    hunks.map((h) => (h.hash ? { ...h, sha: h.hash.padEnd(40, "0"), orig: Array.from({ length: h.lines }, (_, k) => h.start + k + 10) } : h)),
+    "kofi@example.com",
+  );
+  const start = () => EditorState.create({ doc, extensions: [lineNote(withAt)] });
+  const at = (state: EditorState, line: number) => lineAt(state, line)?.mark.note ?? null;
+
+  it("moves each line's history with the line when lines are added above it", () => {
+    let state = start();
+    assert.equal(at(state, 5), withAt[1].note);
+    state = state.update({ changes: { from: 0, insert: "// new\n// lines\n" } }).state;
+    assert.equal(at(state, 1), "Changed, not saved", "a line added here has no commit yet");
+    assert.equal(at(state, 2), "Changed, not saved");
+    assert.equal(at(state, 3), withAt[0].note, "what was line 1 is line 3 now, and keeps its history");
+    assert.equal(at(state, 7), withAt[1].note, "what was line 5");
+    assert.equal(lineAt(state, 7)!.n, 5, "still line 5 in what git blamed");
+  });
+
+  it("says a line changed and not saved, not who last committed it, and keeps the lines around it", () => {
+    let state = start();
+    const line5 = state.doc.line(5);
+    state = state.update({ changes: { from: line5.to - 1, insert: " // why" }, selection: EditorSelection.cursor(line5.to) }).state;
+    assert.equal(at(state, 5), "Changed, not saved");
+    assert.equal(at(state, 4), withAt[1].note);
+    assert.equal(at(state, 6), "Not committed yet", "git's own uncommitted line stays so");
+    assert.deepEqual(notes(state).map((n) => n.text), ["Changed, not saved"], "the cursor's note says so too");
+    // A new line under one: the line above is unchanged.
+    const line4 = state.doc.line(4);
+    state = state.update({ changes: { from: line4.to, insert: "\n    start();" } }).state;
+    assert.equal(at(state, 4), withAt[1].note);
+    assert.equal(at(state, 5), "Changed, not saved");
+    assert.equal(at(state, 6), "Changed, not saved", "the line edited before");
+    assert.equal(at(state, 8), withAt[3].note, "the closing brace moved down two and kept its commit");
+  });
+
+  it("gives every line its own history back when the edits are undone to the saved text", () => {
+    let state = start();
+    state = state.update({ changes: { from: 0, insert: "x" } }).state;
+    assert.equal(at(state, 1), "Changed, not saved");
+    state = state.update({ changes: { from: 0, to: 1 } }).state;
+    assert.equal(at(state, 1), withAt[0].note);
+  });
+
+  it("starts a line's story from the commit that last changed it, wherever the line is now", () => {
+    let state = start();
+    state = state.update({ changes: { from: 0, insert: "\n\n\n" } }).state;
+    const e = lineAt(state, 8)!;
+    assert.equal(e.mark, withAt[1]);
+    assert.equal(e.mark.at!.orig[e.n - e.mark.start], 15, "line 5 in git's numbering is line 15 in that commit");
+  });
+
+  it("maps lines through any change: untouched lines move, touched ones are marked", () => {
+    const a = Text.of(["one", "two", "three", "four"]);
+    const tr = EditorState.create({ doc: a }).update({ changes: [{ from: 4, to: 7, insert: "TWO\nmore" }, { from: a.line(4).from, insert: "<" }] });
+    const out = mapLines(["1", "2", "3", "4"], a, tr.state.doc, tr.changes, "edited");
+    assert.deepEqual(out, ["1", "edited", "edited", "3", "edited"]);
+    assert.equal(out.length, tr.state.doc.lines);
+  });
+
+  it("has the details a line pointed at shows: who, when, the message, the commit", () => {
+    const d = withAt[0].detail!;
+    assert.equal(d.author, "Ama Owusu");
+    assert.equal(d.subject, "First commit");
+    assert.equal(d.hash, "a1b2c3d");
+    assert.equal(d.me, false);
+    assert.match(d.date, /November 2026/);
+    assert.equal(withAt[1].detail!.me, true, "the user's own commit");
+    assert.equal(withAt[2].detail, undefined, "a line not committed has none");
   });
 });
 

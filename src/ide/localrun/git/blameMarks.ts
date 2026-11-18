@@ -1,6 +1,6 @@
 // git blame's blocks of lines as the editor shows them (./FileGit.tsx asks for them): the gutter's
-// author and date, its hover, and the note on the cursor's line (src/ide/lineHistory.ts). Dates are
-// in this computer's time zone. No React here, so tests can load it.
+// author and date, its hover, the note on the cursor's line and the details of a line pointed at
+// (src/ide/lineHistory.ts). Dates are in this computer's time zone. No React here, so tests can load it.
 import type { BlameMark } from "@/ide/lineHistory";
 import type { GitBlameHunk } from "@/lib/localrun/git";
 
@@ -53,6 +53,7 @@ export function blameMarks(hunks: GitBlameHunk[], me: string, now = Date.now()):
       when,
       tip: `${h.author}${isMe ? " (you)" : ""}\n${LONG.format(d)} · ${ago(d, now)}\n${h.summary}\n${h.hash} · ${range}`,
       note: `${who}, ${when.day}${when.year} ${when.time}${h.summary ? ` · ${h.summary}` : ""}`,
+      detail: { author: h.author, me: isMe, date: LONG.format(d), ago: ago(d, now), subject: h.summary, hash: h.hash },
       ...(isMe ? { tone: "me" as const } : {}),
       ...(h.sha && h.orig?.length === h.lines ? { at: { sha: h.sha, orig: h.orig } } : {}),
     };

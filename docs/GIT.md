@@ -5,27 +5,41 @@ is in `src/lib/editorSettings.ts`), wherever it can work (see below). In the Cod
 panel's header, beside Edit (mockup:
 [`design/git-history.html`](design/git-history.html)):
 
-- **Blame** switches line history for this file, for this visit; the switch in
-  Settings decides what a file starts with, and changing it there applies to every
-  open file at once. Line history is a gutter beside the line numbers. Where each
-  block of lines that one commit last changed begins, it shows the author and the
-  date and time, in this computer's time zone. Your own commits say "You", in
-  yellow. Lines changed since the last commit say "Not committed", in green.
+- **Line history** (the Settings switch) works in reading and editing alike:
   - **The cursor's line:** a faint note at its end says who, when and why:
     `Kofi Mensah, 2 Nov 2026 09:14 · Run on start`, or "Not committed yet".
+  - **Pointed at or clicked:** a line's details in a box under it: the author,
+    the full date and how long ago, the commit's message and short hash, and
+    "How did this line get here?". A clicked line's box stays until the cursor
+    leaves the line, you type, or Esc.
+  - **While editing:** each line keeps its history as lines move
+    (`src/ide/lineHistory.ts` carries it through CodeMirror's changes). A line
+    added or changed since the last save says "Changed, not saved" rather than
+    naming whoever committed the line that was there; undo back to the saved
+    text and every line has its own history again.
+- **Blame** (an icon button; the tooltip says "Blame: who changed each line")
+  shows a gutter beside the line numbers. It is off until you press it; the choice
+  then holds in every file for the rest of the session in this browser
+  (sessionStorage), and a fresh start is off again. Where each block of lines that
+  one commit last changed begins, it shows the author and the date and time, in
+  this computer's time zone. Your own commits say "You", in yellow. Lines changed
+  since the last commit say "Not committed", and lines edited and not saved
+  "Changed, not saved", in green.
   - **Quiet by default:** on its own it never asks to be allowed and says nothing
     when git has no answer (no folder yet, not a git project, a new file); Blame
     then shows as off, and pressing it asks and says why.
+  - **On its own:** with line history switched off in Settings, pressing Blame
+    still reads it, and the note and details come with the gutter.
   - **Hover:** the full date, how long ago, the commit's message, its short hash
     and the lines it covers.
   - **Narrow editor:** the name column is shorter and the year is left out.
-  - **Stays on:** it stays on for that file while you move panels around, and is
-    worked out again when the file is saved or mapped again.
-  - **While editing:** it's hidden, because the lines have moved.
-- **History** lists the file's own commits, newest first, following it through
-  renames: message, short hash, author, date and time.
-- **How did this line get here?** Beside the cursor line's note, or by clicking
-  a block's blame, a popover beside the line shows every commit that changed it,
+  - **Stays right:** it is worked out again when the file is saved or mapped
+    again; in between, edits move it with the lines.
+- **History** (an icon button, "History: this file's commits") lists the file's
+  own commits, newest first, following it through renames: message, short hash,
+  author, date and time.
+- **How did this line get here?** Beside the cursor line's note, in a line's
+  details, or by clicking a block's blame, a popover beside the line shows every commit that changed it,
   oldest first and the newest marked (the last 20):
   who, when, the message, the PR when the message ends in `(#41)`, and a few of
   the lines it took out and put in (`src/ide/localrun/git/LineStory.tsx`; the
@@ -33,8 +47,9 @@ panel's header, beside Edit (mockup:
   - **The line itself, even after edits above it.** Blame knows the commit that
     last changed each line and the line's number in that commit, so the log
     starts there: `git log -L 24,24:<file> <that commit>`. Lines added or taken
-    out above it and not committed yet don't move git onto another line. A line
-    not committed yet has no history to show and no button.
+    out above it, not committed or not even saved yet, don't move git onto another
+    line. A line not committed (or changed and not saved) has no history to show
+    and no button.
 
   From there:
   - **Explain this history** asks the guide, the way "Explain this" does, for

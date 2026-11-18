@@ -1,6 +1,6 @@
 "use client";
-// One open file (panel id `code:<path>`): the shared editor, read-only, with
-// its own selection bar (Explain this / Trace it / Show impact of the selection). CodeMirror puts its styles
+// One open file (panel id `code:<path>`): the shared editor, read-only until Edit
+// (or Format), with its own selection bar (Explain this / Trace it / Show impact of the selection). CodeMirror puts its styles
 // into the document it was made in, so when the panel moves to a pop-out
 // window the editor is re-rooted there (docs/SHELL.md §7). The editor itself
 // is never remounted by a move, so scroll and selection survive.
@@ -29,6 +29,7 @@ import { languageOf } from "@/ide/Editor";
 import { setMdView, useMdView, type MdView } from "@/ide/mdView";
 import { countLabel } from "@/lib/diffParse";
 import { editorMarks, marksFit } from "@/lib/diffTour";
+import { prettierConfigFor } from "@/ide/format";
 
 // The shared IDE (CodeMirror, its runners and the Learn room's markup with KaTeX) loads
 // with the first file opened, not with the map: the map paints and answers clicks first.
@@ -120,6 +121,9 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
   // The editor holds lines, not line endings: it is given the file with "\n"
   // endings, so a "\r\n" file is not "changed" by being opened (./lineEndings.ts).
   const text = useMemo(() => (content === undefined ? undefined : toLF(content)), [content]);
+  // Format: the project's own Prettier settings for this file, when its files have them (src/ide/format.ts).
+  const files = s.repo.files;
+  const format = useMemo(() => prettierConfigFor(path, files), [path, files]);
   // The shared IDE: read-only until "Edit"; Save writes back through the file's source.
   const [draft, setDraft] = useState<string | null>(null);
   const [sample, setSample] = useState<Sample | null>(null);
@@ -248,7 +252,9 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
           preview={isMd ? <MarkdownPreview text={shown} path={path} onOpen={openLinked} /> : undefined}
           view={view}
           blame={fileGit.blame}
+          blameGutter={fileGit.gutter}
           onLineStory={fileGit.lineStory}
+          format={format}
           diff={marks}
           wrap
           // Config and .proto files (compose, Dockerfile, k8s) are shown as plain text.
@@ -267,7 +273,7 @@ export default function CodePanel({ api, params }: IDockviewPanelProps<{ path: s
         </div>
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- onSave reads the latest workspace when called
-    [path, content, text, shown, dirty, highlight, lang, sample, unread, fileGit.tools, fileGit.blame, fileGit.lineStory, isMd, view, litNow, openLinked, changed, fits, showChange, marks],
+    [path, content, text, shown, dirty, highlight, lang, sample, unread, fileGit.tools, fileGit.blame, fileGit.gutter, fileGit.lineStory, format, isMd, view, litNow, openLinked, changed, fits, showChange, marks],
   );
 
   // Re-root CodeMirror in whichever window now holds the panel.

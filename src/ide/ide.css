@@ -55,6 +55,10 @@
 .ide .ctl.code-only.icon { display: inline-grid; place-items: center; padding-inline: calc(7px * var(--sp)); }
 .ide .ctl.code-only.icon svg { width: calc(17px * var(--fs)); height: calc(17px * var(--fs)); }
 .ide .ctl.code-only.on { color: var(--yellow); border-color: var(--yellow); }
+/* Format (Ide.tsx): an icon and its name; off (with a tooltip saying why) for a language it can't format. */
+.ide .ctl.format-btn { display: inline-flex; align-items: center; gap: calc(6px * var(--sp)); }
+.ide .ctl.format-btn svg { width: calc(14px * var(--fs)); height: calc(14px * var(--fs)); flex: none; }
+.ide .ctl[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 
 /* Output. */
 .ide .output { background: var(--out, #0f1512); border: 1px solid var(--ui-line); border-radius: 0; padding: calc(10px * var(--sp)) calc(12px * var(--sp)); height: 240px; overflow: auto; }

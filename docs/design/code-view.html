@@ -1,0 +1,277 @@
+<title>Code View Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: two editor panes, "now" and "proposed", side by side on wide screens, stacked on phones;
+   one committed dark look (the app's flat #141414 code view), so no light variant. */
+:root {
+  color-scheme: dark;
+  --bg: #141414;
+  --line: #333333;
+  --text: #e6e6e4;
+  --dim: #a3a3a1;
+  --faint: #8a8a86;
+  --gutter: #6a6a66;
+  --yellow: #f3d77a;
+  --blue: #9fd3f0;
+  --green: #a8e0a0;
+  --peach: #f2c9a0;
+  --pink: #f2a7a0;
+  --orchid: #c98ff0;
+  --comment: #8fa39a;
+  --punct: #cfd8d3;
+  --sans: Inter, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --code: 13.5px;
+  --lh: 1.6;
+}
+body { background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+.wrap { max-width: 1320px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 22px; }
+header { display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+.eyebrow { font: 600 12px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--yellow); margin: 0; }
+h1 { margin: 0; font: 700 28px/1.2 var(--sans); text-wrap: balance; }
+header p { margin: 0; color: var(--dim); }
+.panes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 980px) { .panes { grid-template-columns: minmax(0, 1fr); } }
+.pane { border: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; }
+.pane.new { border-color: var(--yellow); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.bar h2 { margin: 0; font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.new .bar h2 { color: var(--yellow); }
+.file { font: 12px var(--mono); color: var(--dim); }
+.grow { flex: 1; }
+.switches { display: flex; flex-wrap: wrap; gap: 6px; }
+.sw { font: 600 12px var(--sans); color: var(--dim); background: var(--bg); border: 1px solid var(--line); padding: 5px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.sw::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--faint); }
+.sw[aria-pressed="true"] { color: var(--text); border-color: var(--yellow); }
+.sw[aria-pressed="true"]::before { background: var(--yellow); border-color: var(--yellow); }
+.sw:focus-visible, .ln:focus-visible { outline: 2px solid var(--yellow); outline-offset: 2px; }
+
+/* ── the code ── */
+.code { position: relative; padding: 12px 0 16px; font: var(--code)/var(--lh) var(--mono); overflow: hidden; }
+.cols { --cw: 54ch; } /* the code column: narrow enough that long lines wrap, as in the app's side panels */
+.ln { display: grid; grid-template-columns: 5ch minmax(0, var(--cw)); position: relative; cursor: text; z-index: 1; }
+.num { color: var(--gutter); text-align: right; padding-right: 1.6ch; user-select: none; }
+.txt { white-space: pre-wrap; overflow-wrap: anywhere; position: relative; min-height: calc(var(--code) * var(--lh)); }
+.ln.at .num { color: var(--text); }
+/* "now": a wrapped line goes back to column 0 */
+.old .txt { padding-left: 1ch; }
+/* "proposed": a wrapped line hangs under its own indentation, two columns in */
+.new.neat .txt { padding-left: calc(1ch + (var(--ind) + 2) * 1ch); text-indent: -2ch; }
+.new:not(.neat) .txt { padding-left: 1ch; }
+/* the current line: a band that glides to it */
+.band { position: absolute; left: 0; right: 0; top: 0; height: 0; background: rgba(255,255,255,.045); border-left: 2px solid var(--yellow); z-index: 0; pointer-events: none; }
+.motion .band { transition: transform 260ms cubic-bezier(.3,.7,.2,1), height 260ms cubic-bezier(.3,.7,.2,1); }
+/* indent guides: one per level, coloured by depth; the block the cursor is in drawn bright */
+.g { position: absolute; top: 0; bottom: 0; width: 1px; left: calc(1ch + var(--lv) * 2ch + .5ch); background: var(--gc); opacity: .34; pointer-events: none; transform-origin: top; }
+.new:not(.guides) .g { display: none; }
+.g.on { opacity: .95; width: 2px; margin-left: -.5px; }
+.motion .g.on { animation: draw 380ms cubic-bezier(.3,.7,.2,1) both; animation-delay: calc(var(--k) * 28ms); }
+@keyframes draw { from { transform: scaleY(0); opacity: .22; } to { transform: scaleY(1); opacity: .95; } }
+/* syntax: the app's chalk colours */
+.kw { color: var(--yellow); font-weight: 600; }
+.st { color: var(--green); }
+.nu { color: var(--blue); }
+.cm { color: var(--comment); font-style: italic; }
+.fn { color: var(--peach); }
+.ty { color: var(--pink); }
+.tg { color: var(--blue); }
+.at { color: var(--yellow); }
+.pu { color: var(--punct); }
+.br { color: var(--punct); }
+.new.brackets .br.d0 { color: var(--yellow); }
+.new.brackets .br.d1 { color: var(--orchid); }
+.new.brackets .br.d2 { color: #6fc0f5; }
+.new.brackets .br.pair { text-decoration: underline 2px; text-underline-offset: 3px; }
+.motion .new.brackets .br.pair, .new.motion.brackets .br.pair { animation: pop 420ms ease-out; display: inline-block; text-indent: 0; }
+@keyframes pop { 40% { transform: scale(1.3); } }
+.caret { display: inline-block; width: 2px; height: 1.15em; background: var(--yellow); vertical-align: text-bottom; margin-left: -1px; animation: blink 1.06s steps(1) infinite; text-indent: 0; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .g.on, .br.pair { animation: none !important; } .band { transition: none !important; } }
+
+/* ── what changes ── */
+.changes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 980px) { .changes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .changes { grid-template-columns: minmax(0, 1fr); } }
+.chg { border-top: 2px solid var(--c); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.chg h3 { margin: 0; font: 600 15px var(--sans); }
+.chg p { margin: 0; color: var(--dim); font-size: 14px; }
+.note { color: var(--faint); font-size: 13px; margin: 0; max-width: 90ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">WalkMyCode · the code view</p>
+    <h1>Code that keeps its shape when it wraps</h1>
+    <p>The same file, <span class="file">components/TaskCard.tsx</span> from Team Tasks, in a panel as narrow as the app's. Click any line to move the cursor; it also walks the file by itself.</p>
+  </header>
+
+  <div class="panes cols">
+    <section class="pane old" aria-label="The code view now">
+      <div class="bar"><h2>Now</h2><span class="file">TaskCard.tsx</span></div>
+      <div class="code" id="old"></div>
+    </section>
+    <section class="pane new neat guides brackets motion" id="newPane" aria-label="The proposed code view">
+      <div class="bar">
+        <h2>Proposed</h2><span class="file">TaskCard.tsx</span><span class="grow"></span>
+        <div class="switches" role="group" aria-label="Editor switches">
+          <button class="sw" id="sw-neat" aria-pressed="true" data-k="neat">Neat wrapping</button>
+          <button class="sw" id="sw-guides" aria-pressed="true" data-k="guides">Indent guides</button>
+          <button class="sw" id="sw-brackets" aria-pressed="true" data-k="brackets">Coloured brackets</button>
+          <button class="sw" id="sw-motion" aria-pressed="true" data-k="motion">Motion</button>
+        </div>
+      </div>
+      <div class="code" id="neu"><div class="band" id="band"></div></div>
+    </section>
+  </div>
+
+  <div class="changes">
+    <div class="chg" style="--c: var(--yellow)"><h3>Neat wrapping</h3><p>A long line wraps under its own indentation, two columns in, so you can still see where each line starts. Never back at the left edge.</p></div>
+    <div class="chg" style="--c: var(--blue)"><h3>Indent guides</h3><p>A quiet line for every level of nesting, in a colour per level. The block your cursor is in draws itself bright.</p></div>
+    <div class="chg" style="--c: var(--orchid)"><h3>Coloured brackets</h3><p>Each pair of brackets shares a colour by depth, so you can see which closes which. The pair around your block lights up.</p></div>
+    <div class="chg" style="--c: var(--green)"><h3>Motion</h3><p>The current-line band glides, guides draw down, brackets give a small pop. Off when your computer asks for less motion, or in Settings.</p></div>
+  </div>
+  <p class="note">All four are on by default and each is a switch in Settings → Editor, beside line history and suggestions. The file's own lines are kept: nothing is reformatted, so line numbers still match citations, tours and git.</p>
+</div>
+
+<script>
+const SRC = `"use client";
+// One task: tick it off, open its comments, or delete it.
+import Link from "next/link";
+import type { TaskRow } from "@/lib/types";
+
+export default function TaskCard({ task, onChange }: { task: TaskRow; onChange: () => void }) {
+  async function toggle() {
+    await fetch(\`/api/tasks/\${task.id}\`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ done: !task.done }),
+    });
+    onChange();
+  }
+
+  async function remove() {
+    if (!confirm(\`Delete "\${task.title}"?\`)) return;
+    await fetch(\`/api/tasks/\${task.id}\`, { method: "DELETE" });
+    onChange();
+  }
+
+  return (
+    <div className="card" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <input type="checkbox" checked={task.done} onChange={toggle} aria-label="Done" />
+      <Link href={\`/tasks/\${task.id}\`} className={task.done ? "done" : undefined} style={{ flex: 1 }}>
+        {task.title}
+      </Link>
+      {task.assignee && <small>{task.assignee.name}</small>}
+      <button onClick={remove} aria-label="Delete task">
+        ×
+      </button>
+    </div>
+  );
+}`;
+const LINES = SRC.split("\n");
+const KW = new Set(["use", "import", "from", "type", "export", "default", "function", "async", "await", "return", "if", "const", "let", "undefined", "true", "false", "null"]);
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// A small highlighter for this sample: strings, comments, JSX tags and attributes, keywords, calls,
+// types, numbers; brackets get their depth (counted across the whole file).
+let depth = 0;
+function tokens(line) {
+  const out = [];
+  const re = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`)|(<\/?)([A-Za-z][\w.]*)|([A-Za-z_$][\w$]*)(?=\s*=\s*[{"`])|([A-Za-z_$][\w$]*)|(\d+)|([{}()[\]])|(\s+)|(.)/g;
+  let m;
+  while ((m = re.exec(line))) {
+    const [all, cm, st, lt, tag, attr, id, nu, br, sp] = m;
+    if (cm) out.push(["cm", cm]);
+    else if (st) out.push(["st", st]);
+    else if (lt) { out.push(["pu", lt]); out.push(["tg", tag]); }
+    else if (attr && /<|^\s+[a-z]/.test(line) && line.includes("<")) out.push(["at", attr]);
+    else if (attr) out.push(["", attr]);
+    else if (id) {
+      const next = line.slice(re.lastIndex).match(/^\s*\(/);
+      out.push([KW.has(id) ? "kw" : next ? "fn" : /^[A-Z]/.test(id) ? "ty" : "", id]);
+    } else if (nu) out.push(["nu", nu]);
+    else if (br) {
+      if ("({[".includes(br)) { out.push(["br d" + (depth % 3), br, depth]); depth++; }
+      else { depth = Math.max(0, depth - 1); out.push(["br d" + (depth % 3), br, depth]); }
+    } else if (sp) out.push(["", sp]);
+    else out.push([/[=>&|!?:;,.]/.test(all) ? "pu" : "", all]);
+  }
+  return out;
+}
+const TOK = LINES.map((l) => tokens(l.replace(/^ +/, "")));
+const IND = LINES.map((l) => (l.trim() ? l.match(/^ */)[0].length : -1));
+// A blank line takes the smaller indent of its neighbours, so guides run through it.
+IND.forEach((v, i) => { if (v < 0) { const a = IND.slice(0, i).reverse().find((x) => x >= 0) ?? 0; const b = IND.slice(i + 1).find((x) => x >= 0) ?? 0; IND[i] = Math.min(a, b); } });
+const PAL = ["var(--yellow)", "var(--blue)", "var(--green)", "var(--peach)", "var(--pink)", "var(--orchid)"];
+
+function render(el, proposed) {
+  const html = LINES.map((raw, i) => {
+    const ind = IND[i];
+    const text = proposed ? TOK[i].map(([c, s, d]) => `<span class="${c}"${d !== undefined ? ` data-d="${d}"` : ""}>${esc(s)}</span>`).join("")
+                          : esc(raw.match(/^ */)[0]) + TOK[i].map(([c, s]) => `<span class="${c.startsWith("br") ? "br" : c}">${esc(s)}</span>`).join("");
+    const guides = proposed ? Array.from({ length: Math.floor(ind / 2) }, (_, lv) => `<i class="g" data-lv="${lv}" style="--lv:${lv};--gc:${PAL[lv % PAL.length]}"></i>`).join("") : "";
+    return `<div class="ln" data-i="${i}" tabindex="-1"><span class="num">${i + 1}</span><span class="txt" style="--ind:${ind}">${guides}${text}</span></div>`;
+  }).join("");
+  el.insertAdjacentHTML("beforeend", html);
+}
+const oldEl = document.getElementById("old"), neuEl = document.getElementById("neu"), pane = document.getElementById("newPane"), band = document.getElementById("band");
+render(oldEl, false);
+render(neuEl, true);
+
+// The block a line is in: the nearest line above with less indent opens it; the next line back at
+// that indent closes it.
+function blockOf(i) {
+  let o = i - 1;
+  while (o >= 0 && !(IND[o] < IND[i] && LINES[o].trim())) o--;
+  if (o < 0) return null;
+  let c = i + 1;
+  while (c < LINES.length && !(IND[c] <= IND[o] && LINES[c].trim())) c++;
+  return { open: o, close: Math.min(c, LINES.length - 1), lv: IND[o] / 2 };
+}
+
+let at = 24;
+function move(i) {
+  at = i;
+  const lines = neuEl.querySelectorAll(".ln");
+  lines.forEach((l) => l.classList.toggle("at", +l.dataset.i === i));
+  oldEl.querySelectorAll(".ln").forEach((l) => l.classList.toggle("at", +l.dataset.i === i));
+  const ln = lines[i];
+  band.style.transform = `translateY(${ln.offsetTop}px)`;
+  band.style.height = ln.offsetHeight + "px";
+  neuEl.querySelectorAll(".caret").forEach((c) => c.remove());
+  ln.querySelector(".txt").insertAdjacentHTML("beforeend", '<span class="caret" aria-hidden="true"></span>');
+  // Guides of the block the cursor is in, drawn bright top to bottom.
+  neuEl.querySelectorAll(".g.on").forEach((g) => g.classList.remove("on"));
+  neuEl.querySelectorAll(".br.pair").forEach((b) => b.classList.remove("pair"));
+  const b = blockOf(i);
+  if (!b) return;
+  for (let k = b.open + 1, n = 0; k < b.close; k++, n++) {
+    const g = lines[k].querySelector(`.g[data-lv="${b.lv}"]`);
+    if (g) { g.style.setProperty("--k", n); void g.offsetWidth; g.classList.add("on"); }
+  }
+  // The pair around the block: the last opener on its first line, the first closer on its last.
+  const op = [...lines[b.open].querySelectorAll(".br")].filter((x) => "({[".includes(x.textContent)).pop();
+  const cl = [...lines[b.close].querySelectorAll(".br")].find((x) => ")}]".includes(x.textContent));
+  for (const x of [op, cl]) if (x) { void x.offsetWidth; x.classList.add("pair"); }
+}
+for (const el of [oldEl, neuEl]) el.addEventListener("click", (e) => { const ln = e.target.closest(".ln"); if (ln) { stopTour(); move(+ln.dataset.i); } });
+
+// The switches: each one turns its part on or off, as the Settings → Editor switches would.
+document.querySelectorAll(".sw").forEach((b) => b.addEventListener("click", () => {
+  const on = b.getAttribute("aria-pressed") !== "true";
+  b.setAttribute("aria-pressed", String(on));
+  pane.classList.toggle(b.dataset.k, on);
+  requestAnimationFrame(() => move(at));
+}));
+
+// It walks the file by itself (lines a reader would stop on), until someone clicks.
+const STOPS = [24, 9, 17, 27, 22, 10, 29, 6];
+let s = 0, timer = null;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function stopTour() { clearInterval(timer); timer = null; }
+if (!reduced) timer = setInterval(() => move(STOPS[++s % STOPS.length]), 1900);
+addEventListener("resize", () => move(at));
+document.fonts?.ready.then(() => move(at));
+move(at);
+</script>

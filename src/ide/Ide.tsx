@@ -17,6 +17,9 @@
  *   or the selected lines, and check an exercise (`board` with a task).
  * - Explore's reading aids pass straight through: `highlight` (a tour step)
  *   and `onSelect` (for "explain this").
+ * - Format (with `format`, the Code panel): the file laid out by Prettier
+ *   (./format.ts, ./formatRun.ts, loaded only when pressed), as one edit that
+ *   Ctrl+Z takes back; it switches to editing, and Save writes it as usual.
  * - A splitter between the editor and the output (./split.ts): dragged, moved
  *   with the arrow keys, double-clicked back to the default, kept per user.
  *   Dragging only rewrites two CSS variables on the grid, a frame at a time,
@@ -37,6 +40,10 @@ import { debugAt, useDebugAt } from "./debugAt";
 import { getWorkspace } from "@/lib/store";
 import Editor, { languageOf, type BlameMark, type Language, type Selection } from "./Editor";
 import type { OnLineStory } from "./lineHistory";
+import { formatError, formatUnavailable, smallestChange } from "./format";
+import { isolateHistory } from "@codemirror/commands";
+import type { EditorView } from "@codemirror/view";
+import { toast } from "@/shell/Toast";
 import { JsRunner } from "./js";
 import { abortLaptop, debugPython, laptopAvailable, restartPython, runPython, runRust, stopPython, type DebugRun, type Engine, type OutPart } from "./python";
 import { resetSql, runSql } from "./sql";
@@ -99,8 +106,12 @@ export type IdeProps = {
   /** A Markdown file's preview (src/components/MarkdownPreview.tsx), and how it is shown beside the source. */
   preview?: React.ReactNode;
   view?: MdView;
-  /** Who last changed each block of lines (git blame); hidden while the file is being edited. */
+  /** Who last changed each block of lines (git blame), kept right through edits. */
   blame?: BlameMark[] | null;
+  /** The Blame gutter beside the line numbers (the Code panel's Blame button). */
+  blameGutter?: boolean;
+  /** Format this file (the Code panel): the project's own Prettier settings, from `from` (./format.ts). */
+  format?: { options: Record<string, unknown>; from: string | null };
   /** "How did this line get here?" (the Code panel's line history, src/ide/localrun/git/LineStory.tsx). */
   onLineStory?: OnLineStory;
   /** A change being toured (src/lib/diffTour.ts): its added and removed lines; hidden while the file is being edited. */
@@ -203,6 +214,8 @@ export default function Ide({
   preview,
   view = "preview",
   blame = null,
+  blameGutter = false,
+  format,
   onLineStory,
   diff = null,
   frameless = false,
@@ -228,6 +241,53 @@ export default function Ide({
   const dbKey = `${path ?? "room"}:${uid}`;
   const js = useRef<JsRunner | null>(null);
   const [editing, setEditing] = useState(mode === "edit" && !!onChange);
+  // Format: why it is off for this file (null when it can run), and the editor it edits.
+  const editorView = useRef<EditorView | null>(null);
+  const [formatting, setFormatting] = useState(false);
+  /** Formatted while reading: the cursor goes into the editor once it can be typed in. */
+  const focusOnEdit = useRef(false);
+  const formatOff = format && onChange && path ? formatUnavailable(path) : null;
+  const canFormat = !!format && !!onChange && !!path && !formatOff;
+  const formatNow = async () => {
+    const v = editorView.current;
+    if (!canFormat || !v || formatting) return;
+    const before = v.state.doc.toString();
+    setFormatting(true);
+    let r: { text: string; cursor: number } | null = null;
+    try {
+      const { formatText } = await import("./formatRun");
+      r = await formatText(path!, before, v.state.selection.main.head, format!.options);
+    } catch (e) {
+      // The code can't be read as it is: say where, and leave it alone.
+      toast(formatError(e));
+      return;
+    } finally {
+      setFormatting(false);
+    }
+    const now = editorView.current;
+    if (!r || !now) return;
+    if (now.state.doc.toString() !== before) return toast("The file changed while it was being formatted: press Format again.");
+    if (r.text === before) return toast("Already tidy: Format had nothing to change.");
+    // One edit, its own step in the undo history; then editing, so Save (Ctrl+S) can write it.
+    now.dispatch({
+      changes: smallestChange(before, r.text),
+      selection: { anchor: Math.min(r.cursor, r.text.length) },
+      annotations: isolateHistory.of("full"),
+      userEvent: "input.format",
+      scrollIntoView: true,
+    });
+    if (editing) now.focus();
+    else {
+      focusOnEdit.current = true;
+      setEditing(true);
+    }
+  };
+  // After the editor's own effects (it is a child): it can be typed in now.
+  useEffect(() => {
+    if (!editing || !focusOnEdit.current) return;
+    focusOnEdit.current = false;
+    editorView.current?.focus();
+  }, [editing]);
   // Editing a Markdown file from its preview shows the source beside it, to see each change as it reads.
   const shownView: MdView = editing && view === "preview" ? "split" : view;
   // The run's output, in the shared store (one entry per IDE), so the
@@ -761,10 +821,13 @@ export default function Ide({
       onToggleBreakpoint={debuggable || nativeDebug ? toggleBreakpoint : undefined}
       debugLine={dbg ? dbg.run.steps[dbg.index]?.line ?? null : (liveLine ?? atLine)}
       wrap={wrap}
-      blame={editing || dirty ? null : blame}
+      blame={blame}
+      blameGutter={blameGutter}
       onLineStory={onLineStory}
       diff={editing || dirty ? null : diff}
       fontSize={fontSize}
+      onFormat={canFormat ? () => void formatNow() : undefined}
+      onView={(v) => (editorView.current = v)}
       label={path ? `Code: ${path}` : "Code"}
     />
   );
@@ -827,6 +890,21 @@ export default function Ide({
                   </>
                 )}
               </svg>
+            </button>
+          )}
+          {format && onChange && path && (
+            <button
+              className="ctl format-btn"
+              type="button"
+              aria-disabled={!canFormat || formatting || !!dbg}
+              onClick={() => !dbg && void formatNow()}
+              title={formatOff ?? `Format this file with Prettier (Shift+Alt+F)${format.from ? `, with the settings in ${format.from}` : ""}. Ctrl+Z puts it back.`}
+              data-testid="ide-format"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round">
+                <path d="M2 3.5h12M5 6.5h9M5 9.5h7M2 12.5h12" />
+              </svg>
+              {formatting ? "Formatting…" : "Format"}
             </button>
           )}
           {onChange && mode === "read" && (

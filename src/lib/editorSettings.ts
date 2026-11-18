@@ -6,10 +6,18 @@
 import { readPref } from "./prefs";
 
 export interface EditorSettings {
-  /** Who last changed each line, and when: the gutter and the note on the cursor's line (git blame). */
+  /** Who last changed each line, and when (git blame): the note on the cursor's line and a line's details. */
   lineHistory: boolean;
   /** Suggestions while typing: names used in the file, and the language's own words. */
   suggestions: boolean;
+  /** A wrapped line goes on under its own indentation, not at the left edge. */
+  neatWrap: boolean;
+  /** A faint line for each level of nesting; the block the cursor is in drawn bright. */
+  indentGuides: boolean;
+  /** Brackets coloured by how deep they are; the pair at the cursor gives a small pop. */
+  colourBrackets: boolean;
+  /** The current-line band glides, guides draw in, brackets pop (never when the computer asks for less motion). */
+  codeMotion: boolean;
   // Next: `typeAware: boolean`, suggestions that know types (rust-analyzer, the TypeScript language
   // service). Add the field here and its row to EDITOR_SWITCHES; Settings draws it and it is saved
   // with the rest. Nothing reads it yet, so there is no switch for it.
@@ -23,13 +31,37 @@ export const EDITOR_SWITCHES: { id: EditorSwitch; label: string; hint: string; o
     // From git on this computer: WalkMyCode Lite has no way to it, so it shows no switch for it.
     local: true,
     label: "Line history (who changed each line, and when)",
-    hint: "Beside the line numbers, and at the end of the line the cursor is on. From your own git, so only where WalkMyCode can reach the project's folder on this computer. Blame in a file's header still switches it for that file.",
+    hint: "At the end of the line the cursor is on, and in a box when you point at or click a line, while reading or editing. From your own git, so only where WalkMyCode can reach the project's folder on this computer. Blame in a file's header shows every line's author beside the line numbers.",
     on: true,
   },
   {
     id: "suggestions",
     label: "Suggestions while typing",
     hint: "Names already used in the file and the language's own words, as you type. Enter or Tab takes one, Esc closes the list.",
+    on: true,
+  },
+  {
+    id: "neatWrap",
+    label: "Neat wrapping",
+    hint: "A long line that wraps carries on under its own indentation, two columns in, so you can still see where each line starts.",
+    on: true,
+  },
+  {
+    id: "indentGuides",
+    label: "Indent guides",
+    hint: "A faint line for each level of nesting, a colour per level. The block the cursor is in is drawn bright.",
+    on: true,
+  },
+  {
+    id: "colourBrackets",
+    label: "Coloured brackets",
+    hint: "Brackets coloured by how deep they are, so you can see which one closes which.",
+    on: true,
+  },
+  {
+    id: "codeMotion",
+    label: "Motion in the code",
+    hint: "The current line's band glides to the next line, guides draw in, a matching bracket pops. Never when your computer asks for less motion.",
     on: true,
   },
 ];
@@ -48,6 +80,7 @@ export const EDITOR_KEYS: { keys: string; what: string }[] = [
   { keys: "Esc", what: "Close the list" },
   { keys: "Ctrl+Space", what: "Open the list" },
   { keys: "Ctrl+S", what: "Save the file" },
+  { keys: "Shift+Alt+F", what: "Format the file (JavaScript, TypeScript, JSON, CSS, HTML, Markdown, YAML, GraphQL)" },
   { keys: "Ctrl+Enter", what: "Run the code, where it can be run" },
   { keys: "Ctrl+Z / Ctrl+Y", what: "Undo / redo" },
 ];

@@ -1,6 +1,6 @@
 {
   "name": "walkmycode",
-  "version": "0.1.16",
+  "version": "0.1.18",
   "license": "AGPL-3.0-only",
   "repository": "github:walkmycode/walkmycode",
   "homepage": "https://walkmycode.com",
@@ -77,6 +77,7 @@
     "motion": "^13.4.6",
     "next": "16.3.7",
     "node-pty": "1.1.0",
+    "prettier": "^3.10.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "0.0.1",
